@@ -132,7 +132,7 @@ export const BillModal: React.FC = () => {
                 value={name}
                 onChange={e => setName(e.target.value)}
                 placeholder={t('Mfano: Kodi ya pango — Novemba au LUKU ya Ofisi')}
-                className="w-full h-[42px] px-3.5 rounded-[12px] bg-[#f8f4ea] border border-[#d2cab7] text-[13px] text-[#14231c] focus:outline-none focus:border-[#1b5540]"
+                className="w-full h-[42px] px-3.5 rounded-[12px] bg-gradient-to-r from-[#fcfaf4] to-[#f8f4ea] border border-[#d2cab7] text-[13px] font-semibold text-[#14231c] focus:outline-none focus:border-[#1b5540] shadow-xs"
                 required
                 autoFocus
               />
@@ -154,7 +154,7 @@ export const BillModal: React.FC = () => {
                     value={amount}
                     onChange={e => setAmount(e.target.value)}
                     placeholder="0"
-                    className="w-full h-[42px] pl-11 pr-3.5 rounded-[12px] bg-[#f8f4ea] border border-[#d2cab7] text-[13px] font-mono font-bold text-[#14231c] focus:outline-none focus:border-[#1b5540]"
+                    className="w-full h-[42px] pl-11 pr-3.5 rounded-[12px] bg-gradient-to-r from-[#fcfaf4] to-[#f8f4ea] border border-[#d2cab7] text-[13px] font-mono font-bold text-[#14231c] focus:outline-none focus:border-[#1b5540] shadow-xs"
                     required
                   />
                 </div>
@@ -168,7 +168,7 @@ export const BillModal: React.FC = () => {
                   type="date"
                   value={dueDate}
                   onChange={e => setDueDate(e.target.value)}
-                  className="w-full h-[42px] px-3.5 rounded-[12px] bg-[#f8f4ea] border border-[#d2cab7] text-[13px] text-[#14231c] focus:outline-none focus:border-[#1b5540]"
+                  className="w-full h-[42px] px-3.5 rounded-[12px] bg-gradient-to-r from-[#fcfaf4] to-[#f8f4ea] border border-[#d2cab7] text-[13px] font-semibold text-[#14231c] focus:outline-none focus:border-[#1b5540] shadow-xs"
                   required
                 />
               </div>
@@ -180,7 +180,7 @@ export const BillModal: React.FC = () => {
                 <select
                   value={category}
                   onChange={e => setCategory(e.target.value)}
-                  className="w-full h-[42px] px-3.5 rounded-[12px] bg-[#f8f4ea] border border-[#d2cab7] text-[13px] text-[#14231c] focus:outline-none focus:border-[#1b5540]"
+                  className="w-full h-[42px] px-3.5 rounded-[12px] bg-gradient-to-r from-[#fcfaf4] to-[#f8f4ea] border border-[#d2cab7] text-[13px] font-semibold text-[#14231c] focus:outline-none focus:border-[#1b5540] shadow-xs"
                 >
                   {BILL_CATEGORIES.map(c => (
                     <option key={c} value={c}>
@@ -199,7 +199,7 @@ export const BillModal: React.FC = () => {
                   value={payee}
                   onChange={e => setPayee(e.target.value)}
                   placeholder={t('Jina la mwenye nyumba, TANESCO, n.k.')}
-                  className="w-full h-[42px] px-3.5 rounded-[12px] bg-[#f8f4ea] border border-[#d2cab7] text-[13px] text-[#14231c] focus:outline-none focus:border-[#1b5540]"
+                  className="w-full h-[42px] px-3.5 rounded-[12px] bg-gradient-to-r from-[#fcfaf4] to-[#f8f4ea] border border-[#d2cab7] text-[13px] font-semibold text-[#14231c] focus:outline-none focus:border-[#1b5540] shadow-xs"
                 />
               </div>
 
@@ -210,7 +210,7 @@ export const BillModal: React.FC = () => {
                 <select
                   value={method}
                   onChange={e => setMethod(e.target.value)}
-                  className="w-full h-[42px] px-3.5 rounded-[12px] bg-[#f8f4ea] border border-[#d2cab7] text-[13px] text-[#14231c] focus:outline-none focus:border-[#1b5540]"
+                  className="w-full h-[42px] px-3.5 rounded-[12px] bg-gradient-to-r from-[#fcfaf4] to-[#f8f4ea] border border-[#d2cab7] text-[13px] font-semibold text-[#14231c] focus:outline-none focus:border-[#1b5540] shadow-xs"
                 >
                   {METHODS.map(m => (
                     <option key={m} value={m}>
