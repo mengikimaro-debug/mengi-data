@@ -101,9 +101,9 @@ export const BillModal: React.FC = () => {
 
   return (
     <div className="premium-backdrop fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-[#081e16]/60 backdrop-blur-xs overflow-y-auto">
-      <div className="premium-enter relative w-full max-w-lg bg-[#f3efe5] border border-white/20 rounded-[22px] shadow-[0_24px_70px_rgba(8,30,22,0.22)] overflow-hidden">
+      <div className="premium-enter relative w-full max-w-[540px] max-h-[90vh] flex flex-col bg-[#f3efe5] border border-white/20 rounded-[24px] shadow-[0_24px_70px_rgba(8,30,22,0.22)] overflow-hidden">
         {/* Head */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#e2dccd] bg-[#fcfaf4]/75">
+        <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-[#e2dccd] bg-[#fcfaf4]/75 shrink-0">
           <div>
             <div className="text-[9px] font-bold tracking-[0.18em] uppercase text-[#1b5540]">
               {t('Malipo yanayokuja')}
@@ -121,10 +121,10 @@ export const BillModal: React.FC = () => {
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit}>
-          <div className="p-5 sm:p-6 space-y-3.5">
+        <form onSubmit={handleSubmit} className="overflow-y-auto flex-1">
+          <div className="p-4 sm:p-6 space-y-4">
             <div>
-              <label className="block text-[9.5px] uppercase tracking-wider text-[#746e7d] font-bold mb-1">
+              <label className="block text-[10px] uppercase tracking-wider text-[#746e7d] font-bold mb-1">
                 {t('Jina la bili *')}
               </label>
               <input
@@ -132,7 +132,7 @@ export const BillModal: React.FC = () => {
                 value={name}
                 onChange={e => setName(e.target.value)}
                 placeholder={t('Mfano: Kodi ya pango — Novemba au LUKU ya Ofisi')}
-                className="w-full h-[38px] px-3 rounded-[10px] bg-[#f8f4ea] border border-[#d2cab7] text-[12px] text-[#14231c] focus:outline-none focus:border-[#1b5540]"
+                className="w-full h-[42px] px-3.5 rounded-[12px] bg-[#f8f4ea] border border-[#d2cab7] text-[13px] text-[#14231c] focus:outline-none focus:border-[#1b5540]"
                 required
                 autoFocus
               />
@@ -140,11 +140,11 @@ export const BillModal: React.FC = () => {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div>
-                <label className="block text-[9.5px] uppercase tracking-wider text-[#746e7d] font-bold mb-1">
+                <label className="block text-[10px] uppercase tracking-wider text-[#746e7d] font-bold mb-1">
                   {t('Kiasi (TZS) *')}
                 </label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-[#746e7d]">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10.5px] font-bold text-[#746e7d]">
                     TZS
                   </span>
                   <input
@@ -154,33 +154,33 @@ export const BillModal: React.FC = () => {
                     value={amount}
                     onChange={e => setAmount(e.target.value)}
                     placeholder="0"
-                    className="w-full h-[38px] pl-10 pr-3 rounded-[10px] bg-[#f8f4ea] border border-[#d2cab7] text-[12px] font-mono font-bold text-[#14231c] focus:outline-none focus:border-[#1b5540]"
+                    className="w-full h-[42px] pl-11 pr-3.5 rounded-[12px] bg-[#f8f4ea] border border-[#d2cab7] text-[13px] font-mono font-bold text-[#14231c] focus:outline-none focus:border-[#1b5540]"
                     required
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-[9.5px] uppercase tracking-wider text-[#746e7d] font-bold mb-1">
+                <label className="block text-[10px] uppercase tracking-wider text-[#746e7d] font-bold mb-1">
                   {t('Tarehe ya mwisho ya malipo *')}
                 </label>
                 <input
                   type="date"
                   value={dueDate}
                   onChange={e => setDueDate(e.target.value)}
-                  className="w-full h-[38px] px-3 rounded-[10px] bg-[#f8f4ea] border border-[#d2cab7] text-[12px] text-[#14231c] focus:outline-none focus:border-[#1b5540]"
+                  className="w-full h-[42px] px-3.5 rounded-[12px] bg-[#f8f4ea] border border-[#d2cab7] text-[13px] text-[#14231c] focus:outline-none focus:border-[#1b5540]"
                   required
                 />
               </div>
 
               <div>
-                <label className="block text-[9.5px] uppercase tracking-wider text-[#746e7d] font-bold mb-1">
+                <label className="block text-[10px] uppercase tracking-wider text-[#746e7d] font-bold mb-1">
                   {t('Kundi la bili')}
                 </label>
                 <select
                   value={category}
                   onChange={e => setCategory(e.target.value)}
-                  className="w-full h-[38px] px-3 rounded-[10px] bg-[#f8f4ea] border border-[#d2cab7] text-[12px] text-[#14231c] focus:outline-none focus:border-[#1b5540]"
+                  className="w-full h-[42px] px-3.5 rounded-[12px] bg-[#f8f4ea] border border-[#d2cab7] text-[13px] text-[#14231c] focus:outline-none focus:border-[#1b5540]"
                 >
                   {BILL_CATEGORIES.map(c => (
                     <option key={c} value={c}>
@@ -191,7 +191,7 @@ export const BillModal: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-[9.5px] uppercase tracking-wider text-[#746e7d] font-bold mb-1">
+                <label className="block text-[10px] uppercase tracking-wider text-[#746e7d] font-bold mb-1">
                   {t('Unamlipa nani? (Payee)')}
                 </label>
                 <input
@@ -199,18 +199,18 @@ export const BillModal: React.FC = () => {
                   value={payee}
                   onChange={e => setPayee(e.target.value)}
                   placeholder={t('Jina la mwenye nyumba, TANESCO, n.k.')}
-                  className="w-full h-[38px] px-3 rounded-[10px] bg-[#f8f4ea] border border-[#d2cab7] text-[12px] text-[#14231c] focus:outline-none focus:border-[#1b5540]"
+                  className="w-full h-[42px] px-3.5 rounded-[12px] bg-[#f8f4ea] border border-[#d2cab7] text-[13px] text-[#14231c] focus:outline-none focus:border-[#1b5540]"
                 />
               </div>
 
               <div>
-                <label className="block text-[9.5px] uppercase tracking-wider text-[#746e7d] font-bold mb-1">
+                <label className="block text-[10px] uppercase tracking-wider text-[#746e7d] font-bold mb-1">
                   {t('Njia ya kulipa')}
                 </label>
                 <select
                   value={method}
                   onChange={e => setMethod(e.target.value)}
-                  className="w-full h-[38px] px-3 rounded-[10px] bg-[#f8f4ea] border border-[#d2cab7] text-[12px] text-[#14231c] focus:outline-none focus:border-[#1b5540]"
+                  className="w-full h-[42px] px-3.5 rounded-[12px] bg-[#f8f4ea] border border-[#d2cab7] text-[13px] text-[#14231c] focus:outline-none focus:border-[#1b5540]"
                 >
                   {METHODS.map(m => (
                     <option key={m} value={m}>
@@ -250,15 +250,15 @@ export const BillModal: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-[9.5px] uppercase tracking-wider text-[#746e7d] font-bold mb-1">
+              <label className="block text-[10px] uppercase tracking-wider text-[#746e7d] font-bold mb-1">
                 {t('Maelezo ya ziada (Hiari)')}
               </label>
               <textarea
-                rows={2}
+                rows={3}
                 value={notes}
                 onChange={e => setNotes(e.target.value)}
                 placeholder={t('Namba ya mita, akaunti ya benki, masharti ya bili...')}
-                className="w-full p-2.5 rounded-[10px] bg-[#f8f4ea] border border-[#d2cab7] text-[12px] text-[#14231c] focus:outline-none focus:border-[#1b5540]"
+                className="w-full p-3 rounded-[12px] bg-[#f8f4ea] border border-[#d2cab7] text-[13px] text-[#14231c] focus:outline-none focus:border-[#1b5540] transition-colors"
               />
             </div>
           </div>

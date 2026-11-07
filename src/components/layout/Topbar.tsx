@@ -103,25 +103,19 @@ export const Topbar: React.FC = () => {
 
       {/* Action buttons */}
       <div className="flex items-center gap-2.5">
-        <div className="relative inline-flex items-center">
-          <div className="absolute left-2.5 pointer-events-none text-[#1b5540]">
-            <Languages className="w-3.5 h-3.5" />
-          </div>
-          <select
-            value={language}
-            onChange={event => setLanguage(event.target.value as 'sw' | 'en')}
-            aria-label={t('Chagua lugha')}
-            className="h-[38px] pl-8 pr-7 rounded-[12px] border border-[#1b5540]/30 bg-gradient-to-r from-[#fcfaf4] to-[#f8f4ea] text-[#14231c] text-[11.5px] font-bold shadow-[0_2px_8px_rgba(20,35,28,0.06)] appearance-none cursor-pointer focus:outline-none focus:border-[#1b5540] transition-all hover:border-[#1b5540]"
-            style={{
-              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%231b5540' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
-              backgroundRepeat: 'no-repeat',
-              backgroundPosition: 'right 8px center'
-            }}
-          >
-            <option value="sw">Kiswahili</option>
-            <option value="en">English</option>
-          </select>
-        </div>
+        {/* Quick Language Swap Button */}
+        <button
+          type="button"
+          onClick={() => setLanguage(language === 'sw' ? 'en' : 'sw')}
+          className="inline-flex items-center gap-1.5 h-[38px] px-3 rounded-[12px] border border-[#1b5540]/35 bg-gradient-to-r from-[#123a2c] to-[#0c2b22] text-[#f4f9e8] text-[11px] font-bold shadow-[0_4px_14px_rgba(12,43,34,0.2)] hover:scale-[1.03] active:scale-[0.97] transition-all cursor-pointer"
+          title={language === 'sw' ? 'Badili kuwa English' : 'Switch to Kiswahili'}
+          aria-label={language === 'sw' ? 'Badili kuwa English' : 'Switch to Kiswahili'}
+        >
+          <Languages className="w-3.5 h-3.5 text-[#d8f36b]" />
+          <span>{language === 'sw' ? 'SW' : 'EN'}</span>
+          <span className="text-[#d8f36b] text-[12px] font-extrabold">⇄</span>
+          <span className="text-[#a3baac] text-[10px]">{language === 'sw' ? 'EN' : 'SW'}</span>
+        </button>
 
         {/* Notification bell */}
         <button
