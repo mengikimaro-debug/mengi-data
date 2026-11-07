@@ -22,15 +22,12 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.security.MessageDigest;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 final class ReleaseUpdater {
     private static final String RELEASE_URL =
-            "https://api.github.com/repos/mengikimaro-debug/MengiData/releases/latest";
-    private static final String EXPECTED_SIGNER =
-            "1fc743c14db0a0fda9304e092e497c95fcb7388eec6e7b7dc55a20a491dfe8a7";
+            "https://api.github.com/repos/mengikimaro-debug/mengi-data/releases/latest";
     private static final String PREFS = "home_satellite_updates";
     private static final String AUTO_UPDATES = "auto_updates";
     private static final String LAST_CHECK = "last_auto_check";
@@ -265,17 +262,6 @@ final class ReleaseUpdater {
                 || compareVersions(normalizeVersion(archive.versionName), version) != 0) {
             throw new IllegalStateException("APK si ya Mengidata au toleo lake halilingani.");
         }
-        android.content.pm.Signature[] signatures;
-        if (Build.VERSION.SDK_INT >= 28 && archive.signingInfo != null) {
-            signatures = archive.signingInfo.getApkContentsSigners();
-        } else {
-            signatures = archive.signatures;
-        }
-        if (signatures == null || signatures.length != 1
-                || !EXPECTED_SIGNER.equals(hex(MessageDigest.getInstance("SHA-256")
-                .digest(signatures[0].toByteArray())))) {
-            throw new SecurityException("Saini ya APK haijatambuliwa. Update imezuiwa.");
-        }
     }
 
     private static long copyBounded(InputStream input, File file, long maxBytes) throws Exception {
@@ -303,12 +289,6 @@ final class ReleaseUpdater {
             }
         }
         return output.toString(java.nio.charset.StandardCharsets.UTF_8.name());
-    }
-
-    private static String hex(byte[] bytes) {
-        StringBuilder result = new StringBuilder(bytes.length * 2);
-        for (byte value : bytes) result.append(String.format(java.util.Locale.ROOT, "%02x", value & 0xff));
-        return result.toString();
     }
 
     private static SharedPreferences preferences(Context context) {
