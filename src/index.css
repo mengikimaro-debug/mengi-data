@@ -14,36 +14,36 @@
 
 @layer base {
   :root {
-    --ink: #14231c;
-    --ink-2: #34483e;
-    --muted: #6d7b72;
-    --faint: #98a39b;
-    --green-950: #081e16;
-    --green-900: #0c2b22;
-    --green-800: #123a2c;
+    --ink: #0b1f17;
+    --ink-2: #243d31;
+    --muted: #5c7265;
+    --faint: #859a8c;
+    --green-950: #04120e;
+    --green-900: #071f16;
+    --green-800: #0d3829;
     --green-700: #1b5540;
     --green-600: #2a6d53;
     --lime: #d8f36b;
     --lime-soft: #eef9bd;
     --lime-ink: #274000;
-    --paper: #f3efe5;
-    --paper-2: #ece7da;
-    --card: #fcfaf4;
-    --card-2: #f8f4ea;
-    --line: #e2dccd;
-    --line-strong: #d2cab7;
-    --rose: #bd5a3d;
+    --paper: #f7f5ef;
+    --paper-2: #eee9db;
+    --card: #ffffff;
+    --card-2: #faf8f2;
+    --line: #e2dcce;
+    --line-strong: #c8bfa3;
+    --rose: #c45535;
     --rose-deep: #9e432b;
-    --rose-soft: #f7e4db;
+    --rose-soft: #fbf0ec;
     --amber: #c58a21;
     --amber-deep: #946510;
-    --amber-soft: #f8edd3;
+    --amber-soft: #fbf6ec;
     --sage: #7ca18b;
     --sage-soft: #e8f0e8;
-    --blue: #4b6f8b;
-    --blue-soft: #e7eef4;
-    --shadow: 0 1px 2px rgba(20, 35, 28, 0.035), 0 10px 30px rgba(20, 35, 28, 0.045);
-    --shadow-lg: 0 24px 70px rgba(8, 30, 22, 0.18), 0 2px 8px rgba(8, 30, 22, 0.06);
+    --blue: #3d688b;
+    --blue-soft: #edf3f7;
+    --shadow: 0 4px 20px rgba(7, 31, 22, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+    --shadow-lg: 0 24px 70px rgba(4, 18, 14, 0.18), 0 2px 8px rgba(4, 18, 14, 0.06);
     --premium-motion-duration: 240ms;
     --premium-motion-easing: cubic-bezier(0.22, 1, 0.36, 1);
   }
