@@ -3,7 +3,8 @@ import {
   LayoutDashboard,
   ArrowLeftRight,
   FileText,
-  Receipt
+  Receipt,
+  PiggyBank
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { PageKey } from '../../types';
@@ -15,7 +16,8 @@ export const MobileNav: React.FC = () => {
     { id: 'dashboard', label: t('Dashibodi'), icon: <LayoutDashboard className="w-[18px] h-[18px]" /> },
     { id: 'transactions', label: t('Miamala'), icon: <ArrowLeftRight className="w-[18px] h-[18px]" /> },
     { id: 'invoices', label: t('Ankara'), icon: <FileText className="w-[18px] h-[18px]" /> },
-    { id: 'bills', label: t('Bili'), icon: <Receipt className="w-[18px] h-[18px]" /> }
+    { id: 'bills', label: t('Bili'), icon: <Receipt className="w-[18px] h-[18px]" /> },
+    { id: 'saver', label: t('Akiba'), icon: <PiggyBank className="w-[18px] h-[18px]" /> }
   ];
 
   return (

@@ -398,7 +398,7 @@ export const InvoiceBuilderModal: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="text-[11px] font-bold tracking-tight text-[#14231c]">
-                      Bidhaa & Huduma
+                      {t('Bidhaa & Huduma')}
                     </div>
                     <div className="text-[10px] text-[#746e7d]">{t('Ongeza vitu unavyotoza')}</div>
                   </div>
@@ -429,7 +429,7 @@ export const InvoiceBuilderModal: React.FC = () => {
                         <div key={idx} className="grid grid-cols-2 sm:grid-cols-12 gap-2 p-3 sm:px-3 sm:py-2 items-center text-[12px]">
                           <div className="col-span-2 sm:col-span-5">
                             <label className="sm:hidden block text-[9px] uppercase tracking-wider text-[#746e7d] font-bold mb-1">
-                              Maelezo
+                              {t('Maelezo')}
                             </label>
                             <input
                               type="text"
@@ -442,7 +442,7 @@ export const InvoiceBuilderModal: React.FC = () => {
                           </div>
                           <div className="col-span-1 sm:col-span-2">
                             <label className="sm:hidden block text-[9px] uppercase tracking-wider text-[#746e7d] font-bold mb-1">
-                              Idadi
+                              {t('Idadi')}
                             </label>
                             <input
                               type="number"
@@ -456,7 +456,7 @@ export const InvoiceBuilderModal: React.FC = () => {
                           </div>
                           <div className="col-span-1 sm:col-span-2">
                             <label className="sm:hidden block text-[9px] uppercase tracking-wider text-[#746e7d] font-bold mb-1">
-                              Bei (TZS)
+                              {t('Bei (TZS)')}
                             </label>
                             <input
                               type="number"
@@ -470,7 +470,7 @@ export const InvoiceBuilderModal: React.FC = () => {
                           </div>
                           <div className="col-span-1 sm:col-span-2 text-right">
                             <label className="sm:hidden block text-[9px] uppercase tracking-wider text-[#746e7d] font-bold mb-1 text-left">
-                              Jumla
+                              {t('Jumla')}
                             </label>
                             <div className="h-[36px] sm:h-auto flex items-center justify-end font-mono font-bold text-[#14231c]">
                               {fmt(lineTotal)}
@@ -504,13 +504,13 @@ export const InvoiceBuilderModal: React.FC = () => {
               {/* Adjustments: Discount, VAT, Amount Paid, Notes */}
               <div className="p-4 rounded-[15px] border border-[#e2dccd] bg-[#fcfaf4]/60 space-y-3">
                 <div className="text-[11px] font-bold tracking-tight text-[#14231c]">
-                  Punguzo, Kodi & Malipo
+                  {t('Punguzo, Kodi & Malipo')}
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-[9px] uppercase tracking-wider text-[#746e7d] font-bold mb-1">
-                      Punguzo (TZS)
+                      {t('Punguzo (TZS)')}
                     </label>
                     <input
                       type="number"
@@ -524,7 +524,7 @@ export const InvoiceBuilderModal: React.FC = () => {
 
                   <div>
                     <label className="block text-[9px] uppercase tracking-wider text-[#746e7d] font-bold mb-1">
-                      VAT ya Serikali (%)
+                      {t('VAT ya Serikali (%)')}
                     </label>
                     <input
                       type="number"
@@ -541,7 +541,7 @@ export const InvoiceBuilderModal: React.FC = () => {
                   <div>
                     <div className="flex items-center justify-between mb-1">
                       <label className="block text-[9px] uppercase tracking-wider text-[#746e7d] font-bold">
-                        Kiasi kilicholipwa (TZS)
+                        {t('Kiasi kilicholipwa (TZS)')}
                       </label>
                       <button
                         type="button"
@@ -563,7 +563,7 @@ export const InvoiceBuilderModal: React.FC = () => {
 
                   <div>
                     <label className="block text-[9px] uppercase tracking-wider text-[#746e7d] font-bold mb-1">
-                      Tarehe ya malipo
+                      {t('Tarehe ya malipo')}
                     </label>
                     <input
                       type="date"
@@ -575,7 +575,7 @@ export const InvoiceBuilderModal: React.FC = () => {
 
                   <div className="sm:col-span-2">
                     <label className="block text-[9px] uppercase tracking-wider text-[#746e7d] font-bold mb-1">
-                      Maelezo ya ziada au masharti ya ankara
+                      {t('Maelezo ya ziada au masharti ya ankara')}
                     </label>
                     <textarea
                       rows={2}

@@ -4,6 +4,8 @@ import {
   Transaction,
   Invoice,
   Bill,
+  SavingsGoal,
+  SavingsLog,
   BusinessSettings,
   PageKey,
   PeriodKey,
@@ -562,11 +564,58 @@ export function generateSeedState(): AppState {
     }
   ];
 
+  const savings: SavingsGoal[] = [
+    {
+      id: uid('svg'),
+      title: 'Mfuko wa Dharura ya Biashara',
+      targetAmount: 5000000,
+      currentAmount: 2800000,
+      targetDate: seedDate(6, 1),
+      notes: 'Akiba ya kulinda biashara dhidi ya dharura.',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    },
+    {
+      id: uid('svg'),
+      title: 'Kodi ya Pango ya Mwaka Ujao',
+      targetAmount: 3500000,
+      currentAmount: 1400000,
+      targetDate: seedDate(4, 1),
+      notes: 'Akiba ya kodi ya pango ya ofisi.',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    },
+    {
+      id: uid('svg'),
+      title: 'Kupanua Akiba ya Vifaa',
+      targetAmount: 2000000,
+      currentAmount: 650000,
+      targetDate: seedDate(3, 1),
+      notes: 'Akiba ya kununua vifaa vya kazi.',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }
+  ];
+
+  const savingsLogs: SavingsLog[] = [
+    {
+      id: uid('slog'),
+      savingsId: savings[0].id,
+      type: 'deposit',
+      amount: 2800000,
+      date: seedDate(-1, 15),
+      note: 'Akiba ya kuanzia',
+      createdAt: new Date().toISOString()
+    }
+  ];
+
   return {
     version: APP_VERSION,
     transactions,
     invoices,
     bills,
+    savings,
+    savingsLogs,
     settings: { ...DEFAULT_SETTINGS },
     meta: {
       demo: true,
@@ -582,6 +631,8 @@ export function generateEmptyState(): AppState {
     transactions: [],
     invoices: [],
     bills: [],
+    savings: [],
+    savingsLogs: [],
     settings: { ...DEFAULT_SETTINGS },
     meta: {
       demo: false,
@@ -628,6 +679,14 @@ interface AppContextValue {
   editingBill: Bill | null;
   openBillModal: (bill?: Bill | null) => void;
   closeBillModal: () => void;
+  // Saver Modals
+  saverModalOpen: boolean;
+  saverGoalToEdit: SavingsGoal | null;
+  saverTxnTarget: { goal: SavingsGoal; type: 'deposit' | 'withdraw' } | null;
+  openSaverModal: (goal?: SavingsGoal | null) => void;
+  closeSaverModal: () => void;
+  openSaverTxnModal: (goal: SavingsGoal, type: 'deposit' | 'withdraw') => void;
+  closeSaverTxnModal: () => void;
   // Actions
   addTransaction: (tx: Omit<Transaction, 'id' | 'createdAt'>) => void;
   updateTransaction: (id: string, updates: Partial<Transaction>) => void;
@@ -640,6 +699,10 @@ interface AppContextValue {
   updateBill: (id: string, updates: Partial<Bill>) => void;
   deleteBill: (id: string) => void;
   toggleBillPaid: (id: string) => void;
+  addSavingsGoal: (goal: Omit<SavingsGoal, 'id' | 'createdAt' | 'updatedAt'>) => void;
+  updateSavingsGoal: (id: string, updates: Partial<SavingsGoal>) => void;
+  deleteSavingsGoal: (id: string) => void;
+  recordSavingsTxn: (savingsId: string, type: 'deposit' | 'withdraw', amount: number, date: string, note: string) => void;
   updateSettings: (newSettings: Partial<BusinessSettings>) => void;
   resetToCleanData: () => void;
   loadDemoData: () => void;
@@ -659,9 +722,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (stored) {
         const parsed = JSON.parse(stored);
         if (parsed && Array.isArray(parsed.transactions) && Array.isArray(parsed.invoices)) {
+          const seed = generateSeedState();
           return {
             ...generateEmptyState(),
             ...parsed,
+            savings: Array.isArray(parsed.savings) ? parsed.savings : seed.savings,
+            savingsLogs: Array.isArray(parsed.savingsLogs) ? parsed.savingsLogs : seed.savingsLogs,
             settings: { ...DEFAULT_SETTINGS, ...(parsed.settings || {}) }
           };
         }
@@ -670,9 +736,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (legacyData) {
         const parsed = JSON.parse(legacyData);
         if (parsed && Array.isArray(parsed.transactions) && Array.isArray(parsed.invoices)) {
+          const seed = generateSeedState();
           return {
             ...generateEmptyState(),
             ...parsed,
+            savings: Array.isArray(parsed.savings) ? parsed.savings : seed.savings,
+            savingsLogs: Array.isArray(parsed.savingsLogs) ? parsed.savingsLogs : seed.savingsLogs,
             settings: { ...DEFAULT_SETTINGS, ...(parsed.settings || {}) }
           };
         }
@@ -742,7 +811,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const t = useCallback((text: string) => translate(language, text), [language]);
 
   const [activePage, setActivePage] = useState<PageKey>('dashboard');
-  const [period, setPeriod] = useState<PeriodKey>('month');
+  const [period, setPeriod] = useState<PeriodKey>('day');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogOptions | null>(null);
@@ -760,6 +829,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [billModalOpen, setBillModalOpen] = useState(false);
   const [editingBill, setEditingBill] = useState<Bill | null>(null);
+
+  const [saverModalOpen, setSaverModalOpen] = useState(false);
+  const [saverGoalToEdit, setSaverGoalToEdit] = useState<SavingsGoal | null>(null);
+  const [saverTxnTarget, setSaverTxnTarget] = useState<{ goal: SavingsGoal; type: 'deposit' | 'withdraw' } | null>(null);
+
+  const openSaverModal = useCallback((goal: SavingsGoal | null = null) => {
+    setSaverGoalToEdit(goal);
+    setSaverModalOpen(true);
+  }, []);
+
+  const closeSaverModal = useCallback(() => {
+    setSaverModalOpen(false);
+    setSaverGoalToEdit(null);
+  }, []);
+
+  const openSaverTxnModal = useCallback((goal: SavingsGoal, type: 'deposit' | 'withdraw') => {
+    setSaverTxnTarget({ goal, type });
+  }, []);
+
+  const closeSaverTxnModal = useCallback(() => {
+    setSaverTxnTarget(null);
+  }, []);
 
   // Sync to local storage
   useEffect(() => {
@@ -939,17 +1030,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       transactions: [newTx, ...prev.transactions],
       meta: { ...prev.meta, updatedAt: new Date().toISOString() }
     }));
-    addToast('Miamala imehifadhiwa vizuri.');
-  }, [addToast]);
+    addToast(t('Miamala imehifadhiwa vizuri.'));
+  }, [addToast, t]);
 
   const updateTransaction = useCallback((id: string, updates: Partial<Transaction>) => {
     setState(prev => ({
       ...prev,
-      transactions: prev.transactions.map(t => (t.id === id ? { ...t, ...updates } : t)),
+      transactions: prev.transactions.map(tx => (tx.id === id ? { ...tx, ...updates } : tx)),
       meta: { ...prev.meta, updatedAt: new Date().toISOString() }
     }));
-    addToast('Miamala imehaririwa.');
-  }, [addToast]);
+    addToast(t('Miamala imehaririwa.'));
+  }, [addToast, t]);
 
   const deleteTransaction = useCallback((id: string) => {
     const snapshot = state;
@@ -960,14 +1051,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       transactions: prev.transactions.filter(t => t.id !== id),
       meta: { ...prev.meta, updatedAt: new Date().toISOString() }
     }));
-    addToast('Miamala imefutwa.', 'success', {
-      label: 'Tendua',
+    addToast(t('Miamala imefutwa.'), 'success', {
+      label: t('Tendua'),
       onClick: () => {
         setState(snapshot);
-        addToast('Imetenduliwa.');
+        addToast(t('Imetenduliwa.'));
       }
     });
-  }, [state, addToast]);
+  }, [state, addToast, t]);
 
   // Invoice CRUD
   const getNextInvoiceNumber = useCallback(() => {
@@ -1004,9 +1095,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     });
 
-    addToast(newInv.state === 'draft' ? 'Rasimu ya ankara imehifadhiwa.' : 'Ankara imeundwa kikamilifu.');
+    addToast(newInv.state === 'draft' ? t('Rasimu ya ankara imehifadhiwa.') : t('Ankara imeundwa kikamilifu.'));
     return newInv;
-  }, [addToast]);
+  }, [addToast, t]);
 
   const updateInvoice = useCallback((id: string, updates: Partial<Invoice>) => {
     setState(prev => {
@@ -1026,35 +1117,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         meta: { ...prev.meta, updatedAt: new Date().toISOString() }
       };
     });
-    addToast('Ankara imesasishwa.');
-  }, [addToast]);
+    addToast(t('Ankara imesasishwa.'));
+  }, [addToast, t]);
 
   const deleteInvoice = useCallback((id: string) => {
     const inv = state.invoices.find(i => i.id === id);
     if (!inv) return;
     showConfirm({
-      title: 'Futa ankara?',
-      message: `Ankara ${inv.number} ya "${inv.customerName}" itaondolewa kabisa pamoja na miamala ya malipo iliyounganishwa nayo.`,
-      okLabel: 'Futa ankara',
+      title: t('Futa ankara?'),
+      message: `${t('Ankara ')}${inv.number}${t(' ya "')}${inv.customerName}${t('" itaondolewa kabisa pamoja na miamala ya malipo iliyounganishwa nayo.')}`,
+      okLabel: t('Futa ankara'),
       danger: true,
       onConfirm: () => {
         setState(prev => ({
           ...prev,
           invoices: prev.invoices.filter(i => i.id !== id),
-          transactions: inv.linkedTxnId ? prev.transactions.filter(t => t.id !== inv.linkedTxnId) : prev.transactions,
+          transactions: inv.linkedTxnId ? prev.transactions.filter(tx => tx.id !== inv.linkedTxnId) : prev.transactions,
           meta: { ...prev.meta, updatedAt: new Date().toISOString() }
         }));
-        addToast('Ankara imefutwa.');
+        addToast(t('Ankara imefutwa.'));
       }
     });
-  }, [state.invoices, showConfirm, addToast]);
+  }, [state.invoices, showConfirm, addToast, t]);
 
   const markInvoicePaid = useCallback((id: string) => {
     const inv = state.invoices.find(i => i.id === id);
     if (!inv) return;
     const m = invoiceMath(inv);
     if (m.total <= 0 || m.balance <= 0) {
-      addToast('Ankara hii tayari imelipwa kikamilifu.');
+      addToast(t('Ankara hii tayari imelipwa kikamilifu.'));
       return;
     }
     const snapshot = state;
@@ -1077,14 +1168,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         meta: { ...prev.meta, updatedAt: new Date().toISOString() }
       };
     });
-    addToast('Ankara imewekwa kama imelipwa na fedha zimeingizwa kwenye miamala.', 'success', {
-      label: 'Tendua',
+    addToast(t('Ankara imewekwa kama imelipwa na fedha zimeingizwa kwenye miamala.'), 'success', {
+      label: t('Tendua'),
       onClick: () => {
         setState(snapshot);
-        addToast('Imetenduliwa.');
+        addToast(t('Imetenduliwa.'));
       }
     });
-  }, [state, addToast]);
+  }, [state, addToast, t]);
 
   // Bill CRUD
   const addBill = useCallback((billData: Omit<Bill, 'id' | 'createdAt' | 'linkedTxnId'>) => {
@@ -1104,8 +1195,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         meta: { ...prev.meta, updatedAt: new Date().toISOString() }
       };
     });
-    addToast('Bili imehifadhiwa.');
-  }, [addToast]);
+    addToast(t('Bili imehifadhiwa.'));
+  }, [addToast, t]);
 
   const updateBill = useCallback((id: string, updates: Partial<Bill>) => {
     setState(prev => {
@@ -1124,28 +1215,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         meta: { ...prev.meta, updatedAt: new Date().toISOString() }
       };
     });
-    addToast('Bili imesasishwa.');
-  }, [addToast]);
+    addToast(t('Bili imesasishwa.'));
+  }, [addToast, t]);
 
   const deleteBill = useCallback((id: string) => {
     const bill = state.bills.find(b => b.id === id);
     if (!bill) return;
     showConfirm({
-      title: 'Futa bili?',
-      message: `Bili ya "${bill.name}" itaondolewa. Miamala iliyounganishwa nayo itaondolewa pia.`,
-      okLabel: 'Futa bili',
+      title: t('Futa bili?'),
+      message: `${t('Bili ya "')}${bill.name}${t('" itaondolewa. Miamala iliyounganishwa nayo itaondolewa pia.')}`,
+      okLabel: t('Futa bili'),
       danger: true,
       onConfirm: () => {
         setState(prev => ({
           ...prev,
           bills: prev.bills.filter(b => b.id !== id),
-          transactions: bill.linkedTxnId ? prev.transactions.filter(t => t.id !== bill.linkedTxnId) : prev.transactions,
+          transactions: bill.linkedTxnId ? prev.transactions.filter(tx => tx.id !== bill.linkedTxnId) : prev.transactions,
           meta: { ...prev.meta, updatedAt: new Date().toISOString() }
         }));
-        addToast('Bili imefutwa.');
+        addToast(t('Bili imefutwa.'));
       }
     });
-  }, [state.bills, showConfirm, addToast]);
+  }, [state.bills, showConfirm, addToast, t]);
 
   const toggleBillPaid = useCallback((id: string) => {
     const bill = state.bills.find(b => b.id === id);
@@ -1170,17 +1261,114 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     });
     addToast(
-      bill.paid ? 'Malipo ya bili yametenduliwa.' : 'Bili imewekwa kama imelipwa na kurekodiwa kwenye matumizi.',
+      bill.paid ? t('Malipo ya bili yametenduliwa.') : t('Bili imewekwa kama imelipwa na kurekodiwa kwenye matumizi.'),
       'success',
       {
-        label: 'Tendua',
+        label: t('Tendua'),
         onClick: () => {
           setState(snapshot);
-          addToast('Imetenduliwa.');
+          addToast(t('Imetenduliwa.'));
         }
       }
     );
-  }, [state, addToast]);
+  }, [state, addToast, t]);
+
+  // Savings CRUD
+  const addSavingsGoal = useCallback((goalData: Omit<SavingsGoal, 'id' | 'createdAt' | 'updatedAt'>) => {
+    const newGoal: SavingsGoal = {
+      ...goalData,
+      id: uid('svg'),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    setState(prev => ({
+      ...prev,
+      savings: [newGoal, ...(prev.savings || [])],
+      meta: { ...prev.meta, updatedAt: new Date().toISOString() }
+    }));
+    addToast(t('Lengo la akiba limeongezwa.'));
+  }, [addToast, t]);
+
+  const updateSavingsGoal = useCallback((id: string, updates: Partial<SavingsGoal>) => {
+    setState(prev => ({
+      ...prev,
+      savings: (prev.savings || []).map(g => g.id === id ? { ...g, ...updates, updatedAt: new Date().toISOString() } : g),
+      meta: { ...prev.meta, updatedAt: new Date().toISOString() }
+    }));
+    addToast(t('Lengo la akiba limehifadhiwa.'));
+  }, [addToast, t]);
+
+  const deleteSavingsGoal = useCallback((id: string) => {
+    const target = (state.savings || []).find(g => g.id === id);
+    if (!target) return;
+    showConfirm({
+      title: t('Futa Akiba?'),
+      message: `${t('Je, una uhakika unataka kufuta lengo hili la akiba ("')}${target.title}${t('")?')}`,
+      okLabel: t('Futa'),
+      danger: true,
+      onConfirm: () => {
+        setState(prev => ({
+          ...prev,
+          savings: (prev.savings || []).filter(g => g.id !== id),
+          savingsLogs: (prev.savingsLogs || []).filter(l => l.savingsId !== id),
+          meta: { ...prev.meta, updatedAt: new Date().toISOString() }
+        }));
+        addToast(t('Lengo la akiba limefutwa.'));
+      }
+    });
+  }, [state.savings, showConfirm, addToast, t]);
+
+  const recordSavingsTxn = useCallback((savingsId: string, type: 'deposit' | 'withdraw', amount: number, date: string, note: string) => {
+    const goals = state.savings || [];
+    const target = goals.find(g => g.id === savingsId);
+    if (!target || amount <= 0) return;
+    if (type === 'withdraw' && amount > target.currentAmount) {
+      addToast(t('Kiasi kinachotolewa kinazidi akiba iliyopo!'), 'error');
+      return;
+    }
+
+    const txnId = uid('txn');
+    const newTxn: Transaction = {
+      id: txnId,
+      type: type === 'deposit' ? 'expense' : 'income',
+      date: date || todayISO(),
+      description: type === 'deposit' ? `Weka kwenye akiba: ${target.title}` : `Toa kutoka akiba: ${target.title}`,
+      party: target.title,
+      category: 'Akiba na malengo',
+      amount,
+      method: 'Benki',
+      reference: '',
+      notes: note || '',
+      source: 'manual',
+      linkedId: savingsId,
+      createdAt: new Date().toISOString()
+    };
+
+    const newLog: SavingsLog = {
+      id: uid('slog'),
+      savingsId,
+      type,
+      amount,
+      date: date || todayISO(),
+      note: note || '',
+      createdAt: new Date().toISOString()
+    };
+    setState(prev => {
+      const currentGoals = prev.savings || [];
+      const goalTarget = currentGoals.find(g => g.id === savingsId);
+      if (!goalTarget) return prev;
+      const newCurrent = type === 'deposit' ? goalTarget.currentAmount + amount : Math.max(0, goalTarget.currentAmount - amount);
+      const updatedGoals = currentGoals.map(g => g.id === savingsId ? { ...g, currentAmount: newCurrent, updatedAt: new Date().toISOString() } : g);
+      return {
+        ...prev,
+        savings: updatedGoals,
+        savingsLogs: [newLog, ...(prev.savingsLogs || [])],
+        transactions: [newTxn, ...(prev.transactions || [])],
+        meta: { ...prev.meta, updatedAt: new Date().toISOString() }
+      };
+    });
+    addToast(type === 'deposit' ? t('Akiba imewekwa kikamilifu na kuingizwa kwenye miamala.') : t('Akiba imetolewa kikamilifu.'));
+  }, [state.savings, addToast, t]);
 
   // Settings
   const updateSettings = useCallback((newSettings: Partial<BusinessSettings>) => {
@@ -1189,8 +1377,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       settings: { ...prev.settings, ...newSettings },
       meta: { ...prev.meta, updatedAt: new Date().toISOString() }
     }));
-    addToast('Mipangilio imehifadhiwa.');
-  }, [addToast]);
+    addToast(t('Mipangilio imehifadhiwa.'));
+  }, [addToast, t]);
 
   // Data management
   const resetToCleanData = useCallback(() => {
@@ -1203,13 +1391,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updatedAt: new Date().toISOString()
       }
     }));
-    addToast('Data ya mfano imefutwa. Uko tayari kuanza na data yako.');
-  }, [addToast]);
+    addToast(t('Data ya mfano imefutwa. Uko tayari kuanza na data yako.'));
+  }, [addToast, t]);
 
   const loadDemoData = useCallback(() => {
     setState(generateSeedState());
-    addToast('Data ya mfano imepakiwa.');
-  }, [addToast]);
+    addToast(t('Data ya mfano imepakiwa.'));
+  }, [addToast, t]);
 
   const restoreFromJSON = useCallback((parsed: AppState) => {
     setState({
@@ -1222,8 +1410,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updatedAt: new Date().toISOString()
       }
     });
-    addToast('Data imerejeshwa vizuri kutoka kwenye faili la nakala rudufu.');
-  }, [addToast]);
+    addToast(t('Data imerejeshwa vizuri kutoka kwenye faili la nakala rudufu.'));
+  }, [addToast, t]);
 
   return (
     <AppContext.Provider
@@ -1263,6 +1451,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         editingBill,
         openBillModal,
         closeBillModal,
+        saverModalOpen,
+        saverGoalToEdit,
+        saverTxnTarget,
+        openSaverModal,
+        closeSaverModal,
+        openSaverTxnModal,
+        closeSaverTxnModal,
         addTransaction,
         updateTransaction,
         deleteTransaction,
@@ -1274,6 +1469,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateBill,
         deleteBill,
         toggleBillPaid,
+        addSavingsGoal,
+        updateSavingsGoal,
+        deleteSavingsGoal,
+        recordSavingsTxn,
         updateSettings,
         resetToCleanData,
         loadDemoData,

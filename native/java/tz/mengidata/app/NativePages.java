@@ -30,6 +30,12 @@ import tz.mengidata.app.Models.Bill;
 import tz.mengidata.app.Models.Invoice;
 import tz.mengidata.app.Models.InvoiceItem;
 import tz.mengidata.app.Models.NotebookEntry;
+import tz.mengidata.app.Models.SavingsGoal;
+import tz.mengidata.app.Models.SavingsLog;
+import tz.mengidata.app.Models.Settings;
+import tz.mengidata.app.Models.Txn;
+import tz.mengidata.app.Models.InvoiceItem;
+import tz.mengidata.app.Models.NotebookEntry;
 import tz.mengidata.app.Models.Settings;
 import tz.mengidata.app.Models.Txn;
 
@@ -221,6 +227,13 @@ final class DashboardPage extends NativePage {
         TextView open = Ui.button(host, "Fungua bili", false);
         open.setOnClickListener(v -> host.showPage("bills"));
         bills.addView(open, Ui.matchWrap());
+
+        double totalSavings = db.totalSavings();
+        LinearLayout savingsCard = card("Akiba na Malengo");
+        addLine(savingsCard, "Jumla ya Akiba iliyotunzwa", "TZS " + Util.money(totalSavings), Ui.ACCENT);
+        TextView openSavings = Ui.button(host, "Fungua akiba", false);
+        openSavings.setOnClickListener(v -> host.showPage("saver"));
+        savingsCard.addView(openSavings, Ui.matchWrap());
     }
 }
 
@@ -1554,5 +1567,300 @@ final class SettingsPage extends NativePage {
             error.setText("Imeshindwa kuthibitisha PIN kwa usalama. Jaribu tena.");
         }
         return false;
+    }
+}
+
+final class SaverPage extends NativePage {
+
+    SaverPage(MainActivity host, Db db) {
+        super(host, db);
+    }
+
+    @Override public String title() { return "Akiba"; }
+    @Override public String subtitle() { return "Usimamizi wa akiba na malengo ya fedha"; }
+
+    @Override
+    public void onAdd() {
+        showGoalDialog(null);
+    }
+
+    @Override
+    public void refresh() {
+        body.removeAllViews();
+        List<SavingsGoal> goals = db.savingsGoals();
+
+        // Summary Card
+        double totalSaved = db.totalSavings();
+        double totalTarget = db.totalSavingsTarget();
+        double overallRatio = totalTarget > 0 ? Math.min(Math.max(totalSaved / totalTarget, 0.0), 1.0) : 0;
+        int overallPercent = (int) Math.round(overallRatio * 100);
+
+        LinearLayout summary = card("Muhtasari wa Akiba");
+        addLine(summary, "Jumla ya Akiba iliyotunzwa:", Util.tzs(totalSaved), Ui.ACCENT);
+        addLine(summary, "Jumla ya Malengo:", Util.tzs(totalTarget), Ui.INK);
+
+        summary.addView(Ui.text(host, "Maendeleo ya Jumla (" + overallPercent + "%):", 11, Ui.MUTED, false));
+        summary.addView(Ui.spacer(host, 4));
+        summary.addView(buildProgressBar(overallRatio));
+        summary.addView(Ui.spacer(host, 12));
+
+        TextView addBtn = Ui.button(host, "+ Ongeza Lengo la Akiba", true);
+        addBtn.setOnClickListener(v -> onAdd());
+        summary.addView(addBtn, Ui.matchWrap());
+
+        body.addView(Ui.text(host, "Malengo ya Akiba (" + goals.size() + ")", 15, Ui.INK, true));
+        body.addView(Ui.spacer(host, 8));
+
+        if (goals.isEmpty()) {
+            LinearLayout empty = card("");
+            TextView hint = Ui.hint(host, "Hujatenga lengo lolote la akiba bado. Bonyeza '+ Ongeza Lengo la Akiba' kuanza kutunza akiba yako.");
+            empty.addView(hint);
+            return;
+        }
+
+        for (SavingsGoal sg : goals) {
+            LinearLayout itemCard = Ui.card(host);
+
+            LinearLayout topRow = Ui.row(host);
+            topRow.addView(Ui.text(host, sg.title, 14, Ui.INK, true),
+                    new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+            if (sg.targetDate != null && !sg.targetDate.isEmpty()) {
+                topRow.addView(Ui.text(host, "Lengo: " + sg.targetDate, 10, Ui.MUTED, false));
+            }
+            itemCard.addView(topRow, Ui.matchWrap());
+            itemCard.addView(Ui.spacer(host, 6));
+
+            addLine(itemCard, "Akiba sasa:", Util.tzs(sg.currentAmount), Ui.ACCENT);
+            addLine(itemCard, "Lengo la Akiba:", Util.tzs(sg.targetAmount), Ui.INK);
+            if (sg.remaining() > 0) {
+                addLine(itemCard, "Imebaki kufikia lengo:", Util.tzs(sg.remaining()), Ui.MUTED);
+            }
+
+            itemCard.addView(Ui.text(host, "Maendeleo: " + sg.progressPercent() + "%", 11, Ui.MUTED, false));
+            itemCard.addView(Ui.spacer(host, 4));
+            itemCard.addView(buildProgressBar(sg.progressRatio()));
+            itemCard.addView(Ui.spacer(host, 10));
+
+            if (sg.notes != null && !sg.notes.isEmpty()) {
+                itemCard.addView(Ui.hint(host, sg.notes));
+                itemCard.addView(Ui.spacer(host, 8));
+            }
+
+            LinearLayout actions = Ui.row(host);
+
+            TextView depositBtn = Ui.button(host, "+ Weka", false);
+            depositBtn.setBackground(Ui.rounded(host, Ui.ACCENT, 8, 0, 0));
+            depositBtn.setTextColor(Color.WHITE);
+            depositBtn.setOnClickListener(v -> showDepositWithdrawDialog(sg, "deposit"));
+            LinearLayout.LayoutParams depParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+            depParams.rightMargin = Ui.dp(host, 4);
+            actions.addView(depositBtn, depParams);
+
+            TextView withdrawBtn = Ui.button(host, "- Toa", false);
+            withdrawBtn.setBackground(Ui.rounded(host, 0xFFE53935, 8, 0, 0));
+            withdrawBtn.setTextColor(Color.WHITE);
+            withdrawBtn.setOnClickListener(v -> showDepositWithdrawDialog(sg, "withdraw"));
+            LinearLayout.LayoutParams withParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+            withParams.rightMargin = Ui.dp(host, 4);
+            actions.addView(withdrawBtn, withParams);
+
+            TextView historyBtn = Ui.button(host, "Historia", false);
+            historyBtn.setOnClickListener(v -> showHistoryDialog(sg));
+            LinearLayout.LayoutParams histParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+            histParams.rightMargin = Ui.dp(host, 4);
+            actions.addView(historyBtn, histParams);
+
+            TextView editBtn = Ui.button(host, "Hariri", false);
+            editBtn.setOnClickListener(v -> showGoalDialog(sg));
+            LinearLayout.LayoutParams editParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+            editParams.rightMargin = Ui.dp(host, 4);
+            actions.addView(editBtn, editParams);
+
+            TextView deleteBtn = Ui.button(host, "Futa", false);
+            deleteBtn.setTextColor(0xFFE53935);
+            deleteBtn.setOnClickListener(v -> Ui.confirm(host, "Futa Akiba?",
+                    "Je, una uhakika unataka kufuta lengo hili la akiba ('" + sg.title + "')?",
+                    "Futa", () -> {
+                        db.deleteSavingsGoal(sg.id);
+                        refresh();
+                        Ui.toast(host, "Lengo la akiba limefutwa.");
+                    }));
+            actions.addView(deleteBtn, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+
+            itemCard.addView(actions, Ui.matchWrap());
+
+            body.addView(itemCard, Ui.matchWrap());
+            body.addView(Ui.spacer(host, 12));
+        }
+    }
+
+    private View buildProgressBar(double ratio) {
+        LinearLayout outer = new LinearLayout(host);
+        outer.setOrientation(LinearLayout.HORIZONTAL);
+        outer.setBackground(Ui.rounded(host, 0xFFE2E8F0, 6, 0, 0));
+        LinearLayout.LayoutParams outerParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(host, 10));
+        outer.setLayoutParams(outerParams);
+
+        int percent = (int) Math.round(ratio * 100);
+        if (percent > 0) {
+            View inner = new View(host);
+            inner.setBackground(Ui.rounded(host, Ui.ACCENT, 6, 0, 0));
+            LinearLayout.LayoutParams innerParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, percent);
+            outer.addView(inner, innerParams);
+
+            if (percent < 100) {
+                View space = new View(host);
+                LinearLayout.LayoutParams spaceParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 100 - percent);
+                outer.addView(space, spaceParams);
+            }
+        }
+        return outer;
+    }
+
+    private void showGoalDialog(SavingsGoal existing) {
+        LinearLayout form = Ui.column(host);
+        form.setPadding(Ui.dp(host, 16), Ui.dp(host, 16), Ui.dp(host, 16), Ui.dp(host, 16));
+
+        EditText titleInput = field(form, "Jina la Akiba / Lengo *", existing == null ? "" : existing.title, "Mfano: Mfuko wa Dharura", false);
+        EditText targetInput = field(form, "Lengo la Kiasi (TZS) *", existing == null ? "" : String.valueOf(existing.targetAmount), "0", true);
+        addCalculatorButton(form, targetInput);
+        EditText initialInput = existing == null ? field(form, "Akiba ya Kuanzia (TZS)", "0", "0", true) : null;
+        if (initialInput != null) addCalculatorButton(form, initialInput);
+        EditText dateInput = field(form, "Tarehe ya Lengo (YYYY-MM-DD)", existing == null ? Util.addDays(Util.today(), 90) : existing.targetDate, "YYYY-MM-DD", false);
+        EditText notesInput = memo(form, "Maelezo / Madhumuni", existing == null ? "" : existing.notes, "Maelezo zaidi...");
+
+        AlertDialog dialog = Ui.dialog(host)
+                .setTitle(existing == null ? "Ongeza Lengo la Akiba" : "Hariri Lengo la Akiba")
+                .setView(form)
+                .setNegativeButton("Ghairi", null)
+                .setPositiveButton("Hifadhi", null)
+                .create();
+
+        dialog.setOnShowListener(d -> {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+                String title = titleInput.getText().toString().trim();
+                if (title.isEmpty()) {
+                    Ui.toast(host, "Tafadhali ingiza jina la akiba.");
+                    return;
+                }
+                double targetAmt = 0;
+                try {
+                    targetAmt = Double.parseDouble(targetInput.getText().toString().trim());
+                } catch (Exception ignored) {}
+
+                if (targetAmt <= 0) {
+                    Ui.toast(host, "Ingiza lengo la kiasi lililo sahihi.");
+                    return;
+                }
+
+                SavingsGoal sg = existing == null ? new SavingsGoal() : existing;
+                sg.title = title;
+                sg.targetAmount = targetAmt;
+                sg.targetDate = dateInput.getText().toString().trim();
+                sg.notes = notesInput.getText().toString().trim();
+
+                if (existing == null && initialInput != null) {
+                    try {
+                        sg.currentAmount = Math.max(0, Double.parseDouble(initialInput.getText().toString().trim()));
+                    } catch (Exception ignored) {}
+                }
+
+                db.saveSavingsGoal(sg);
+                if (existing == null && sg.currentAmount > 0) {
+                    db.recordSavingsTransaction(sg.id, "deposit", sg.currentAmount, Util.today(), "Akiba ya kuanzia");
+                }
+
+                refresh();
+                Ui.toast(host, existing == null ? "Lengo la akiba limeongezwa." : "Lengo la akiba limehifadhiwa.");
+                dialog.dismiss();
+            });
+        });
+        dialog.show();
+    }
+
+    private void showDepositWithdrawDialog(SavingsGoal sg, String type) {
+        boolean isDeposit = "deposit".equals(type);
+        LinearLayout form = Ui.column(host);
+        form.setPadding(Ui.dp(host, 16), Ui.dp(host, 16), Ui.dp(host, 16), Ui.dp(host, 16));
+
+        form.addView(Ui.text(host, "Akiba sasa: " + Util.tzs(sg.currentAmount), 12, Ui.ACCENT, true));
+        form.addView(Ui.spacer(host, 8));
+
+        EditText amountInput = field(form, isDeposit ? "Kiasi cha Kuweka (TZS) *" : "Kiasi cha Kutoa (TZS) *", "", "0", true);
+        addCalculatorButton(form, amountInput);
+        EditText dateInput = field(form, "Tarehe", Util.today(), "YYYY-MM-DD", false);
+        EditText noteInput = memo(form, "Maelezo / Chanzo", "", "Maelezo ya muamala...");
+
+        AlertDialog dialog = Ui.dialog(host)
+                .setTitle(isDeposit ? "Weka Akiba — " + sg.title : "Toa Akiba — " + sg.title)
+                .setView(form)
+                .setNegativeButton("Ghairi", null)
+                .setPositiveButton(isDeposit ? "Weka Akiba" : "Toa Akiba", null)
+                .create();
+
+        dialog.setOnShowListener(d -> {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+                double amount = 0;
+                try {
+                    amount = Double.parseDouble(amountInput.getText().toString().trim());
+                } catch (Exception ignored) {}
+
+                if (amount <= 0) {
+                    Ui.toast(host, "Ingiza kiasi sahihi.");
+                    return;
+                }
+
+                if (!isDeposit && amount > sg.currentAmount) {
+                    Ui.toast(host, "Kiasi unachotaka kutoa kinazidi akiba iliyopo!");
+                    return;
+                }
+
+                String date = dateInput.getText().toString().trim();
+                String note = noteInput.getText().toString().trim();
+
+                db.recordSavingsTransaction(sg.id, type, amount, date, note);
+                refresh();
+                Ui.toast(host, isDeposit ? "Akiba imewekwa kikamilifu." : "Akiba imetolewa kikamilifu.");
+                dialog.dismiss();
+            });
+        });
+        dialog.show();
+    }
+
+    private void showHistoryDialog(SavingsGoal sg) {
+        LinearLayout form = Ui.column(host);
+        form.setPadding(Ui.dp(host, 16), Ui.dp(host, 16), Ui.dp(host, 16), Ui.dp(host, 16));
+
+        List<SavingsLog> logs = db.savingsLogs(sg.id);
+
+        form.addView(Ui.text(host, "Historia ya Muamala: " + sg.title, 14, Ui.INK, true));
+        form.addView(Ui.spacer(host, 8));
+
+        if (logs.isEmpty()) {
+            form.addView(Ui.hint(host, "Hakuna miamala iliyorekodiwa bado kwenye akiba hii."));
+        } else {
+            for (SavingsLog log : logs) {
+                LinearLayout row = Ui.row(host);
+                boolean dep = log.deposit();
+                String sign = dep ? "+ " : "- ";
+                int color = dep ? Ui.ACCENT : 0xFFE53935;
+                row.addView(Ui.text(host, log.date + " (" + (dep ? "Kuweka" : "Kutoa") + ")", 11, Ui.MUTED, false),
+                        new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+                row.addView(Ui.text(host, sign + Util.tzs(log.amount), 12, color, true));
+                form.addView(row, Ui.matchWrap());
+
+                if (log.note != null && !log.note.isEmpty()) {
+                    form.addView(Ui.hint(host, log.note));
+                }
+                form.addView(Ui.spacer(host, 6));
+            }
+        }
+
+        Ui.dialog(host)
+                .setTitle("Historia ya Akiba")
+                .setView(form)
+                .setPositiveButton("Funga", null)
+                .show();
     }
 }

@@ -104,7 +104,7 @@ export const InvoicesPage: React.FC = () => {
       addToast(`${t('Ankara')} ${inv.number} ${t('imepakuliwa kama PDF.')}`);
     } catch (e) {
       console.error(e);
-      addToast('PDF haikuweza kuundwa. Tafadhali jaribu tena.', 'error');
+      addToast(t('PDF haikuweza kuundwa. Tafadhali jaribu tena.'), 'error');
     }
   };
 
@@ -228,16 +228,16 @@ export const InvoicesPage: React.FC = () => {
               <FileText className="w-6 h-6" />
             </div>
             <div className="text-[14px] font-bold text-[#14231c]">
-              Hakuna ankara zinazolingana
+              {t('Hakuna ankara zinazolingana')}
             </div>
             <p className="text-[12px] text-[#746e7d] max-w-sm mx-auto mt-1 mb-4">
-              Tengeneza ankara mpya kwa mteja au ubadilishe kichujio kilichochaguliwa.
+              {t('Tengeneza ankara mpya kwa mteja au ubadilishe kichujio kilichochaguliwa.')}
             </p>
             <button
               onClick={() => openInvoiceBuilder()}
               className="px-4 py-2 rounded-[10px] bg-[#0c2b22] text-white text-[12px] font-semibold"
             >
-              Tengeneza ankara mpya
+              {t('Tengeneza ankara mpya')}
             </button>
           </div>
         ) : (
@@ -247,13 +247,13 @@ export const InvoicesPage: React.FC = () => {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b border-[#e2dccd] text-[9px] font-bold uppercase tracking-wider text-[#746e7d]">
-                    <th className="py-3 px-4">Ankara</th>
-                    <th className="py-3 px-4">Mteja</th>
-                    <th className="py-3 px-4">Tarehe</th>
-                    <th className="py-3 px-4">Hali</th>
-                    <th className="py-3 px-4 text-right">Kiasi</th>
-                    <th className="py-3 px-4 text-right">Salio</th>
-                    <th className="py-3 px-4 text-right">Vitendo</th>
+                    <th className="py-3 px-4">{t('Ankara')}</th>
+                    <th className="py-3 px-4">{t('Mteja')}</th>
+                    <th className="py-3 px-4">{t('Tarehe')}</th>
+                    <th className="py-3 px-4">{t('Hali')}</th>
+                    <th className="py-3 px-4 text-right">{t('Kiasi')}</th>
+                    <th className="py-3 px-4 text-right">{t('Salio')}</th>
+                    <th className="py-3 px-4 text-right">{t('Vitendo')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#ece7da] text-[12px]">
@@ -267,7 +267,7 @@ export const InvoicesPage: React.FC = () => {
                         <td className="py-3 px-4 whitespace-nowrap">
                           <div className="font-bold text-[#14231c]">{inv.number}</div>
                           <div className="text-[10px] text-[#746e7d]">
-                            {isDraft ? t('Rasimu') : `${t('Imetolewa')} ${dateLabel(inv.issueDate, language)}`}
+                            {isDraft ? t('Rasimu') : `${t('Imetolewa:')} ${dateLabel(inv.issueDate, language)}`}
                           </div>
                         </td>
 
@@ -289,7 +289,7 @@ export const InvoicesPage: React.FC = () => {
 
                         <td className="py-3 px-4 whitespace-nowrap text-[#746e7d]">
                           <div className="font-medium text-[#14231c]">{dateLabel(inv.issueDate, language)}</div>
-                          <div className="text-[10px]">{t('Malipo:')} {dateLabel(inv.dueDate, language)}</div>
+                          <div className="text-[10px]">{t('Tarehe ya malipo')}: {dateLabel(inv.dueDate, language)}</div>
                         </td>
 
                         <td className="py-3 px-4 whitespace-nowrap">
@@ -324,7 +324,7 @@ export const InvoicesPage: React.FC = () => {
                             </span>
                           ) : (
                             <span className="text-[#746e7d] font-normal text-[11px]">
-                              imekamilika
+                              {t('imekamilika')}
                             </span>
                           )}
                         </td>
@@ -333,7 +333,7 @@ export const InvoicesPage: React.FC = () => {
                           <div className="inline-flex items-center gap-1">
                             <button
                               onClick={() => openInvoiceView(inv)}
-                              title="Tazama ankara"
+                              title={t('Tazama ankara')}
                               className="w-7 h-7 rounded-lg grid place-items-center text-[#1b5540] hover:bg-[#e8f0e8] transition-colors"
                             >
                               <Eye className="w-3.5 h-3.5" />
@@ -341,7 +341,7 @@ export const InvoicesPage: React.FC = () => {
 
                             <button
                               onClick={() => handleDownloadPDF(inv)}
-                              title="Pakua PDF"
+                              title={t('Pakua PDF')}
                               className="w-7 h-7 rounded-lg grid place-items-center text-[#34483e] hover:bg-[#ece7da] transition-colors"
                             >
                               <Download className="w-3.5 h-3.5" />
@@ -349,7 +349,7 @@ export const InvoicesPage: React.FC = () => {
 
                             <button
                               onClick={() => openInvoiceBuilder(inv)}
-                              title="Hariri ankara"
+                              title={t('Hariri ankara')}
                               className="w-7 h-7 rounded-lg grid place-items-center text-[#746e7d] hover:bg-[#ece7da] hover:text-[#14231c] transition-colors"
                             >
                               <Edit2 className="w-3.5 h-3.5" />
@@ -358,7 +358,7 @@ export const InvoicesPage: React.FC = () => {
                             {m.balance > 0 && !isDraft && (
                               <button
                                 onClick={() => markInvoicePaid(inv.id)}
-                                title="Weka imelipwa"
+                                title={t('Weka imelipwa')}
                                 className="w-7 h-7 rounded-lg grid place-items-center text-[#1b5540] hover:bg-[#e8f0e8] transition-colors"
                               >
                                 <Check className="w-3.5 h-3.5" />
@@ -367,7 +367,7 @@ export const InvoicesPage: React.FC = () => {
 
                             <button
                               onClick={() => deleteInvoice(inv.id)}
-                              title="Futa ankara"
+                              title={t('Futa ankara')}
                               className="w-7 h-7 rounded-lg grid place-items-center text-[#746e7d] hover:bg-[#f7e4db] hover:text-[#9e432b] transition-colors"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
@@ -407,7 +407,7 @@ export const InvoicesPage: React.FC = () => {
                         </div>
                         {m.balance > 0 && (
                           <div className="text-[10px] text-[#9e432b] font-semibold">
-                            Salio: {fmt(m.balance)} TZS
+                            {t('Salio:')} {fmt(m.balance)} TZS
                           </div>
                         )}
                       </div>
@@ -432,7 +432,7 @@ export const InvoicesPage: React.FC = () => {
                         <button
                           onClick={() => openInvoiceView(inv)}
                           className="w-7 h-7 rounded grid place-items-center text-[#1b5540] hover:bg-[#e8f0e8]"
-                          title="Tazama"
+                          title={t('Tazama')}
                         >
                           <Eye className="w-3.5 h-3.5" />
                         </button>
@@ -440,7 +440,7 @@ export const InvoicesPage: React.FC = () => {
                         <button
                           onClick={() => handleDownloadPDF(inv)}
                           className="w-7 h-7 rounded grid place-items-center text-[#34483e] hover:bg-[#ece7da]"
-                          title="Pakua PDF"
+                          title={t('Pakua PDF')}
                         >
                           <Download className="w-3.5 h-3.5" />
                         </button>
@@ -448,7 +448,7 @@ export const InvoicesPage: React.FC = () => {
                         <button
                           onClick={() => openInvoiceBuilder(inv)}
                           className="w-7 h-7 rounded grid place-items-center text-[#746e7d] hover:bg-[#ece7da]"
-                          title="Hariri"
+                          title={t('Hariri')}
                         >
                           <Edit2 className="w-3.5 h-3.5" />
                         </button>
@@ -457,7 +457,7 @@ export const InvoicesPage: React.FC = () => {
                           <button
                             onClick={() => markInvoicePaid(inv.id)}
                             className="w-7 h-7 rounded grid place-items-center text-[#1b5540] hover:bg-[#e8f0e8]"
-                            title="Lipa"
+                            title={t('Lipa')}
                           >
                             <Check className="w-3.5 h-3.5" />
                           </button>
@@ -466,7 +466,7 @@ export const InvoicesPage: React.FC = () => {
                         <button
                           onClick={() => deleteInvoice(inv.id)}
                           className="w-7 h-7 rounded grid place-items-center text-[#9e432b] hover:bg-[#f7e4db]"
-                          title="Futa"
+                          title={t('Futa')}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -480,13 +480,13 @@ export const InvoicesPage: React.FC = () => {
             {/* Table Foot */}
             <div className="p-3.5 px-4 bg-[#fcfaf4] border-t border-[#e2dccd] flex items-center justify-between text-[11px] text-[#746e7d]">
               <div>
-                Inaonyesha <strong className="text-[#14231c]">{filteredInvoices.length}</strong> kati ya {state.invoices.length} ankara
+                {t('Inaonyesha')} <strong className="text-[#14231c]">{filteredInvoices.length}</strong> {t('kati ya')} {state.invoices.length} {t('ankara')}
               </div>
               <div>
                 {overdueCount > 0 ? (
-                  <span className="text-[#9e432b] font-bold">{overdueCount} zimechelewa</span>
+                  <span className="text-[#9e432b] font-bold">{overdueCount} {t('zimechelewa')}</span>
                 ) : (
-                  <span>Zote ziko kwenye wakati</span>
+                  <span>{t('Zote ziko kwenye wakati')}</span>
                 )}
               </div>
             </div>

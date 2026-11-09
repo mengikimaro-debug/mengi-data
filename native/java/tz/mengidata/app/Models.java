@@ -129,4 +129,42 @@ final class Models {
         boolean bookmarked;
         String updatedAt = "";
     }
+
+    static final class SavingsGoal {
+        String id = "";
+        String title = "";
+        double targetAmount = 0;
+        double currentAmount = 0;
+        String targetDate = "";
+        String notes = "";
+        String createdAt = "";
+        String updatedAt = "";
+
+        double progressRatio() {
+            if (targetAmount <= 0) return 1.0;
+            return Math.min(Math.max(currentAmount / targetAmount, 0.0), 1.0);
+        }
+
+        int progressPercent() {
+            return (int) Math.round(progressRatio() * 100);
+        }
+
+        double remaining() {
+            return Math.max(targetAmount - currentAmount, 0);
+        }
+    }
+
+    static final class SavingsLog {
+        String id = "";
+        String savingsId = "";
+        String type = "deposit"; // deposit | withdraw
+        double amount = 0;
+        String date = Util.today();
+        String note = "";
+        String createdAt = "";
+
+        boolean deposit() {
+            return "deposit".equals(type);
+        }
+    }
 }

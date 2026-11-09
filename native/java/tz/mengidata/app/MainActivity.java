@@ -53,8 +53,8 @@ public class MainActivity extends Activity {
 
     private static final int REQUEST_SAVE_FILE = 2001;
     private static final int REQUEST_IMPORT_BACKUP = 2002;
-    static final String[] TABS = {"dashboard", "transactions", "invoices", "bills", "reports", "notebook"};
-    static final String[] TAB_LABELS = {"Dashibodi", "Miamala", "Ankara", "Bili", "Ripoti", "Daftari"};
+    static final String[] TABS = {"dashboard", "transactions", "invoices", "bills", "saver", "reports", "notebook"};
+    static final String[] TAB_LABELS = {"Dashibodi", "Miamala", "Ankara", "Bili", "Akiba", "Ripoti", "Daftari"};
 
     private Db db;
     private FrameLayout content;
@@ -418,6 +418,7 @@ public class MainActivity extends Activity {
             case "transactions": return R.drawable.ic_swap;
             case "invoices": return R.drawable.ic_file;
             case "bills": return R.drawable.ic_receipt;
+            case "saver": return R.drawable.ic_saver;
             case "reports": return R.drawable.ic_chart;
             case "notebook": return R.drawable.ic_note;
             default: return R.drawable.ic_home;
@@ -431,6 +432,7 @@ public class MainActivity extends Activity {
             case "transactions": page = new TransactionsPage(this, db); break;
             case "invoices": page = new InvoicesPage(this, db); break;
             case "bills": page = new BillsPage(this, db); break;
+            case "saver": page = new SaverPage(this, db); break;
             case "reports": page = new ReportsPage(this, db); break;
             case "notebook": page = new NotebookPage(this, db); break;
             case "settings": page = new SettingsPage(this, db); break;

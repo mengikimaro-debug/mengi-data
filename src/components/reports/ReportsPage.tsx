@@ -131,7 +131,7 @@ export const ReportsPage: React.FC = () => {
           <div>
             <div style="font-size:24px;font-weight:700;color:#123a2c">${state.settings.businessName}</div>
             <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#746e7d;margin-top:2px">
-              RIPOTI YA KIFEDHA YA MWAKA ${currentYear}
+              ${t('RIPOTI YA KIFEDHA YA MWAKA')} ${currentYear}
             </div>
           </div>
           <div style="text-align:right;font-size:10px;color:#746e7d">
@@ -142,15 +142,15 @@ export const ReportsPage: React.FC = () => {
 
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:20px 0;padding:16px;background:#f8f4ea;border:1px solid #ece7da;border-radius:10px">
           <div>
-            <div style="font-size:9px;text-transform:uppercase;color:#746e7d">Mapato Yote</div>
+            <div style="font-size:9px;text-transform:uppercase;color:#746e7d">${t('Mapato Yote')}</div>
             <div style="font-size:18px;font-weight:700;color:#1b5540">TZS ${fmt(totalIncome)}</div>
           </div>
           <div>
-            <div style="font-size:9px;text-transform:uppercase;color:#746e7d">Matumizi Yote</div>
+            <div style="font-size:9px;text-transform:uppercase;color:#746e7d">${t('Matumizi Yote')}</div>
             <div style="font-size:18px;font-weight:700;color:#9e432b">TZS ${fmt(totalExpense)}</div>
           </div>
           <div>
-            <div style="font-size:9px;text-transform:uppercase;color:#746e7d">Faida Halisi</div>
+            <div style="font-size:9px;text-transform:uppercase;color:#746e7d">${t('Faida Halisi')}</div>
             <div style="font-size:18px;font-weight:700;color:#14231c">TZS ${fmt(netProfit)} (${profitMargin.toFixed(1)}%)</div>
           </div>
         </div>
@@ -158,11 +158,11 @@ export const ReportsPage: React.FC = () => {
         <table>
           <thead>
             <tr>
-              <th>Mwezi</th>
-              <th style="text-align:right">Mapato (TZS)</th>
-              <th style="text-align:right">Matumizi (TZS)</th>
-              <th style="text-align:right">Faida (TZS)</th>
-              <th style="text-align:right">Margin</th>
+              <th>${t('Mwezi')}</th>
+              <th style="text-align:right">${t('Mapato (TZS)')}</th>
+              <th style="text-align:right">${t('Matumizi (TZS)')}</th>
+              <th style="text-align:right">${t('Faida (TZS)')}</th>
+              <th style="text-align:right">${t('Margin')}</th>
             </tr>
           </thead>
           <tbody>
@@ -170,7 +170,7 @@ export const ReportsPage: React.FC = () => {
           </tbody>
           <tfoot>
             <tr style="font-weight:700;border-top:2px solid #123a2c">
-              <td>JUMLA</td>
+              <td>${t('JUMLA')}</td>
               <td style="text-align:right">${fmt(tableTotalInc)}</td>
               <td style="text-align:right">${fmt(tableTotalExp)}</td>
               <td style="text-align:right">${fmt(tableTotalNet)}</td>
@@ -181,7 +181,7 @@ export const ReportsPage: React.FC = () => {
 
         <div style="margin-top:24px;padding-top:10px;border-top:1px solid #ece7da;font-size:9px;color:#6d7b72;display:flex;justify-content:space-between">
           <span>${t('Imetolewa:')} ${dateLong(todayISO(), language)}</span>
-          <span>Mengidata — Mfumo wa Fedha</span>
+          <span>${t('Mengidata — Mfumo wa Fedha')}</span>
         </div>
       </div>
     `;
@@ -241,8 +241,8 @@ export const ReportsPage: React.FC = () => {
 
             <p className="text-[12px] text-[#aac0b2] max-w-lg leading-relaxed">
               {totalIncome > 0
-                ? `Biashara imetengeneza faida halisi ya ${profitMargin.toFixed(1)}% kutokana na mapato ya ${money(totalIncome)} mwaka huu. Endelea kufuatilia miamala ili kupata picha sahihi kila siku.`
-                : 'Bado hakuna miamala iliyorekodiwa mwaka huu. Ongeza miamala au ankara ili ripoti ianze kuonyesha mwenendo wako.'}
+                ? `${t('Biashara imetengeneza faida halisi ya')}${profitMargin.toFixed(1)}% ${t('kutokana na mapato ya')}${money(totalIncome)} ${t('mwaka huu. Endelea kufuatilia miamala ili kupata picha sahihi kila siku.')}`
+                : t('Bado hakuna miamala iliyorekodiwa mwaka huu. Ongeza miamala au ankara ili ripoti ianze kuonyesha mwenendo wako.')}
             </p>
           </div>
 
@@ -287,7 +287,7 @@ export const ReportsPage: React.FC = () => {
                 {t('Ankara zilizotolewa')}
               </div>
               <div className="text-[20px] font-bold text-[#14231c] font-mono-numbers mt-0.5">
-                {issuedInvoices.length} {t('ankara')}
+                {issuedInvoices.length} {t('malengo ya akiba yamesajiliwa'.replace('malengo ya akiba yamesajiliwa', 'ankara'))}
               </div>
             </div>
           </div>
@@ -373,13 +373,13 @@ export const ReportsPage: React.FC = () => {
           {/* Expenses by Category */}
           <div className="p-5 rounded-[20px] bg-[#fcfaf4] border border-[#e2dccd] shadow-[0_1px_2px_rgba(20,35,28,.035)]">
             <h3 className="text-[13.5px] font-bold text-[#14231c] tracking-tight mb-1">
-              Matumizi kwa kundi
+              {t('Matumizi kwa kundi')}
             </h3>
-            <p className="text-[10.5px] text-[#746e7d] mb-3">Mwaka huu {currentYear}</p>
+            <p className="text-[10.5px] text-[#746e7d] mb-3">{t('Mwaka huu')} {currentYear}</p>
 
             {expenseCategoryList.length === 0 ? (
               <div className="py-6 text-center text-[11px] text-[#746e7d]">
-                Hakuna matumizi yaliyorekodiwa mwaka huu.
+                {t('Hakuna matumizi yaliyorekodiwa mwaka huu.')}
               </div>
             ) : (
               <div className="space-y-2.5">
@@ -407,13 +407,13 @@ export const ReportsPage: React.FC = () => {
           {/* Income by Category */}
           <div className="p-5 rounded-[20px] bg-[#fcfaf4] border border-[#e2dccd] shadow-[0_1px_2px_rgba(20,35,28,.035)]">
             <h3 className="text-[13.5px] font-bold text-[#14231c] tracking-tight mb-1">
-              Mapato kwa kundi
+              {t('Mapato kwa kundi')}
             </h3>
-            <p className="text-[10.5px] text-[#746e7d] mb-3">Mwaka huu {currentYear}</p>
+            <p className="text-[10.5px] text-[#746e7d] mb-3">{t('Mwaka huu')} {currentYear}</p>
 
             {incomeCategoryList.length === 0 ? (
               <div className="py-6 text-center text-[11px] text-[#746e7d]">
-                Hakuna mapato yaliyorekodiwa mwaka huu.
+                {t('Hakuna mapato yaliyorekodiwa mwaka huu.')}
               </div>
             ) : (
               <div className="space-y-2.5">

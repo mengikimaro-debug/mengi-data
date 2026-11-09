@@ -201,7 +201,7 @@ export const SettingsPage: React.FC = () => {
         });
       } catch (err) {
         console.error(err);
-        addToast('Faili si sahihi. Tafadhali chagua faili sahihi la Mengidata (.json).', 'error');
+        addToast(t('Faili si sahihi. Tafadhali chagua faili sahihi la Mengidata (.json).'), 'error');
       }
     };
     reader.readAsText(file);
@@ -684,7 +684,7 @@ export const SettingsPage: React.FC = () => {
                 <FileSpreadsheet className="w-4 h-4 text-[#1b5540] shrink-0 mt-0.5" />
                 <div className="flex-1">
                   <div className="text-[11.5px] font-bold text-[#14231c]">{t('Pakua miamala (CSV)')}</div>
-                  <p className="text-[10px] text-[#746e7d] mt-0.5 mb-2">Fungua kwenye Microsoft Excel au Google Sheets kwa uchambuzi zaidi.</p>
+                  <p className="text-[10px] text-[#746e7d] mt-0.5 mb-2">{t('Fungua kwenye Microsoft Excel au Google Sheets kwa uchambuzi zaidi.')}</p>
                   <button
                     onClick={() => exportTransactionsCSV(state.transactions)}
                     className="px-2.5 py-1 rounded-[7px] bg-[#fcfaf4] border border-[#d2cab7] text-[10.5px] font-bold text-[#14231c] hover:bg-white"
@@ -730,8 +730,7 @@ export const SettingsPage: React.FC = () => {
               <h3 className="text-[13.5px] font-bold tracking-tight">{t('Inafanya kazi bila intaneti')}</h3>
             </div>
             <p className="text-[10.5px] text-[#d8d2df] leading-relaxed">
-              Programu hii na data yako zote ziko kwenye simu hii. Hakuna taarifa inayotumwa mtandaoni —
-              unaweza kuandika miamala, kutoa ankara na kupakua PDF bila kuwa na bando.
+              {t('Programu hii na data yako zote ziko kwenye simu hii. Hakuna taarifa inayotumwa mtandaoni — unaweza kuandika miamala, kutoa ankara na kupakua PDF bila kuwa na bando.')}
             </p>
             <div className="pt-2.5 border-t border-white/10 flex items-center justify-between text-[9.5px] text-white/60">
               <span className="inline-flex items-center gap-1.5">
@@ -741,7 +740,7 @@ export const SettingsPage: React.FC = () => {
               <span>Toleo {nativeAppVersion() || '1.0.0'}</span>
             </div>
             <p className="text-[9.5px] text-[#a3baac] leading-relaxed">
-              Kwenye Android, chagua mahali pa kuhifadhi faili. Kwenye tovuti, faili hupakuliwa moja kwa moja.
+              {t('Kwenye Android, chagua mahali pa kuhifadhi faili. Kwenye tovuti, faili hupakuliwa moja kwa moja.')}
             </p>
           </div>
 
@@ -749,7 +748,7 @@ export const SettingsPage: React.FC = () => {
           <div className="p-5 rounded-[20px] bg-[#fdf5f1] border border-[#eccbbc] shadow-[0_1px_2px_rgba(20,35,28,.035)] space-y-3">
             <div className="flex items-center gap-2 text-[#9e432b]">
               <AlertTriangle className="w-4 h-4" />
-              <h3 className="text-[13.5px] font-bold tracking-tight">Eneo la hatari</h3>
+              <h3 className="text-[13.5px] font-bold tracking-tight">{t('Eneo la hatari')}</h3>
             </div>
             <p className="text-[10.5px] text-[#746e7d] leading-relaxed">
               {t('Kitendo hiki kitafuta miamala, ankara na bili zote kwenye hifadhi ya ndani ya kifaa hiki. Hakikisha umepakua backup kwanza.')}
@@ -758,7 +757,7 @@ export const SettingsPage: React.FC = () => {
               onClick={handleClearAll}
               className="w-full py-2 px-3 rounded-[9px] bg-[#bd5a3d] text-white text-[11.5px] font-bold hover:bg-[#9e432b] transition-colors"
             >
-              Futa data zote
+              {t('Futa data zote')}
             </button>
           </div>
         </div>

@@ -199,10 +199,11 @@ export const DashboardPage: React.FC = () => {
         <div className="premium-segment self-start sm:self-auto" role="group" aria-label={t('Chagua kipindi')}>
           {(
             [
+              { id: 'day', label: t('Siku') },
+              { id: 'week', label: t('Wiki') },
               { id: 'month', label: t('Mwezi') },
-              { id: 'quarter', label: t('Robo') },
-              { id: 'year', label: t('Mwaka') },
-              { id: 'all', label: t('Yote') }
+              { id: 'months6', label: t('Miezi') },
+              { id: 'year', label: t('Mwaka') }
             ] as { id: PeriodKey; label: string }[]
           ).map(p => {
             const isActive = period === p.id;
@@ -242,7 +243,7 @@ export const DashboardPage: React.FC = () => {
                 {incomeTrend.isUp ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
                 {incomeTrend.text}
               </span>
-              <span>{bounds.key === 'all' ? 'yote' : `kutoka ${bounds.prevLabel}`}</span>
+              <span>{bounds.key === 'all' ? t('yote') : `${t('kutoka ')}${bounds.prevLabel}`}</span>
             </div>
           </div>
         </div>
@@ -267,7 +268,7 @@ export const DashboardPage: React.FC = () => {
                 {expenseTrend.isUp ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
                 {expenseTrend.text}
               </span>
-              <span>{bounds.key === 'all' ? 'yote' : `kutoka ${bounds.prevLabel}`}</span>
+              <span>{bounds.key === 'all' ? t('yote') : `${t('kutoka ')}${bounds.prevLabel}`}</span>
             </div>
           </div>
         </div>
@@ -291,7 +292,7 @@ export const DashboardPage: React.FC = () => {
               <span className="font-bold text-[#d8f36b]">
                 {currentMargin.toFixed(1)}%
               </span>
-              <span>margin ya faida</span>
+              <span>{t('margin ya faida')}</span>
             </div>
           </div>
         </div>
@@ -312,10 +313,10 @@ export const DashboardPage: React.FC = () => {
               {fmt(totalReceivable)}
             </div>
             <div className="flex items-center gap-2 mt-2 text-[10.5px] text-[#746e7d]">
-              <span>{unpaidInvoices.length} hazijalipwa</span>
+              <span>{unpaidInvoices.length} {t('hazijalipwa')}</span>
               {overdueInvoicesCount > 0 && (
                 <span className="px-1.5 py-0.5 rounded-full bg-[#f7e4db] text-[#9e432b] text-[9.5px] font-bold">
-                  {overdueInvoicesCount} zimechelewa
+                  {overdueInvoicesCount} {t('zimechelewa')}
                 </span>
               )}
             </div>
@@ -416,7 +417,7 @@ export const DashboardPage: React.FC = () => {
 
             <div className="flex justify-between items-center px-4 pt-2 text-[9px] text-[#98a39b] font-medium">
               <span>0 TZS</span>
-              <span>Kiwango cha juu: {moneyCompact(maxVal)}</span>
+              <span>{t('Kiwango cha juu:')} {moneyCompact(maxVal)}</span>
             </div>
           </div>
         </div>
@@ -479,10 +480,10 @@ export const DashboardPage: React.FC = () => {
                           <div className="text-[10px] text-[#746e7d] flex items-center gap-1.5">
                             <span className={isLate ? 'text-[#9e432b] font-bold' : ''}>
                               {isLate
-                                ? `imechelewa siku ${Math.abs(days)}`
+                                ? `${t('imechelewa siku')} ${Math.abs(days)}`
                                 : days === 0
-                                ? 'leo'
-                                : `siku ${days}`}
+                                ? t('leo')
+                                : `${t('siku')} ${days}`}
                             </span>
                             <span>·</span>
                             <span>{b.category}</span>
@@ -536,7 +537,7 @@ export const DashboardPage: React.FC = () => {
               onClick={() => setActivePage('transactions')}
               className="text-[11px] font-bold text-[#1b5540] hover:underline inline-flex items-center gap-0.5"
             >
-              Ona yote <ChevronRight className="w-3.5 h-3.5" />
+              {t('Ona yote')} <ChevronRight className="w-3.5 h-3.5" />
             </button>
           </div>
 

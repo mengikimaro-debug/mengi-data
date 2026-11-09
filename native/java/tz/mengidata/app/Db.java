@@ -19,6 +19,8 @@ import tz.mengidata.app.Models.Bill;
 import tz.mengidata.app.Models.Invoice;
 import tz.mengidata.app.Models.InvoiceItem;
 import tz.mengidata.app.Models.NotebookEntry;
+import tz.mengidata.app.Models.SavingsGoal;
+import tz.mengidata.app.Models.SavingsLog;
 import tz.mengidata.app.Models.Settings;
 import tz.mengidata.app.Models.Txn;
 
@@ -26,7 +28,7 @@ import tz.mengidata.app.Models.Txn;
 final class Db extends SQLiteOpenHelper {
 
     private static final String NAME = "mengi_data_native.db";
-    private static final int VERSION = 2;
+    private static final int VERSION = 3;
     static final int MAX_NOTEBOOK_PAGES = 500;
 
     private static Db instance;
@@ -61,6 +63,7 @@ final class Db extends SQLiteOpenHelper {
                 "id TEXT PRIMARY KEY, name TEXT, category TEXT, payee TEXT, amount REAL, due_date TEXT," +
                 "paid INTEGER, paid_date TEXT, method TEXT, recurring INTEGER, notes TEXT, linked_txn_id TEXT, created_at TEXT)");
         createNotebookTable(db);
+        createSavingsTables(db);
         db.execSQL("CREATE INDEX idx_txn_date ON transactions(date)");
         db.execSQL("CREATE INDEX idx_inv_issue ON invoices(issue_date)");
         db.execSQL("CREATE INDEX idx_bill_due ON bills(due_date)");
@@ -72,12 +75,22 @@ final class Db extends SQLiteOpenHelper {
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
         if (oldVersion < 2) createNotebookTable(db);
+        if (oldVersion < 3) createSavingsTables(db);
     }
 
     private static void createNotebookTable(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE IF NOT EXISTS notebook_pages (" +
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, content TEXT NOT NULL DEFAULT ''," +
                 "bookmarked INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL)");
+    }
+
+    private static void createSavingsTables(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS savings (" +
+                "id TEXT PRIMARY KEY, title TEXT, target_amount REAL, current_amount REAL," +
+                "target_date TEXT, notes TEXT, created_at TEXT, updated_at TEXT)");
+        db.execSQL("CREATE TABLE IF NOT EXISTS savings_logs (" +
+                "id TEXT PRIMARY KEY, savings_id TEXT, type TEXT, amount REAL, date TEXT, note TEXT, created_at TEXT)");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_savings_date ON savings_logs(date)");
     }
 
     // ------------------------------------------------------------------ settings
@@ -224,6 +237,151 @@ final class Db extends SQLiteOpenHelper {
 
     void deleteNotebookPage(long id) {
         getWritableDatabase().delete("notebook_pages", "id = ?", new String[]{Long.toString(id)});
+    }
+
+    // ------------------------------------------------------------------ savings
+
+    List<SavingsGoal> savingsGoals() {
+        List<SavingsGoal> list = new ArrayList<>();
+        Cursor c = getReadableDatabase().rawQuery("SELECT * FROM savings ORDER BY created_at DESC", null);
+        try {
+            while (c.moveToNext()) list.add(readSavingsGoal(c));
+        } finally {
+            c.close();
+        }
+        return list;
+    }
+
+    SavingsGoal findSavingsGoal(String id) {
+        if (id == null) return null;
+        Cursor c = getReadableDatabase().rawQuery("SELECT * FROM savings WHERE id = ?", new String[]{id});
+        try {
+            return c.moveToFirst() ? readSavingsGoal(c) : null;
+        } finally {
+            c.close();
+        }
+    }
+
+    private static SavingsGoal readSavingsGoal(Cursor c) {
+        SavingsGoal s = new SavingsGoal();
+        s.id = str(c, "id", "");
+        s.title = str(c, "title", "");
+        s.targetAmount = dbl(c, "target_amount", 0);
+        s.currentAmount = dbl(c, "current_amount", 0);
+        s.targetDate = str(c, "target_date", "");
+        s.notes = str(c, "notes", "");
+        s.createdAt = str(c, "created_at", "");
+        s.updatedAt = str(c, "updated_at", "");
+        return s;
+    }
+
+    void saveSavingsGoal(SavingsGoal s) {
+        if (s.id == null || s.id.isEmpty()) s.id = UUID.randomUUID().toString();
+        String now = Util.today();
+        if (s.createdAt == null || s.createdAt.isEmpty()) s.createdAt = now;
+        s.updatedAt = now;
+        ContentValues v = new ContentValues();
+        v.put("id", s.id);
+        v.put("title", s.title);
+        v.put("target_amount", s.targetAmount);
+        v.put("current_amount", s.currentAmount);
+        v.put("target_date", s.targetDate);
+        v.put("notes", s.notes);
+        v.put("created_at", s.createdAt);
+        v.put("updated_at", s.updatedAt);
+        getWritableDatabase().insertWithOnConflict("savings", null, v, SQLiteDatabase.CONFLICT_REPLACE);
+    }
+
+    void deleteSavingsGoal(String id) {
+        if (id == null) return;
+        SQLiteDatabase db = getWritableDatabase();
+        db.beginTransaction();
+        try {
+            db.delete("savings_logs", "savings_id = ?", new String[]{id});
+            db.delete("savings", "id = ?", new String[]{id});
+            db.setTransactionSuccessful();
+        } finally {
+            db.endTransaction();
+        }
+    }
+
+    void recordSavingsTransaction(String savingsId, String type, double amount, String date, String note) {
+        if (savingsId == null || amount <= 0) return;
+        SQLiteDatabase db = getWritableDatabase();
+        db.beginTransaction();
+        try {
+            SavingsGoal s = findSavingsGoal(savingsId);
+            if (s == null) return;
+            SavingsLog log = new SavingsLog();
+            log.id = UUID.randomUUID().toString();
+            log.savingsId = savingsId;
+            log.type = type;
+            log.amount = amount;
+            log.date = date == null || date.isEmpty() ? Util.today() : date;
+            log.note = note == null ? "" : note;
+            log.createdAt = new java.util.Date().toString();
+
+            ContentValues lv = new ContentValues();
+            lv.put("id", log.id);
+            lv.put("savings_id", log.savingsId);
+            lv.put("type", log.type);
+            lv.put("amount", log.amount);
+            lv.put("date", log.date);
+            lv.put("note", log.note);
+            lv.put("created_at", log.createdAt);
+            db.insert("savings_logs", null, lv);
+
+            double newAmount = "deposit".equals(type) ? s.currentAmount + amount : Math.max(0, s.currentAmount - amount);
+            ContentValues sv = new ContentValues();
+            sv.put("current_amount", newAmount);
+            sv.put("updated_at", Util.today());
+            db.update("savings", sv, "id = ?", new String[]{savingsId});
+
+            db.setTransactionSuccessful();
+        } finally {
+            db.endTransaction();
+        }
+    }
+
+    List<SavingsLog> savingsLogs(String savingsId) {
+        List<SavingsLog> list = new ArrayList<>();
+        if (savingsId == null) return list;
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT * FROM savings_logs WHERE savings_id = ? ORDER BY date DESC, created_at DESC", new String[]{savingsId});
+        try {
+            while (c.moveToNext()) {
+                SavingsLog l = new SavingsLog();
+                l.id = str(c, "id", "");
+                l.savingsId = str(c, "savings_id", "");
+                l.type = str(c, "type", "deposit");
+                l.amount = dbl(c, "amount", 0);
+                l.date = str(c, "date", Util.today());
+                l.note = str(c, "note", "");
+                l.createdAt = str(c, "created_at", "");
+                list.add(l);
+            }
+        } finally {
+            c.close();
+        }
+        return list;
+    }
+
+    double totalSavings() {
+        Cursor c = getReadableDatabase().rawQuery("SELECT SUM(current_amount) FROM savings", null);
+        try {
+            return c.moveToFirst() ? c.getDouble(0) : 0;
+        } finally {
+            c.close();
+        }
+    }
+
+    double totalSavingsTarget() {
+        Cursor c = getReadableDatabase().rawQuery("SELECT SUM(target_amount) FROM savings", null);
+        try {
+            return c.moveToFirst() ? c.getDouble(0) : 0;
+        } finally {
+            c.close();
+        }
     }
 
     // ------------------------------------------------------------------ transactions
@@ -744,6 +902,23 @@ final class Db extends SQLiteOpenHelper {
                 Util.addDays(t, 5), false, "", true);
         seedBill(db, "Kodi ya Mapato (TRA Makadirio)", "Kodi & vibali", "TRA", 450000,
                 Util.addDays(t, 10), false, "", false);
+
+        seedSavings(db, "Mfuko wa Dharura ya Biashara", 5000000, 2800000, Util.addDays(t, 180), "Akiba ya dharura ya kulinda biashara.");
+        seedSavings(db, "Kodi ya Pango ya Mwaka Ujao", 3500000, 1400000, Util.addDays(t, 120), "Akiba ya kodi ya pango.");
+        seedSavings(db, "Kupanua Akiba ya Vifaa", 2000000, 650000, Util.addDays(t, 90), "Akiba ya kununua vifaa vya kazi.");
+    }
+
+    private static void seedSavings(SQLiteDatabase db, String title, double target, double current, String date, String notes) {
+        ContentValues v = new ContentValues();
+        v.put("id", UUID.randomUUID().toString());
+        v.put("title", title);
+        v.put("target_amount", target);
+        v.put("current_amount", current);
+        v.put("target_date", date);
+        v.put("notes", notes);
+        v.put("created_at", Util.today());
+        v.put("updated_at", Util.today());
+        db.insert("savings", null, v);
     }
 
     private static void seedTxn(SQLiteDatabase db, String type, String date, String desc, String party,
@@ -957,6 +1132,22 @@ final class Db extends SQLiteOpenHelper {
                 jn.put(o);
             }
             root.put("notebook", jn);
+
+            JSONArray jsavings = new JSONArray();
+            for (SavingsGoal sg : savingsGoals()) {
+                JSONObject o = new JSONObject();
+                o.put("id", sg.id);
+                o.put("title", sg.title);
+                o.put("targetAmount", sg.targetAmount);
+                o.put("currentAmount", sg.currentAmount);
+                o.put("targetDate", sg.targetDate);
+                o.put("notes", sg.notes);
+                o.put("createdAt", sg.createdAt);
+                o.put("updatedAt", sg.updatedAt);
+                jsavings.put(o);
+            }
+            root.put("savings", jsavings);
+
             return root.toString(2);
         } catch (JSONException e) {
             throw new RuntimeException(e);
@@ -1076,6 +1267,25 @@ final class Db extends SQLiteOpenHelper {
                     values.put("bookmarked", o.optBoolean("bookmarked", false) ? 1 : 0);
                     values.put("updated_at", new java.util.Date().toString());
                     db.insertOrThrow("notebook_pages", null, values);
+                }
+            }
+
+            JSONArray jsavings = root.optJSONArray("savings");
+            if (jsavings != null) {
+                db.delete("savings", null, null);
+                db.delete("savings_logs", null, null);
+                for (int i = 0; i < jsavings.length(); i++) {
+                    JSONObject o = jsavings.getJSONObject(i);
+                    SavingsGoal sg = new SavingsGoal();
+                    sg.id = o.optString("id");
+                    sg.title = o.optString("title");
+                    sg.targetAmount = o.optDouble("targetAmount", 0);
+                    sg.currentAmount = o.optDouble("currentAmount", 0);
+                    sg.targetDate = o.optString("targetDate");
+                    sg.notes = o.optString("notes");
+                    sg.createdAt = o.optString("createdAt");
+                    sg.updatedAt = o.optString("updatedAt");
+                    saveSavingsGoal(sg);
                 }
             }
             db.setTransactionSuccessful();

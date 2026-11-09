@@ -71,19 +71,20 @@ export const Topbar: React.FC = () => {
   };
 
   return (
-    <header className="sticky top-0 z-30 h-[76px] lg:h-[84px] flex items-center gap-4 px-4 lg:px-8 bg-[#f3efe5]/90 backdrop-blur-xl border-b border-[#d2cab7]/60 shadow-[0_4px_24px_rgba(8,30,22,0.04)] transition-all">
+    <header className="sticky top-0 z-30 h-[76px] lg:h-[84px] flex items-center gap-4 px-4 lg:px-8 backdrop-blur-xl border-b transition-all" style={{ background: 'var(--topbar-bg)', borderColor: 'var(--topbar-border)' }}>
       <div className="flex items-center gap-3 min-w-0">
         {/* Mobile menu trigger */}
         <button
           onClick={() => setIsMobileSidebarOpen(true)}
-          className="lg:hidden w-[40px] h-[40px] rounded-[12px] border border-[#e2dccd] bg-[#fcfaf4] text-[#34483e] grid place-items-center hover:bg-white active:scale-95 transition-all shadow-xs"
+          className="lg:hidden w-[40px] h-[40px] rounded-[12px] border grid place-items-center active:scale-95 transition-all shadow-xs"
+          style={{ borderColor: 'var(--topbar-btn-border)', backgroundColor: 'var(--topbar-btn-bg)', color: 'var(--topbar-btn-text)' }}
           aria-label={t('Fungua menyu')}
         >
           <Menu className="w-5 h-5" />
         </button>
 
         <div>
-          <div className="flex items-center gap-1.5 text-[9px] tracking-[0.2em] uppercase text-[#1b5540] font-extrabold leading-tight">
+          <div className="flex items-center gap-1.5 text-[9px] tracking-[0.2em] uppercase font-extrabold leading-tight" style={{ color: 'var(--topbar-eyebrow)' }}>
             <span className="premium-pulse-dot" />
             {currentMeta.eyebrow}
           </div>
@@ -94,7 +95,7 @@ export const Topbar: React.FC = () => {
       </div>
 
       {/* Date display (hidden on small screens) */}
-      <div className="hidden md:flex items-center gap-2 text-[11.5px] text-[#746e7d] ml-4 font-medium whitespace-nowrap">
+      <div className="hidden md:flex items-center gap-2 text-[11.5px] ml-4 font-medium whitespace-nowrap" style={{ color: 'var(--topbar-text)' }}>
         <Calendar className="w-3.5 h-3.5 opacity-80" />
         <span>{dateLong(todayISO(), language)}</span>
       </div>
@@ -108,8 +109,8 @@ export const Topbar: React.FC = () => {
           type="button"
           onClick={() => setLanguage(language === 'sw' ? 'en' : 'sw')}
           className="inline-flex items-center gap-1.5 h-[38px] px-3 rounded-[12px] border border-[#1b5540]/35 bg-gradient-to-r from-[#123a2c] to-[#0c2b22] text-[#f4f9e8] text-[11px] font-bold shadow-[0_4px_14px_rgba(12,43,34,0.2)] hover:scale-[1.03] active:scale-[0.97] transition-all cursor-pointer"
-          title={language === 'sw' ? 'Badili kuwa English' : 'Switch to Kiswahili'}
-          aria-label={language === 'sw' ? 'Badili kuwa English' : 'Switch to Kiswahili'}
+          title={language === 'sw' ? t('Badilisha kuwa Kiingereza') : t('Badilisha kuwa Kiswahili')}
+          aria-label={language === 'sw' ? t('Badilisha kuwa Kiingereza') : t('Badilisha kuwa Kiswahili')}
         >
           <Languages className="w-3.5 h-3.5 text-[#d8f36b]" />
           <span>{language === 'sw' ? 'SW' : 'EN'}</span>
@@ -121,11 +122,12 @@ export const Topbar: React.FC = () => {
         <button
           onClick={handleNotificationClick}
           title={totalReminders > 0 ? `${totalReminders} ${t('malipo yanahitaji uangalifu')}` : t('Taarifa za kumbusho')}
-          className="relative w-[38px] h-[38px] rounded-[11px] border border-[#e2dccd] bg-[#fcfaf4]/80 text-[#34483e] grid place-items-center hover:bg-white hover:border-[#d2cab7] transition-all"
+          className="relative w-[38px] h-[38px] rounded-[11px] border grid place-items-center transition-all"
+          style={{ borderColor: 'var(--topbar-btn-border)', backgroundColor: 'var(--topbar-btn-bg)', color: 'var(--topbar-btn-text)' }}
         >
           <Bell className="w-[17px] h-[17px]" />
           {totalReminders > 0 && (
-            <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-[#bd5a3d] ring-2 ring-[#fcfaf4]" />
+            <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-[#bd5a3d]" style={{ ringColor: 'var(--topbar-btn-bg)' }} />
           )}
         </button>
 
@@ -141,20 +143,24 @@ export const Topbar: React.FC = () => {
           </button>
 
           {menuOpen && (
-            <div className="premium-enter absolute right-0 top-[calc(100%+8px)] w-[230px] p-1.5 bg-[#fcfaf4] border border-[#e2dccd] rounded-[14px] shadow-[0_24px_70px_rgba(8,30,22,0.18)] z-50">
+            <div className="premium-enter absolute right-0 top-[calc(100%+8px)] w-[230px] p-1.5 border rounded-[14px] shadow-[0_24px_70px_rgba(8,30,22,0.18)] z-50"
+              style={{ backgroundColor: 'var(--topbar-dropdown-bg)', borderColor: 'var(--topbar-btn-border)' }}>
               <button
                 onClick={() => {
                   setMenuOpen(false);
                   openTxModal('income');
                 }}
-                className="flex items-center gap-2.5 w-full p-2 rounded-[9px] text-[12px] text-[#34483e] hover:bg-[#f8f4ea] hover:text-[#14231c] text-left transition-colors"
+                className="flex items-center gap-2.5 w-full p-2 rounded-[9px] text-[12px] text-left transition-colors"
+                style={{ color: 'var(--topbar-dropdown-text)' }}
+                onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--topbar-dropdown-hover)'; e.currentTarget.style.color = 'var(--topbar-dropdown-hover-text)'; }}
+                onMouseLeave={e => { e.currentTarget.style.backgroundColor = ''; e.currentTarget.style.color = 'var(--topbar-dropdown-text)'; }}
               >
                 <span className="w-7 h-7 rounded-[8px] grid place-items-center bg-[#e8f0e8] text-[#1b5540]">
                   <ArrowUpRight className="w-4 h-4" />
                 </span>
                 <div>
                   <div className="font-semibold">{t('Ingiza mapato')}</div>
-                  <div className="text-[10px] text-[#746e7d]">{t('Mauzo au malipo ya mteja')}</div>
+                  <div className="text-[10px]" style={{ color: 'var(--topbar-text)' }}>{t('Mauzo au malipo ya mteja')}</div>
                 </div>
               </button>
 
@@ -163,32 +169,38 @@ export const Topbar: React.FC = () => {
                   setMenuOpen(false);
                   openTxModal('expense');
                 }}
-                className="flex items-center gap-2.5 w-full p-2 rounded-[9px] text-[12px] text-[#34483e] hover:bg-[#f8f4ea] hover:text-[#14231c] text-left transition-colors"
+                className="flex items-center gap-2.5 w-full p-2 rounded-[9px] text-[12px] text-left transition-colors"
+                style={{ color: 'var(--topbar-dropdown-text)' }}
+                onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--topbar-dropdown-hover)'; e.currentTarget.style.color = 'var(--topbar-dropdown-hover-text)'; }}
+                onMouseLeave={e => { e.currentTarget.style.backgroundColor = ''; e.currentTarget.style.color = 'var(--topbar-dropdown-text)'; }}
               >
                 <span className="w-7 h-7 rounded-[8px] grid place-items-center bg-[#f7e4db] text-[#9e432b]">
                   <ArrowDownLeft className="w-4 h-4" />
                 </span>
                 <div>
                   <div className="font-semibold">{t('Ingiza matumizi')}</div>
-                  <div className="text-[10px] text-[#746e7d]">{t('Manunuzi au gharama za ofisi')}</div>
+                  <div className="text-[10px]" style={{ color: 'var(--topbar-text)' }}>{t('Manunuzi au gharama za ofisi')}</div>
                 </div>
               </button>
 
-              <div className="h-[1px] bg-[#e2dccd] my-1 mx-2" />
+              <div className="h-[1px] my-1 mx-2" style={{ backgroundColor: 'var(--topbar-dropdown-divider)' }} />
 
               <button
                 onClick={() => {
                   setMenuOpen(false);
                   openInvoiceBuilder();
                 }}
-                className="flex items-center gap-2.5 w-full p-2 rounded-[9px] text-[12px] text-[#34483e] hover:bg-[#f8f4ea] hover:text-[#14231c] text-left transition-colors"
+                className="flex items-center gap-2.5 w-full p-2 rounded-[9px] text-[12px] text-left transition-colors"
+                style={{ color: 'var(--topbar-dropdown-text)' }}
+                onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--topbar-dropdown-hover)'; e.currentTarget.style.color = 'var(--topbar-dropdown-hover-text)'; }}
+                onMouseLeave={e => { e.currentTarget.style.backgroundColor = ''; e.currentTarget.style.color = 'var(--topbar-dropdown-text)'; }}
               >
                 <span className="w-7 h-7 rounded-[8px] grid place-items-center bg-[#f8edd3] text-[#946510]">
                   <FilePlus className="w-4 h-4" />
                 </span>
                 <div>
                   <div className="font-semibold">{t('Tengeneza ankara')}</div>
-                  <div className="text-[10px] text-[#746e7d]">{t('Ankara ya PDF kwa mteja')}</div>
+                  <div className="text-[10px]" style={{ color: 'var(--topbar-text)' }}>{t('Ankara ya PDF kwa mteja')}</div>
                 </div>
               </button>
 
@@ -197,14 +209,17 @@ export const Topbar: React.FC = () => {
                   setMenuOpen(false);
                   openBillModal();
                 }}
-                className="flex items-center gap-2.5 w-full p-2 rounded-[9px] text-[12px] text-[#34483e] hover:bg-[#f8f4ea] hover:text-[#14231c] text-left transition-colors"
+                className="flex items-center gap-2.5 w-full p-2 rounded-[9px] text-[12px] text-left transition-colors"
+                style={{ color: 'var(--topbar-dropdown-text)' }}
+                onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--topbar-dropdown-hover)'; e.currentTarget.style.color = 'var(--topbar-dropdown-hover-text)'; }}
+                onMouseLeave={e => { e.currentTarget.style.backgroundColor = ''; e.currentTarget.style.color = 'var(--topbar-dropdown-text)'; }}
               >
                 <span className="w-7 h-7 rounded-[8px] grid place-items-center bg-[#e8f0e8] text-[#4b6f8b]">
                   <Receipt className="w-4 h-4" />
                 </span>
                 <div>
                   <div className="font-semibold">{t('Ongeza bili')}</div>
-                  <div className="text-[10px] text-[#746e7d]">{t('Kodi, umeme, mishahara')}</div>
+                  <div className="text-[10px]" style={{ color: 'var(--topbar-text)' }}>{t('Kodi, umeme, mishahara')}</div>
                 </div>
               </button>
             </div>

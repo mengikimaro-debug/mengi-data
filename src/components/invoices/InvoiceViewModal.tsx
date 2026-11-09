@@ -15,6 +15,7 @@ import { downloadBlob, printHTML, generateInvoiceHTML } from '../../utils/export
 export const InvoiceViewModal: React.FC = () => {
   const {
     state,
+    t,
     invoiceViewOpen,
     viewingInvoice,
     closeInvoiceView,
@@ -36,10 +37,10 @@ export const InvoiceViewModal: React.FC = () => {
         .replace(/[^a-z0-9\-_]+/gi, '-')
         .replace(/-+/g, '-');
       downloadBlob(blob, `${safeName}.pdf`);
-      addToast(`Ankara ${inv.number} imepakuliwa kama PDF.`);
+      addToast(`${t('Ankara ')}${inv.number} ${t('imepakuliwa kama PDF.')}`);
     } catch (e) {
       console.error(e);
-      addToast('Imeshindwa kupakua PDF.', 'error');
+      addToast(t('Imeshindwa kupakua PDF.'), 'error');
     }
   };
 
@@ -60,7 +61,7 @@ export const InvoiceViewModal: React.FC = () => {
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#e2dccd] bg-[#fcfaf4]/75 shrink-0">
           <div>
             <div className="text-[9px] font-bold tracking-[0.18em] uppercase text-[#1b5540]">
-              Hakiki ankara
+              {t('Hakiki ankara')}
             </div>
             <h2 className="font-display text-[20px] sm:text-[22px] font-semibold text-[#14231c] tracking-tight">
               Ankara {inv.number}
@@ -73,7 +74,7 @@ export const InvoiceViewModal: React.FC = () => {
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[9px] bg-[#fcfaf4] border border-[#d2cab7] text-[#14231c] text-[11px] font-semibold hover:bg-white transition-colors"
             >
               <Edit2 className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Hariri</span>
+              <span className="hidden sm:inline">{t('Hariri')}</span>
             </button>
 
             <button
@@ -81,7 +82,7 @@ export const InvoiceViewModal: React.FC = () => {
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[9px] bg-[#fcfaf4] border border-[#d2cab7] text-[#14231c] text-[11px] font-semibold hover:bg-white transition-colors"
             >
               <Printer className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Chapisha</span>
+              <span className="hidden sm:inline">{t('Chapisha')}</span>
             </button>
 
             <button
@@ -89,7 +90,7 @@ export const InvoiceViewModal: React.FC = () => {
               className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-[9px] bg-[#0c2b22] text-white text-[11px] font-semibold hover:bg-[#123a2c] transition-colors shadow-xs"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>Pakua PDF</span>
+              <span>{t('Pakua PDF')}</span>
             </button>
 
             <button
@@ -122,7 +123,7 @@ export const InvoiceViewModal: React.FC = () => {
 
               <div className="text-left sm:text-right">
                 <div className="text-[9px] uppercase tracking-[0.2em] text-[#6d7b72] font-bold">
-                  ANKARA
+                  {t('ANKARA')}
                 </div>
                 <div className="font-display text-[22px] font-bold text-[#123a2c] font-mono-numbers">
                   {inv.number}
@@ -149,7 +150,7 @@ export const InvoiceViewModal: React.FC = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 py-2">
               <div>
                 <div className="text-[9px] font-bold uppercase tracking-[0.15em] text-[#98a39b] mb-1.5">
-                  Imetolewa kwa
+                  {t('Imetolewa kwa')}
                 </div>
                 <div className="text-[15px] font-bold text-[#14231c]">
                   {inv.customerName}
@@ -162,14 +163,14 @@ export const InvoiceViewModal: React.FC = () => {
               <div className="grid grid-cols-2 gap-3 text-[11px] sm:text-right">
                 <div>
                   <div className="text-[9px] uppercase tracking-wider text-[#98a39b] font-bold">
-                    Tarehe ya kutolewa
+                    {t('Tarehe ya kutolewa')}
                   </div>
                   <div className="font-semibold text-[#0c2b22] mt-0.5">{dateLabel(inv.issueDate)}</div>
                 </div>
 
                 <div>
                   <div className="text-[9px] uppercase tracking-wider text-[#98a39b] font-bold">
-                    Tarehe ya malipo
+                    {t('Tarehe ya malipo')}
                   </div>
                   <div className="font-semibold text-[#0c2b22] mt-0.5">{dateLabel(inv.dueDate)}</div>
                 </div>
@@ -177,7 +178,7 @@ export const InvoiceViewModal: React.FC = () => {
                 {inv.paidDate && (
                   <div>
                     <div className="text-[9px] uppercase tracking-wider text-[#98a39b] font-bold">
-                      Tarehe iliyolipwa
+                      {t('Tarehe iliyolipwa')}
                     </div>
                     <div className="font-semibold text-[#0c2b22] mt-0.5">{dateLabel(inv.paidDate)}</div>
                   </div>
@@ -186,7 +187,7 @@ export const InvoiceViewModal: React.FC = () => {
                 {s.tin && (
                   <div>
                     <div className="text-[9px] uppercase tracking-wider text-[#98a39b] font-bold">
-                      TIN ya Biashara
+                      {t('TIN ya Biashara')}
                     </div>
                     <div className="font-semibold text-[#0c2b22] mt-0.5 font-mono">{s.tin}</div>
                   </div>
@@ -200,10 +201,10 @@ export const InvoiceViewModal: React.FC = () => {
                 <thead>
                   <tr className="bg-[#eef9bd] text-[#1b5540] text-[9.5px] uppercase tracking-wider border-b border-[#ece7da]">
                     <th className="py-2.5 px-3 w-8">#</th>
-                    <th className="py-2.5 px-3">Maelezo</th>
-                    <th className="py-2.5 px-3 text-right">Idadi</th>
-                    <th className="py-2.5 px-3 text-right">Bei (TZS)</th>
-                    <th className="py-2.5 px-3 text-right">Jumla (TZS)</th>
+                    <th className="py-2.5 px-3">{t('Maelezo')}</th>
+                    <th className="py-2.5 px-3 text-right">{t('Idadi')}</th>
+                    <th className="py-2.5 px-3 text-right">{t('Bei (TZS)')}</th>
+                    <th className="py-2.5 px-3 text-right">{t('Jumla (TZS)')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#eef9bd] text-[11.5px]">
@@ -230,32 +231,32 @@ export const InvoiceViewModal: React.FC = () => {
               <div className="space-y-3 text-[11px] text-[#6d7b72]">
                 {inv.notes && (
                   <div>
-                    <strong className="block text-[#123a2c] text-[11px] mb-1">Maelezo:</strong>
+                    <strong className="block text-[#123a2c] text-[11px] mb-1">{t('Maelezo:')}</strong>
                     <p className="whitespace-pre-line leading-relaxed">{inv.notes}</p>
                   </div>
                 )}
 
                 {s.paymentDetails && (
                   <div>
-                    <strong className="block text-[#123a2c] text-[11px] mb-1">Maelezo ya Malipo:</strong>
+                    <strong className="block text-[#123a2c] text-[11px] mb-1">{t('Maelezo ya Malipo:')}</strong>
                     <p className="whitespace-pre-line leading-relaxed">{s.paymentDetails}</p>
                   </div>
                 )}
 
                 <div className="font-display italic text-[#123a2c] text-[13px] pt-2">
-                  Asante kwa kufanya biashara nasi.
+                  {t('Asante kwa kufanya biashara nasi.')}
                 </div>
               </div>
 
               {/* Totals Table */}
               <div className="border border-[#ece7da] rounded-[8px] overflow-hidden text-[11px]">
                 <div className="flex justify-between p-2 px-3 border-b border-[#eef9bd]">
-                  <span className="text-[#6d7b72]">Jumla ndogo</span>
+                  <span className="text-[#6d7b72]">{t('Jumla ndogo')}</span>
                   <span className="font-mono font-semibold">{money(m.subtotal)}</span>
                 </div>
 
                 <div className="flex justify-between p-2 px-3 border-b border-[#eef9bd] text-[#a3462c]">
-                  <span>Punguzo</span>
+                  <span>{t('Punguzo')}</span>
                   <span className="font-mono font-semibold">− {money(m.discount)}</span>
                 </div>
 
@@ -265,17 +266,17 @@ export const InvoiceViewModal: React.FC = () => {
                 </div>
 
                 <div className="flex justify-between p-2.5 px-3 bg-[#123a2c] text-white font-bold text-[12px]">
-                  <span>JUMLA KUU</span>
+                  <span>{t('JUMLA KUU')}</span>
                   <span className="font-mono text-[#d8f36b]">{money(m.total)}</span>
                 </div>
 
                 <div className="flex justify-between p-2 px-3 border-b border-[#eef9bd]">
-                  <span className="text-[#6d7b72]">Iliyolipwa</span>
+                  <span className="text-[#6d7b72]">{t('Iliyolipwa')}</span>
                   <span className="font-mono font-semibold">{money(m.paid)}</span>
                 </div>
 
                 <div className="flex justify-between p-2.5 px-3 font-bold text-[12px] bg-[#faf6f2]">
-                  <span className="text-[#a3462c]">SALIO LINILODAIWA</span>
+                  <span className="text-[#a3462c]">{t('SALIO LINILODAIWA')}</span>
                   <span className="font-mono text-[#a3462c]">{money(m.balance)}</span>
                 </div>
               </div>
@@ -287,7 +288,7 @@ export const InvoiceViewModal: React.FC = () => {
                 <strong>{s.businessName}</strong> · {s.address} · {s.phone}
               </div>
               <div className="sm:text-right">
-                Ankara {inv.number} · Imetengenezwa na Mengidata
+                {t('Ankara ')}{inv.number} · {t('Imetengenezwa na Mengidata')}
               </div>
             </div>
           </div>
@@ -296,13 +297,13 @@ export const InvoiceViewModal: React.FC = () => {
         {/* Modal Foot */}
         <div className="flex items-center justify-between px-6 py-3 border-t border-[#e2dccd] bg-[#fcfaf4]/75 shrink-0">
           <div className="text-[11px] text-[#746e7d]">
-            Hali: <strong className="text-[#14231c]">{st.label}</strong>
+            {t('Hali:')} <strong className="text-[#14231c]">{st.label}</strong>
           </div>
           <button
             onClick={closeInvoiceView}
             className="px-4 py-2 rounded-[10px] bg-[#fcfaf4] border border-[#d2cab7] text-[12px] font-semibold text-[#14231c] hover:bg-white"
           >
-            Funga
+            {t('Funga')}
           </button>
         </div>
       </div>

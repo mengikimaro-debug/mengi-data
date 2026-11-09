@@ -9,7 +9,7 @@ kiotomatiki mara ya kwanza app mpya inapofunguliwa.
 | | |
 |---|---|
 | Faili la kusakinisha | `Mengidata.apk` |
-| Toleo | 1.8.1 |
+| Toleo | 1.8.6 |
 | Android | 7.0 (API 24) au zaidi |
 | Intaneti | Inahitajika kwa updates na viwango vya sarafu tu |
 | Lugha | Kiswahili na English |

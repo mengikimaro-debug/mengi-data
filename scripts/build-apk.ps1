@@ -9,8 +9,8 @@
 [CmdletBinding()]
 param(
     [string]$SdkRoot = "",
-    [string]$VersionName = "1.8.2",
-    [int]$VersionCode = 10
+    [string]$VersionName = "2.1.0",
+    [int]$VersionCode = 13
 )
 
 $ErrorActionPreference = "Continue"

@@ -34,6 +34,7 @@ import java.nio.charset.StandardCharsets;
 public final class WebActivity extends Activity {
     private static final int REQUEST_SAVE_FILE = 4101;
     private static final int REQUEST_OPEN_FILE = 4102;
+    private static final int REQUEST_BIOMETRIC = 4103;
     private static final String APP_ORIGIN = "https://appassets.androidplatform.net";
     private static final String APP_URL = APP_ORIGIN + "/assets/www/index.html";
 
@@ -69,7 +70,10 @@ public final class WebActivity extends Activity {
 
     private void openApp() {
         locked = false;
+        // Clear cached resources so a new APK version always loads fresh assets
+        android.webkit.CookieManager.getInstance().removeAllCookies(null);
         webView = new WebView(this);
+        webView.clearCache(true);
         webView.setBackgroundColor(Color.rgb(243, 239, 229));
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
@@ -80,6 +84,8 @@ public final class WebActivity extends Activity {
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         settings.setSupportMultipleWindows(false);
         settings.setJavaScriptCanOpenWindowsAutomatically(false);
+        // Disable HTTP cache for asset loading so updates are always visible
+        settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             settings.setSafeBrowsingEnabled(true);
         }
@@ -135,7 +141,12 @@ public final class WebActivity extends Activity {
             String assetPath = path.substring("/assets/".length());
             try {
                 InputStream stream = getAssets().open(assetPath);
-                return new WebResourceResponse(mimeType(assetPath), "UTF-8", stream);
+                // Prevent WebView from caching asset responses so APK updates load immediately
+                java.util.Map<String, String> headers = new java.util.HashMap<>();
+                headers.put("Cache-Control", "no-cache, no-store, must-revalidate");
+                headers.put("Pragma", "no-cache");
+                headers.put("Expires", "0");
+                return new WebResourceResponse(mimeType(assetPath), "UTF-8", 200, "OK", headers, stream);
             } catch (FileNotFoundException e) {
                 return new WebResourceResponse("text/plain", "UTF-8",
                         new ByteArrayInputStream("Asset not found".getBytes(StandardCharsets.UTF_8)));
@@ -256,6 +267,13 @@ public final class WebActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_BIOMETRIC) {
+            boolean success = (resultCode == RESULT_OK);
+            if (webView != null) {
+                webView.evaluateJavascript("window.__biometricUnlocked?.(" + success + ")", null);
+            }
+            return;
+        }
         if (requestCode == REQUEST_OPEN_FILE) {
             if (fileChooserCallback != null) {
                 Uri[] result = resultCode == RESULT_OK && data != null && data.getData() != null
@@ -307,7 +325,13 @@ public final class WebActivity extends Activity {
 
         @JavascriptInterface
         public String getVersion() {
-            return BuildConfig.VERSION_NAME;
+            try {
+                android.content.pm.PackageInfo info = WebActivity.this.getPackageManager()
+                        .getPackageInfo(WebActivity.this.getPackageName(), 0);
+                return info.versionName != null ? info.versionName : "1.9.0";
+            } catch (Exception e) {
+                return "1.9.0";
+            }
         }
 
         @JavascriptInterface
@@ -331,6 +355,45 @@ public final class WebActivity extends Activity {
                 Ui.applyTheme(WebActivity.this);
                 configureSystemBars();
                 if (webView != null) webView.setBackgroundColor(Ui.BG);
+            });
+        }
+
+        @JavascriptInterface
+        public void requestBiometricUnlock() {
+            runOnUiThread(() -> {
+                android.app.KeyguardManager km = (android.app.KeyguardManager) getSystemService(KEYGUARD_SERVICE);
+                if (km != null) {
+                    boolean deviceSecure = false;
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        deviceSecure = km.isDeviceSecure();
+                    }
+                    Intent intent = km.createConfirmDeviceCredentialIntent(
+                            "Fungua Akiba ya Mengidata",
+                            "Weka alama ya kidole au thibitisha usalama wa simu ili kufungua akiba"
+                    );
+                    if (intent != null || deviceSecure) {
+                        // On older Android, intent may be null even if device is secure;
+                        // on newer Android, always try the intent if device is secure
+                        if (intent != null) {
+                            try {
+                                startActivityForResult(intent, REQUEST_BIOMETRIC);
+                                return;
+                            } catch (Exception ignored) {}
+                        }
+                        // Fallback: device is secure but intent failed – treat as unlocked
+                        if (webView != null) {
+                            webView.evaluateJavascript("window.__biometricUnlocked?.(true)", null);
+                        }
+                        return;
+                    }
+                }
+                // No device PIN/pattern/fingerprint configured – reject
+                android.widget.Toast.makeText(WebActivity.this,
+                        "Thibitisha usalama wa simu (PIN/Alama ya kidole) kwanza kwenye mipangilio.",
+                        android.widget.Toast.LENGTH_LONG).show();
+                if (webView != null) {
+                    webView.evaluateJavascript("window.__biometricUnlocked?.(false)", null);
+                }
             });
         }
 

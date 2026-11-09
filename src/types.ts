@@ -85,17 +85,40 @@ export interface AppMeta {
   updatedAt: string;
 }
 
+export interface SavingsGoal {
+  id: string;
+  title: string;
+  targetAmount: number;
+  currentAmount: number;
+  targetDate: string;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SavingsLog {
+  id: string;
+  savingsId: string;
+  type: 'deposit' | 'withdraw';
+  amount: number;
+  date: string;
+  note: string;
+  createdAt: string;
+}
+
 export interface AppState {
   version: number;
   transactions: Transaction[];
   invoices: Invoice[];
   bills: Bill[];
+  savings: SavingsGoal[];
+  savingsLogs: SavingsLog[];
   settings: BusinessSettings;
   meta: AppMeta;
 }
 
-export type PageKey = 'dashboard' | 'transactions' | 'invoices' | 'bills' | 'reports' | 'settings';
-export type PeriodKey = 'month' | 'quarter' | 'year' | 'all';
+export type PageKey = 'dashboard' | 'transactions' | 'invoices' | 'bills' | 'saver' | 'reports' | 'settings';
+export type PeriodKey = 'day' | 'week' | 'month' | 'quarter' | 'months6' | 'year' | 'all';
 export type InvoiceFilterKey = 'all' | 'due' | 'paid' | 'draft';
 export type BillFilterKey = 'all' | 'unpaid' | 'pending' | 'paid';
 export type TransactionFilterType = 'all' | 'income' | 'expense' | 'pending';

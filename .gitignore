@@ -1,14 +1,35 @@
-<<<<<<< HEAD
 # Android/Gradle
 .gradle/
 build/
 app/build/
-.idea/
+.kotlin/
 local.properties
 captures/
 .externalNativeBuild/
 .cxx/
 *.iml
+*.aab
+*.apk
+output-metadata.json
+*.log
+
+# Keystore files
+*.jks
+*.keystore
+keystore/
+android/keystore/
+
+# Google Services (e.g. APIs or Firebase)
+google-services.json
+
+# Android Profiling
+*.hprof
+
+# IntelliJ
+.idea/
+misc.xml
+deploymentTargetDropDown.xml
+render.experimental.xml
 
 # Node / Vite
 node_modules/
@@ -16,40 +37,7 @@ dist/
 .vite-temp/
 .DS_Store
 Thumbs.db
-=======
-# Gradle files
-.gradle/
-build/
-.kotlin/
 
-# Local configuration file (sdk path, etc)
-local.properties
-
-# Log/OS Files
-*.log
-
-# Android Studio generated files and folders
-captures/
-.externalNativeBuild/
-.cxx/
-*.aab
-*.apk
-output-metadata.json
-
-# IntelliJ
-*.iml
-.idea/
-misc.xml
-deploymentTargetDropDown.xml
-render.experimental.xml
-
-# Keystore files
-*.jks
-*.keystore
-
-# Google Services (e.g. APIs or Firebase)
-google-services.json
-
-# Android Profiling
-*.hprof
->>>>>>> 5e87db82a71d03c0a0b654433c45cc9727039273
+# Build artifacts
+Mengidata.apk
+android-studio/

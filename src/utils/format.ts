@@ -213,15 +213,48 @@ export function periodBounds(period: PeriodKey) {
   const now = new Date();
   const y = now.getFullYear();
   const m = now.getMonth();
-  if (period === 'quarter') {
+  const d = now.getDate();
+
+  if (period === 'day') {
+    const today = new Date(y, m, d, 0, 0, 0);
+    const todayEnd = new Date(y, m, d, 23, 59, 59);
+    const prev = new Date(y, m, d - 1, 0, 0, 0);
+    const prevEnd = new Date(y, m, d - 1, 23, 59, 59);
     return {
-      key: 'quarter',
-      start: new Date(y, m - 2, 1, 0, 0, 0),
+      key: 'day',
+      start: today,
+      end: todayEnd,
+      prevStart: prev,
+      prevEnd: prevEnd,
+      label: 'Leo',
+      prevLabel: 'Jana'
+    };
+  }
+  if (period === 'week') {
+    const dayOfWeek = now.getDay();
+    const startOfWeek = new Date(y, m, d - dayOfWeek, 0, 0, 0);
+    const endOfWeek = new Date(y, m, d + (6 - dayOfWeek), 23, 59, 59);
+    const prevStart = new Date(y, m, d - dayOfWeek - 7, 0, 0, 0);
+    const prevEnd = new Date(y, m, d - dayOfWeek - 1, 23, 59, 59);
+    return {
+      key: 'week',
+      start: startOfWeek,
+      end: endOfWeek,
+      prevStart,
+      prevEnd,
+      label: 'Wiki hii',
+      prevLabel: 'Wiki iliyopita'
+    };
+  }
+  if (period === 'months6') {
+    return {
+      key: 'months6',
+      start: new Date(y, m - 5, 1, 0, 0, 0),
       end: new Date(y, m + 1, 0, 23, 59, 59),
-      prevStart: new Date(y, m - 5, 1, 0, 0, 0),
-      prevEnd: new Date(y, m - 2, 0, 23, 59, 59),
-      label: 'Robo ya sasa',
-      prevLabel: 'robo iliyopita'
+      prevStart: new Date(y, m - 11, 1, 0, 0, 0),
+      prevEnd: new Date(y, m - 5, 0, 23, 59, 59),
+      label: 'Miezi 6 iliyopita',
+      prevLabel: 'Miezi 6 ya awali'
     };
   }
   if (period === 'year') {
@@ -232,18 +265,7 @@ export function periodBounds(period: PeriodKey) {
       prevStart: new Date(y - 1, 0, 1, 0, 0, 0),
       prevEnd: new Date(y - 1, 11, 31, 23, 59, 59),
       label: 'Mwaka ' + y,
-      prevLabel: 'mwaka uliopita'
-    };
-  }
-  if (period === 'all') {
-    return {
-      key: 'all',
-      start: null,
-      end: null,
-      prevStart: null,
-      prevEnd: null,
-      label: 'Kipindi chote',
-      prevLabel: 'awali'
+      prevLabel: 'Mwaka uliopita'
     };
   }
   return {

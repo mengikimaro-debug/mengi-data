@@ -7,12 +7,14 @@ import { DashboardPage } from './components/dashboard/DashboardPage';
 import { TransactionsPage } from './components/transactions/TransactionsPage';
 import { InvoicesPage } from './components/invoices/InvoicesPage';
 import { BillsPage } from './components/bills/BillsPage';
+import { SaverPage } from './components/saver/SaverPage';
 import { ReportsPage } from './components/reports/ReportsPage';
 import { SettingsPage } from './components/settings/SettingsPage';
 import { TransactionModal } from './components/modals/TransactionModal';
 import { InvoiceBuilderModal } from './components/invoices/InvoiceBuilderModal';
 import { InvoiceViewModal } from './components/invoices/InvoiceViewModal';
 import { BillModal } from './components/modals/BillModal';
+import { SaverModal } from './components/modals/SaverModal';
 import { ConfirmModal } from './components/modals/ConfirmModal';
 import { ToastContainer } from './components/ui/ToastContainer';
 
@@ -142,6 +144,7 @@ const MainLayout: React.FC = () => {
             {activePage === 'transactions' && <TransactionsPage />}
             {activePage === 'invoices' && <InvoicesPage />}
             {activePage === 'bills' && <BillsPage />}
+            {activePage === 'saver' && <SaverPage />}
             {activePage === 'reports' && <ReportsPage />}
             {activePage === 'settings' && <SettingsPage />}
           </div>
@@ -156,6 +159,7 @@ const MainLayout: React.FC = () => {
       <InvoiceBuilderModal />
       <InvoiceViewModal />
       <BillModal />
+      <SaverModal />
       <ConfirmModal />
       <ToastContainer />
     </div>

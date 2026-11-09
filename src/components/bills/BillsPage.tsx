@@ -210,12 +210,12 @@ export const BillsPage: React.FC = () => {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b border-[#e2dccd] text-[9px] font-bold uppercase tracking-wider text-[#746e7d]">
-                    <th className="py-3 px-4">Bili & Mlipwaji</th>
-                    <th className="py-3 px-4">Kundi</th>
-                    <th className="py-3 px-4">Tarehe ya Malipo</th>
-                    <th className="py-3 px-4">Hali</th>
-                    <th className="py-3 px-4 text-right">Kiasi (TZS)</th>
-                    <th className="py-3 px-4 text-right">Vitendo</th>
+                    <th className="py-3 px-4">{t('Bili & Mlipwaji')}</th>
+                    <th className="py-3 px-4">{t('Kundi')}</th>
+                    <th className="py-3 px-4">{t('Tarehe ya Malipo')}</th>
+                    <th className="py-3 px-4">{t('Hali')}</th>
+                    <th className="py-3 px-4 text-right">{t('Kiasi (TZS)')}</th>
+                    <th className="py-3 px-4 text-right">{t('Vitendo')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#ece7da] text-[12px]">
@@ -232,7 +232,7 @@ export const BillsPage: React.FC = () => {
                             {b.recurring && (
                               <>
                                 <span>·</span>
-                                <span className="text-[#1b5540] font-semibold">kila mwezi</span>
+                                <span className="text-[#1b5540] font-semibold">{t('kila mwezi')}</span>
                               </>
                             )}
                           </div>
@@ -363,7 +363,7 @@ export const BillsPage: React.FC = () => {
                           className="px-2.5 py-1 rounded bg-[#e8f0e8] text-[#1b5540] text-[10.5px] font-bold inline-flex items-center gap-1"
                         >
                           {b.paid ? <RotateCcw className="w-3 h-3" /> : <Check className="w-3 h-3" />}
-                          <span>{b.paid ? 'Tendua' : 'Lipa'}</span>
+                          <span>{b.paid ? t('Tendua') : t('Lipa')}</span>
                         </button>
 
                         <button
@@ -389,13 +389,13 @@ export const BillsPage: React.FC = () => {
             {/* Table Foot */}
             <div className="p-3.5 px-4 bg-[#fcfaf4] border-t border-[#e2dccd] flex items-center justify-between text-[11px] text-[#746e7d]">
               <div>
-                Inaonyesha <strong className="text-[#14231c]">{filteredBills.length}</strong> kati ya {state.bills.length} bili
+                {t('Inaonyesha')} <strong className="text-[#14231c]">{filteredBills.length}</strong> {t('kati ya')} {state.bills.length} {t('bili')}
               </div>
               <div>
                 {overdueBills.length > 0 ? (
-                  <span className="text-[#9e432b] font-bold">{overdueBills.length} zimechelewa</span>
+                  <span className="text-[#9e432b] font-bold">{overdueBills.length} {t('zimechelewa')}</span>
                 ) : (
-                  <span>Hakuna bili iliyochelewa</span>
+                  <span>{t('Hakuna bili iliyochelewa')}</span>
                 )}
               </div>
             </div>
