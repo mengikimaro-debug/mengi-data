@@ -1,0 +1,264 @@
+name: Release Mengidata APK
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_notes:
+        description: 'Maelezo ya ziada ya toleo (hiari / optional release notes)'
+        required: false
+        default: ''
+        type: string
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build, Sign & Publish Mengidata.apk
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate app version and release tag
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          APP_VERSION=$(grep -E '^\s*versionName\s*=' app/build.gradle.kts | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')
+          VERSION_CODE=$(grep -E '^\s*versionCode\s*=' app/build.gradle.kts | head -n1 | sed -E 's/[^0-9]//g')
+
+          if [[ -z "$APP_VERSION" || ! "$APP_VERSION" =~ ^[0-9]+(\.[0-9]+){1,3}$ ]]; then
+            echo "::error::versionName ('$APP_VERSION') in app/build.gradle.kts must match X.Y or X.Y.Z (e.g. 2.4.0)."
+            exit 1
+          fi
+
+          if [[ -z "$VERSION_CODE" || "$VERSION_CODE" -le 0 ]]; then
+            echo "::error::versionCode ('$VERSION_CODE') in app/build.gradle.kts must be a positive integer."
+            exit 1
+          fi
+
+          if [[ "$REF_TYPE" == "tag" ]]; then
+            TAG_VERSION="${REF_NAME#v}"
+            TAG_VERSION="${TAG_VERSION#V}"
+            if [[ "$TAG_VERSION" != "$APP_VERSION" ]]; then
+              echo "::error::Git tag '$REF_NAME' (version $TAG_VERSION) does not match versionName '$APP_VERSION' in app/build.gradle.kts. AppUpdateManager requires an exact match."
+              exit 1
+            fi
+            RELEASE_TAG="$REF_NAME"
+          else
+            RELEASE_TAG="v${APP_VERSION}"
+          fi
+
+          echo "app_version=$APP_VERSION" >> "$GITHUB_OUTPUT"
+          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "Verified Mengidata v${APP_VERSION} (versionCode ${VERSION_CODE}) -> tag ${RELEASE_TAG}"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 9.3.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
+
+      - name: Configure Android SDK and build-tools
+        run: |
+          set -euo pipefail
+
+          ANDROID_SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          if [[ -z "$ANDROID_SDK" || ! -d "$ANDROID_SDK" ]]; then
+            echo "::error::Android SDK not found on runner."
+            exit 1
+          fi
+
+          SDKMANAGER=""
+          if [[ -x "$ANDROID_SDK/cmdline-tools/latest/bin/sdkmanager" ]]; then
+            SDKMANAGER="$ANDROID_SDK/cmdline-tools/latest/bin/sdkmanager"
+          elif command -v sdkmanager >/dev/null 2>&1; then
+            SDKMANAGER="$(command -v sdkmanager)"
+          fi
+
+          if [[ -n "$SDKMANAGER" ]]; then
+            yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+          fi
+
+          find_build_tools() {
+            if [[ -d "$ANDROID_SDK/build-tools" ]]; then
+              for dir in $(ls -1d "$ANDROID_SDK"/build-tools/* 2>/dev/null | sort -V -r); do
+                if [[ -x "$dir/zipalign" && -x "$dir/apksigner" ]]; then
+                  echo "$dir"
+                  return 0
+                fi
+              done
+            fi
+            return 1
+          }
+
+          BUILD_TOOLS_DIR="$(find_build_tools || true)"
+          if [[ -z "$BUILD_TOOLS_DIR" ]]; then
+            if [[ -z "$SDKMANAGER" ]]; then
+              echo "::error::Neither build-tools nor sdkmanager found."
+              exit 1
+            fi
+            "$SDKMANAGER" "build-tools;36.0.0"
+            BUILD_TOOLS_DIR="$(find_build_tools)"
+          fi
+
+          echo "BUILD_TOOLS_DIR=$BUILD_TOOLS_DIR" >> "$GITHUB_ENV"
+          echo "Using Android build-tools: $BUILD_TOOLS_DIR"
+
+      - name: Restore workspace debug keystore for Gradle configuration
+        run: |
+          set -euo pipefail
+          if [[ -f "debug.keystore.base64" && ! -f "debug.keystore" ]]; then
+            base64 --decode debug.keystore.base64 > debug.keystore
+            chmod 600 debug.keystore
+          fi
+
+      - name: Run unit tests
+        run: gradle :app:testDebugUnitTest --stacktrace
+
+      - name: Assemble release APK
+        run: gradle :app:assembleRelease --stacktrace
+
+      - name: Align, sign, and verify Mengidata.apk
+        id: sign
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          cleanup() {
+            rm -f "${RUNNER_TEMP}/release.keystore" "build-aligned.apk" "debug.keystore"
+          }
+          trap cleanup EXIT
+
+          RAW_APK=""
+          if [[ -f "app/build/outputs/apk/release/app-release-unsigned.apk" ]]; then
+            RAW_APK="app/build/outputs/apk/release/app-release-unsigned.apk"
+          elif [[ -f "app/build/outputs/apk/release/app-release.apk" ]]; then
+            RAW_APK="app/build/outputs/apk/release/app-release.apk"
+          else
+            echo "::error::Release APK output not found in app/build/outputs/apk/release/."
+            exit 1
+          fi
+
+          "$BUILD_TOOLS_DIR/zipalign" -f -p 4 "$RAW_APK" build-aligned.apk
+
+          if [[ -n "$RELEASE_KEYSTORE_BASE64" && -n "$RELEASE_KEYSTORE_PASSWORD" && -n "$RELEASE_KEY_ALIAS" && -n "$RELEASE_KEY_PASSWORD" ]]; then
+            echo "$RELEASE_KEYSTORE_BASE64" | tr -d '\n\r ' | base64 --decode > "${RUNNER_TEMP}/release.keystore"
+            chmod 600 "${RUNNER_TEMP}/release.keystore"
+
+            "$BUILD_TOOLS_DIR/apksigner" sign \
+              --ks "${RUNNER_TEMP}/release.keystore" \
+              --ks-pass env:RELEASE_KEYSTORE_PASSWORD \
+              --ks-key-alias "$RELEASE_KEY_ALIAS" \
+              --key-pass env:RELEASE_KEY_PASSWORD \
+              --v1-signing-enabled true \
+              --v2-signing-enabled true \
+              --v3-signing-enabled true \
+              --out Mengidata.apk \
+              build-aligned.apk
+
+            SIGNING_MODE="Production Release Keystore (GitHub Secrets)"
+          elif [[ -f "debug.keystore" ]]; then
+            "$BUILD_TOOLS_DIR/apksigner" sign \
+              --ks debug.keystore \
+              --ks-pass pass:android \
+              --ks-key-alias androiddebugkey \
+              --key-pass pass:android \
+              --v1-signing-enabled true \
+              --v2-signing-enabled true \
+              --v3-signing-enabled true \
+              --out Mengidata.apk \
+              build-aligned.apk
+
+            SIGNING_MODE="Project Debug Keystore (AI Studio / Dev compatible)"
+            echo "::notice::RELEASE_* secrets are not configured; signed Mengidata.apk with the repository's debug.keystore so AI Studio installs pass AppUpdateManager SHA-256 verification. Configure RELEASE_KEYSTORE_BASE64, RELEASE_KEYSTORE_PASSWORD, RELEASE_KEY_ALIAS, and RELEASE_KEY_PASSWORD for production signing."
+          else
+            echo "::error::No signing keystore available. Configure RELEASE_KEYSTORE_BASE64, RELEASE_KEYSTORE_PASSWORD, RELEASE_KEY_ALIAS, and RELEASE_KEY_PASSWORD in GitHub Repository Secrets."
+            exit 1
+          fi
+
+          VERIFY_OUTPUT=$("$BUILD_TOOLS_DIR/apksigner" verify --verbose --print-certs Mengidata.apk)
+          echo "$VERIFY_OUTPUT"
+
+          CERT_SHA256=$(echo "$VERIFY_OUTPUT" | grep -m1 'Signer #1 certificate SHA-256 digest:' | awk '{print $NF}')
+          APK_BYTES=$(stat -c%s Mengidata.apk)
+          MAX_BYTES=$((100 * 1024 * 1024))
+          if [[ "$APK_BYTES" -le 0 || "$APK_BYTES" -gt "$MAX_BYTES" ]]; then
+            echo "::error::Mengidata.apk size ($APK_BYTES bytes) exceeds AppUpdateManager 100 MB limit."
+            exit 1
+          fi
+
+          sha256sum Mengidata.apk > Mengidata.apk.sha256
+          APK_SHA256=$(awk '{print $1}' Mengidata.apk.sha256)
+          APK_MB=$(awk -v b="$APK_BYTES" 'BEGIN { printf "%.2f MB", b / 1048576 }')
+
+          echo "signing_mode=$SIGNING_MODE" >> "$GITHUB_OUTPUT"
+          echo "cert_sha256=$CERT_SHA256" >> "$GITHUB_OUTPUT"
+          echo "apk_sha256=$APK_SHA256" >> "$GITHUB_OUTPUT"
+          echo "apk_size=$APK_MB" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare release notes
+        env:
+          CUSTOM_NOTES: ${{ github.event.inputs.release_notes }}
+          APP_VERSION: ${{ steps.version.outputs.app_version }}
+          VERSION_CODE: ${{ steps.version.outputs.version_code }}
+          APK_SIZE: ${{ steps.sign.outputs.apk_size }}
+          APK_SHA256: ${{ steps.sign.outputs.apk_sha256 }}
+          CERT_SHA256: ${{ steps.sign.outputs.cert_sha256 }}
+          SIGNING_MODE: ${{ steps.sign.outputs.signing_mode }}
+        run: |
+          set -euo pipefail
+          BODY_FILE="${RUNNER_TEMP}/release-body.md"
+          {
+            echo "## Mengidata v${APP_VERSION}"
+            echo ""
+            if [[ -n "$CUSTOM_NOTES" ]]; then
+              printf '%s\n\n' "$CUSTOM_NOTES"
+            fi
+            echo "### Taarifa za APK / Build Details"
+            echo "- **Toleo (versionName):** \`${APP_VERSION}\`"
+            echo "- **Build (versionCode):** \`${VERSION_CODE}\`"
+            echo "- **Ukubwa (Size):** \`${APK_SIZE}\`"
+            echo "- **Saini (Signing):** ${SIGNING_MODE}"
+            echo "- **APK SHA-256:** \`${APK_SHA256}\`"
+            if [[ -n "$CERT_SHA256" ]]; then
+              echo "- **Cheti SHA-256:** \`${CERT_SHA256}\`"
+            fi
+          } > "$BODY_FILE"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.release_tag }}
+          name: Mengidata ${{ steps.version.outputs.release_tag }}
+          body_path: ${{ runner.temp }}/release-body.md
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+          make_latest: true
+          files: |
+            Mengidata.apk
+            Mengidata.apk.sha256

@@ -1,6 +1,6 @@
 {
-  "name": "Mengidata — Dashibodi ya Fedha",
-  "description": "Programu ya Android ya usimamizi wa fedha za biashara — inafanya kazi bila intaneti, data inabaki kwenye simu.",
+  "name": "Mengidata",
+  "description": "Offline-first Android business finance app for transactions, PDF invoices, bills, savings goals, business notebook, and secure self-updates.",
   "requestFramePermissions": [],
   "majorCapabilities": []
 }

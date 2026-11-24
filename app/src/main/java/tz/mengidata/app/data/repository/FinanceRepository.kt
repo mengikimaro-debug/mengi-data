@@ -1,0 +1,1191 @@
+package tz.mengidata.app.data.repository
+
+import android.content.Context
+import androidx.room.withTransaction
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+import tz.mengidata.app.data.accounting.AutoAccountingEngine
+import tz.mengidata.app.data.accounting.AutoBucket
+import tz.mengidata.app.data.accounting.CategoryAnalyticsEngine
+import tz.mengidata.app.data.db.BillEntity
+import tz.mengidata.app.data.db.BusinessSettingsEntity
+import tz.mengidata.app.data.db.InvoiceEntity
+import tz.mengidata.app.data.db.InvoiceItemEntity
+import tz.mengidata.app.data.db.InvoiceWithItems
+import tz.mengidata.app.data.db.MengiDatabase
+import tz.mengidata.app.data.db.SavingsGoalEntity
+import tz.mengidata.app.data.db.SavingsLogEntity
+import tz.mengidata.app.data.db.TransactionCategoryEntity
+import tz.mengidata.app.data.db.TransactionEntity
+import tz.mengidata.app.data.export.ColorReportExporter
+import tz.mengidata.app.data.prefs.AppPreferences
+import tz.mengidata.app.i18n.AppLanguage
+import tz.mengidata.app.i18n.FormatUtils
+import tz.mengidata.app.i18n.PeriodFilter
+import java.io.File
+import java.util.Calendar
+import java.util.Locale
+import java.util.UUID
+import kotlin.math.max
+
+class FinanceRepository(
+    private val appContext: Context,
+    private val db: MengiDatabase,
+    private val prefs: AppPreferences
+) {
+    private val settingsDao = db.settingsDao()
+    private val txnDao = db.transactionDao()
+    private val invoiceDao = db.invoiceDao()
+    private val billDao = db.billDao()
+    private val savingsDao = db.savingsDao()
+    private val categoryDao = db.categoryDao()
+
+    val settingsFlow: Flow<BusinessSettingsEntity> =
+        settingsDao.observeSettings().map { it ?: BusinessSettingsEntity() }
+
+    val transactionsFlow: Flow<List<TransactionEntity>> = txnDao.observeAll()
+    val invoicesFlow: Flow<List<InvoiceWithItems>> = invoiceDao.observeAllWithItems()
+    val billsFlow: Flow<List<BillEntity>> = billDao.observeAll()
+    val savingsGoalsFlow: Flow<List<SavingsGoalEntity>> = savingsDao.observeGoals()
+    val savingsLogsFlow: Flow<List<SavingsLogEntity>> = savingsDao.observeAllLogs()
+    val categoriesFlow: Flow<List<TransactionCategoryEntity>> = categoryDao.observeAll()
+
+    suspend fun ensureInitialized() {
+        withContext(Dispatchers.IO) {
+            ensureDefaultCategoriesSeeded()
+            if (!prefs.isSeeded()) {
+                val existing = settingsDao.getSettings()
+                if (existing == null) {
+                    loadDemoData()
+                }
+                prefs.markSeeded()
+            }
+            reconcileLedgerIntegrity()
+            persistSafetySnapshot()
+        }
+    }
+
+    suspend fun ensureDefaultCategoriesSeeded() {
+        if (categoryDao.count() == 0) {
+            categoryDao.upsertAll(CategoryAnalyticsEngine.defaultCategories())
+        }
+    }
+
+    // --- Transaction Categories (Custom & Default Business Grouping) ---
+
+    suspend fun saveCategory(
+        category: TransactionCategoryEntity,
+        previousName: String? = null
+    ): TransactionCategoryEntity {
+        val saved = db.withTransaction {
+            val cleanName = category.name.trim()
+            val cleanType = if (category.type == "expense") "expense" else "income"
+            val id = category.id.ifBlank { "cat_${UUID.randomUUID()}" }
+            val entity = category.copy(
+                id = id,
+                name = cleanName,
+                type = cleanType,
+                iconKey = category.iconKey.ifBlank { "tag" },
+                colorHex = category.colorHex.ifBlank { "#2563EB" },
+                monthlyBudget = max(category.monthlyBudget, 0.0),
+                createdAt = category.createdAt.ifBlank { FormatUtils.todayIso() }
+            )
+            categoryDao.upsert(entity)
+            if (!previousName.isNullOrBlank() && previousName != cleanName) {
+                txnDao.renameCategory(previousName, cleanName, cleanType)
+            }
+            entity
+        }
+        persistSafetySnapshot()
+        return saved
+    }
+
+    suspend fun deleteCategory(categoryId: String, reassignToCategory: String? = null) {
+        db.withTransaction {
+            val existing = categoryDao.getById(categoryId) ?: return@withTransaction
+            val fallback = reassignToCategory?.takeIf { it.isNotBlank() }
+                ?: if (existing.isIncome) "Mapato mengine" else "Matumizi mengine"
+            if (existing.name != fallback) {
+                txnDao.renameCategory(existing.name, fallback, existing.type)
+            }
+            categoryDao.deleteById(categoryId)
+        }
+        persistSafetySnapshot()
+    }
+
+    /**
+     * Zero-loss ledger guard: verifies every paid bill and every paid invoice has its
+     * matching transaction entry so no shilling entering or leaving is ever lost.
+     */
+    suspend fun reconcileLedgerIntegrity(): Int = db.withTransaction {
+        var repaired = 0
+        val existingTxnIds = txnDao.getAll().map { it.id }.toSet()
+
+        billDao.getAll().forEach { bill ->
+            if (bill.paid && (bill.linkedTxnId.isNullOrBlank() || bill.linkedTxnId !in existingTxnIds)) {
+                val newTxnId = syncBillTransactionLocked(bill.copy(linkedTxnId = null))
+                billDao.upsert(bill.copy(linkedTxnId = newTxnId))
+                repaired++
+            }
+        }
+
+        invoiceDao.getAllWithItems().forEach { invWithItems ->
+            val inv = invWithItems.invoice
+            if (inv.state == "issued" && inv.amountPaid > 0.005 &&
+                (inv.linkedTxnId.isNullOrBlank() || inv.linkedTxnId !in existingTxnIds)
+            ) {
+                val newTxnId = syncInvoiceTransactionLocked(inv.copy(linkedTxnId = null))
+                invoiceDao.upsertInvoice(inv.copy(linkedTxnId = newTxnId))
+                repaired++
+            }
+        }
+        repaired
+    }
+
+    suspend fun saveSettings(settings: BusinessSettingsEntity) {
+        settingsDao.upsert(settings.copy(id = 1))
+        persistSafetySnapshot()
+    }
+
+    // --- Smart Auto-Entry (auto-classifies Akiba, Bili, Matumizi, Pesa Kuingia) ---
+
+    suspend fun saveSmartAutoEntry(
+        description: String,
+        amount: Double,
+        party: String,
+        method: String,
+        date: String,
+        overrideBucket: AutoBucket? = null,
+        markBillPaid: Boolean = true
+    ): AutoBucket {
+        val cleanDesc = description.trim()
+        val cleanDate = date.ifBlank { FormatUtils.todayIso() }
+        val classification = AutoAccountingEngine.classifyText(cleanDesc)
+        val bucket = overrideBucket ?: classification.bucket
+
+        when (bucket) {
+            AutoBucket.SAVINGS -> {
+                db.withTransaction {
+                    val goals = savingsDao.getGoals()
+                    val targetGoal = goals.firstOrNull { g ->
+                        cleanDesc.lowercase().contains(g.title.lowercase().take(6))
+                    } ?: goals.firstOrNull() ?: SavingsGoalEntity(
+                        id = "svg_${UUID.randomUUID()}",
+                        title = "Akiba Kuu",
+                        targetAmount = max(amount * 5, 1_000_000.0),
+                        currentAmount = 0.0,
+                        targetDate = FormatUtils.addMonthsIso(cleanDate, 6),
+                        notes = "Imeundwa kiotomatiki kwa Akiba.",
+                        createdAt = cleanDate,
+                        updatedAt = cleanDate
+                    ).also { savingsDao.upsertGoal(it) }
+
+                    recordSavingsTransactionLocked(
+                        goal = targetGoal,
+                        type = "deposit",
+                        amount = amount,
+                        note = cleanDesc,
+                        date = cleanDate,
+                        method = method
+                    )
+                }
+            }
+
+            AutoBucket.BILL, AutoBucket.HIGH_BILL_TODAY -> {
+                saveBill(
+                    BillEntity(
+                        id = "",
+                        name = cleanDesc,
+                        category = classification.suggestedCategory,
+                        payee = party.trim(),
+                        amount = amount,
+                        dueDate = cleanDate,
+                        paid = markBillPaid,
+                        paidDate = if (markBillPaid) cleanDate else "",
+                        method = method.ifBlank { "M-Pesa" },
+                        recurring = false,
+                        notes = "Imetambuliwa kiotomatiki kama Bili.",
+                        createdAt = cleanDate
+                    )
+                )
+            }
+
+            AutoBucket.MONEY_IN -> {
+                saveTransaction(
+                    TransactionEntity(
+                        id = "",
+                        type = "income",
+                        date = cleanDate,
+                        description = cleanDesc,
+                        party = party.trim(),
+                        category = classification.suggestedCategory,
+                        amount = amount,
+                        method = method.ifBlank { "M-Pesa" },
+                        reference = "",
+                        notes = "Imetambuliwa kiotomatiki: Pesa Kuingia.",
+                        source = "manual",
+                        createdAt = cleanDate
+                    )
+                )
+            }
+
+            AutoBucket.EXPENSE -> {
+                saveTransaction(
+                    TransactionEntity(
+                        id = "",
+                        type = "expense",
+                        date = cleanDate,
+                        description = cleanDesc,
+                        party = party.trim(),
+                        category = classification.suggestedCategory,
+                        amount = amount,
+                        method = method.ifBlank { "Cash" },
+                        reference = "",
+                        notes = "Imetambuliwa kiotomatiki: Matumizi.",
+                        source = "manual",
+                        createdAt = cleanDate
+                    )
+                )
+            }
+        }
+        persistSafetySnapshot()
+        return bucket
+    }
+
+    // --- Transactions ---
+
+    suspend fun saveTransaction(txn: TransactionEntity) {
+        val clean = if (txn.id.isBlank()) {
+            txn.copy(id = "txn_${UUID.randomUUID()}")
+        } else {
+            txn
+        }
+        txnDao.upsert(clean)
+        persistSafetySnapshot()
+    }
+
+    suspend fun deleteTransaction(id: String): TransactionEntity? {
+        val existing = txnDao.getById(id) ?: return null
+        txnDao.deleteById(id)
+        persistSafetySnapshot()
+        return existing
+    }
+
+    // --- Invoices (with atomic linked-transaction sync) ---
+
+    suspend fun nextInvoiceNumber(): String {
+        val settings = settingsDao.getSettings() ?: BusinessSettingsEntity()
+        val rawPrefix = settings.invoicePrefix.uppercase(Locale.US).replace(Regex("[^A-Z0-9]"), "")
+        val prefix = rawPrefix.ifEmpty { "MD" }
+        val year = Calendar.getInstance().get(Calendar.YEAR)
+        val start = "$prefix-$year-"
+        val existing = invoiceDao.getNumbersWithPrefix("$start%")
+        val maxNum = existing.mapNotNull { number ->
+            number.removePrefix(start).toIntOrNull()
+        }.maxOrNull() ?: 0
+        return "$start${String.format(Locale.US, "%03d", maxNum + 1)}"
+    }
+
+    suspend fun saveInvoice(
+        invoice: InvoiceEntity,
+        items: List<InvoiceItemEntity>
+    ): InvoiceEntity {
+        val result = db.withTransaction {
+            val id = invoice.id.ifBlank { "inv_${UUID.randomUUID()}" }
+            val number = invoice.number.ifBlank { nextInvoiceNumber() }
+            val today = FormatUtils.todayIso()
+            val base = invoice.copy(
+                id = id,
+                number = number,
+                createdAt = invoice.createdAt.ifBlank { today },
+                updatedAt = today
+            )
+
+            val linkedTxnId = syncInvoiceTransactionLocked(base)
+            val finalInvoice = base.copy(linkedTxnId = linkedTxnId)
+
+            invoiceDao.upsertInvoice(finalInvoice)
+            invoiceDao.deleteItemsForInvoice(id)
+            val normalizedItems = items.mapIndexed { index, item ->
+                item.copy(id = 0, invoiceId = id, position = index)
+            }
+            if (normalizedItems.isNotEmpty()) {
+                invoiceDao.insertItems(normalizedItems)
+            }
+            finalInvoice
+        }
+        persistSafetySnapshot()
+        return result
+    }
+
+    suspend fun markInvoicePaid(invoiceId: String): InvoiceWithItems? {
+        val result = db.withTransaction {
+            val current = invoiceDao.getByIdWithItems(invoiceId) ?: return@withTransaction null
+            val updated = current.invoice.copy(
+                state = "issued",
+                amountPaid = current.total,
+                paidDate = FormatUtils.todayIso(),
+                updatedAt = FormatUtils.todayIso()
+            )
+            val linkedId = syncInvoiceTransactionLocked(updated)
+            invoiceDao.upsertInvoice(updated.copy(linkedTxnId = linkedId))
+            current
+        }
+        persistSafetySnapshot()
+        return result
+    }
+
+    suspend fun markInvoiceUnpaid(invoiceId: String) {
+        db.withTransaction {
+            val current = invoiceDao.getByIdWithItems(invoiceId) ?: return@withTransaction
+            val updated = current.invoice.copy(
+                state = "issued",
+                amountPaid = 0.0,
+                paidDate = "",
+                updatedAt = FormatUtils.todayIso()
+            )
+            val linkedId = syncInvoiceTransactionLocked(updated)
+            invoiceDao.upsertInvoice(updated.copy(linkedTxnId = linkedId))
+        }
+        persistSafetySnapshot()
+    }
+
+    suspend fun recordInvoicePayment(invoiceId: String, addedAmount: Double): InvoiceWithItems? {
+        if (addedAmount <= 0.0) return null
+        val result = db.withTransaction {
+            val current = invoiceDao.getByIdWithItems(invoiceId) ?: return@withTransaction null
+            val newPaid = (current.invoice.amountPaid + addedAmount).coerceAtMost(current.total)
+            val updated = current.invoice.copy(
+                state = "issued",
+                amountPaid = newPaid,
+                paidDate = FormatUtils.todayIso(),
+                updatedAt = FormatUtils.todayIso()
+            )
+            val linkedId = syncInvoiceTransactionLocked(updated)
+            invoiceDao.upsertInvoice(updated.copy(linkedTxnId = linkedId))
+            current
+        }
+        persistSafetySnapshot()
+        return result
+    }
+
+    suspend fun duplicateInvoice(invoiceId: String): InvoiceEntity? {
+        val result = db.withTransaction {
+            val current = invoiceDao.getByIdWithItems(invoiceId) ?: return@withTransaction null
+            val today = FormatUtils.todayIso()
+            val newId = "inv_${UUID.randomUUID()}"
+            val nextNum = nextInvoiceNumber()
+            val copyInvoice = current.invoice.copy(
+                id = newId,
+                number = nextNum,
+                issueDate = today,
+                dueDate = FormatUtils.addDaysIso(today, 14),
+                amountPaid = 0.0,
+                state = "draft",
+                paidDate = "",
+                linkedTxnId = null,
+                createdAt = today,
+                updatedAt = today
+            )
+            invoiceDao.upsertInvoice(copyInvoice)
+            val copiedItems = current.orderedItems.mapIndexed { idx, item ->
+                item.copy(id = 0, invoiceId = newId, position = idx)
+            }
+            if (copiedItems.isNotEmpty()) {
+                invoiceDao.insertItems(copiedItems)
+            }
+            copyInvoice
+        }
+        persistSafetySnapshot()
+        return result
+    }
+
+    suspend fun deleteInvoice(invoiceId: String) {
+        db.withTransaction {
+            val current = invoiceDao.getByIdWithItems(invoiceId) ?: return@withTransaction
+            current.invoice.linkedTxnId?.let { txnDao.deleteById(it) }
+            invoiceDao.deleteItemsForInvoice(invoiceId)
+            invoiceDao.deleteInvoiceById(invoiceId)
+        }
+        persistSafetySnapshot()
+    }
+
+    private suspend fun syncInvoiceTransactionLocked(invoice: InvoiceEntity): String? {
+        val shouldRecord = invoice.state == "issued" && invoice.amountPaid > 0.005
+        if (!shouldRecord) {
+            invoice.linkedTxnId?.let { txnDao.deleteById(it) }
+            return null
+        }
+        val txnId = invoice.linkedTxnId?.takeIf { it.isNotBlank() } ?: "txn_${UUID.randomUUID()}"
+        val txnDate = invoice.paidDate.ifBlank { invoice.issueDate.ifBlank { FormatUtils.todayIso() } }
+        txnDao.upsert(
+            TransactionEntity(
+                id = txnId,
+                type = "income",
+                date = txnDate,
+                description = "Malipo ya ankara ${invoice.number}",
+                party = invoice.customerName,
+                category = "Malipo ya ankara",
+                amount = invoice.amountPaid,
+                method = "Benki",
+                reference = invoice.number,
+                notes = "Imeundwa kiotomatiki kutoka ankara.",
+                source = "invoice",
+                linkedId = invoice.id,
+                createdAt = txnDate
+            )
+        )
+        return txnId
+    }
+
+    // --- Bills (with atomic linked-transaction sync) ---
+
+    suspend fun saveBill(bill: BillEntity): BillEntity {
+        val result = db.withTransaction {
+            val id = bill.id.ifBlank { "bill_${UUID.randomUUID()}" }
+            val base = bill.copy(
+                id = id,
+                createdAt = bill.createdAt.ifBlank { FormatUtils.todayIso() }
+            )
+            val linkedId = syncBillTransactionLocked(base)
+            val finalBill = base.copy(linkedTxnId = linkedId)
+            billDao.upsert(finalBill)
+            finalBill
+        }
+        persistSafetySnapshot()
+        return result
+    }
+
+    suspend fun toggleBillPaid(billId: String): BillEntity? {
+        val result = db.withTransaction {
+            val existing = billDao.getById(billId) ?: return@withTransaction null
+            val newPaid = !existing.paid
+            val updated = existing.copy(
+                paid = newPaid,
+                paidDate = if (newPaid) FormatUtils.todayIso() else ""
+            )
+            val linkedId = syncBillTransactionLocked(updated)
+            billDao.upsert(updated.copy(linkedTxnId = linkedId))
+            existing
+        }
+        persistSafetySnapshot()
+        return result
+    }
+
+    suspend fun scheduleNextRecurringBill(billId: String): BillEntity? {
+        val result = db.withTransaction {
+            val existing = billDao.getById(billId) ?: return@withTransaction null
+            val nextDue = FormatUtils.addMonthsIso(existing.dueDate.ifBlank { FormatUtils.todayIso() }, 1)
+            val nextBill = existing.copy(
+                id = "bill_${UUID.randomUUID()}",
+                dueDate = nextDue,
+                paid = false,
+                paidDate = "",
+                recurring = true,
+                linkedTxnId = null,
+                createdAt = FormatUtils.todayIso()
+            )
+            billDao.upsert(nextBill)
+            nextBill
+        }
+        persistSafetySnapshot()
+        return result
+    }
+
+    suspend fun deleteBill(billId: String) {
+        db.withTransaction {
+            val existing = billDao.getById(billId) ?: return@withTransaction
+            existing.linkedTxnId?.let { txnDao.deleteById(it) }
+            billDao.deleteById(billId)
+        }
+        persistSafetySnapshot()
+    }
+
+    private suspend fun syncBillTransactionLocked(bill: BillEntity): String? {
+        if (!bill.paid) {
+            bill.linkedTxnId?.let { txnDao.deleteById(it) }
+            return null
+        }
+        val txnId = bill.linkedTxnId?.takeIf { it.isNotBlank() } ?: "txn_${UUID.randomUUID()}"
+        val txnDate = bill.paidDate.ifBlank { bill.dueDate.ifBlank { FormatUtils.todayIso() } }
+        txnDao.upsert(
+            TransactionEntity(
+                id = txnId,
+                type = "expense",
+                date = txnDate,
+                description = "Malipo: ${bill.name}",
+                party = bill.payee,
+                category = bill.category,
+                amount = bill.amount,
+                method = bill.method.ifBlank { "Benki" },
+                reference = "",
+                notes = "Imeundwa kiotomatiki kutoka bili.",
+                source = "bill",
+                linkedId = bill.id,
+                createdAt = txnDate
+            )
+        )
+        return txnId
+    }
+
+    // --- Savings Goals (Akiba) ---
+
+    suspend fun saveSavingsGoal(goal: SavingsGoalEntity) {
+        val today = FormatUtils.todayIso()
+        val clean = goal.copy(
+            id = goal.id.ifBlank { "svg_${UUID.randomUUID()}" },
+            createdAt = goal.createdAt.ifBlank { today },
+            updatedAt = today
+        )
+        savingsDao.upsertGoal(clean)
+        persistSafetySnapshot()
+    }
+
+    suspend fun deleteSavingsGoal(id: String) {
+        savingsDao.deleteGoalById(id)
+        persistSafetySnapshot()
+    }
+
+    suspend fun recordSavingsTransaction(
+        goalId: String,
+        type: String,
+        amount: Double,
+        note: String
+    ) {
+        db.withTransaction {
+            if (amount <= 0.0) return@withTransaction
+            val goal = savingsDao.getGoalById(goalId) ?: return@withTransaction
+            recordSavingsTransactionLocked(
+                goal = goal,
+                type = type,
+                amount = amount,
+                note = note.trim(),
+                date = FormatUtils.todayIso(),
+                method = "M-Pesa"
+            )
+        }
+        persistSafetySnapshot()
+    }
+
+    private suspend fun recordSavingsTransactionLocked(
+        goal: SavingsGoalEntity,
+        type: String,
+        amount: Double,
+        note: String,
+        date: String,
+        method: String
+    ) {
+        val updatedAmount = if (type == "deposit") {
+            goal.currentAmount + amount
+        } else {
+            max(0.0, goal.currentAmount - amount)
+        }
+        val logId = "slog_${UUID.randomUUID()}"
+        savingsDao.upsertGoal(goal.copy(currentAmount = updatedAmount, updatedAt = date))
+        savingsDao.upsertLog(
+            SavingsLogEntity(
+                id = logId,
+                savingsId = goal.id,
+                type = type,
+                amount = amount,
+                date = date,
+                note = note,
+                createdAt = date
+            )
+        )
+        // Zero-loss ledger mirror tagged with source = "savings" so cashflow never loses a shilling
+        txnDao.upsert(
+            TransactionEntity(
+                id = "txn_$logId",
+                type = if (type == "deposit") "expense" else "income",
+                date = date,
+                description = if (type == "deposit") "Akiba: ${goal.title}" else "Kutoa Akiba: ${goal.title}",
+                party = goal.title,
+                category = "Akiba",
+                amount = amount,
+                method = method,
+                reference = logId.takeLast(6).uppercase(Locale.US),
+                notes = note.ifBlank { "Muamala wa Akiba (Zero-Loss Ledger)." },
+                source = "savings",
+                linkedId = logId,
+                createdAt = date
+            )
+        )
+    }
+
+    // --- Data Management, Demo Seed & Backup ---
+
+    suspend fun clearFinancialData() = db.withTransaction {
+        txnDao.deleteAll()
+        invoiceDao.deleteAll()
+        billDao.deleteAll()
+        savingsDao.deleteAllLogs()
+        savingsDao.deleteAllGoals()
+        val currentSettings = settingsDao.getSettings() ?: BusinessSettingsEntity()
+        settingsDao.upsert(currentSettings.copy(demo = false))
+    }
+
+    suspend fun loadDemoData() = db.withTransaction {
+        txnDao.deleteAll()
+        invoiceDao.deleteAll()
+        billDao.deleteAll()
+        savingsDao.deleteAllLogs()
+        savingsDao.deleteAllGoals()
+
+        val today = FormatUtils.todayIso()
+        val m1 = FormatUtils.addMonthsIso(today, -1)
+        val m2 = FormatUtils.addMonthsIso(today, -2)
+        val m3 = FormatUtils.addMonthsIso(today, -3)
+        val year = Calendar.getInstance().get(Calendar.YEAR)
+
+        settingsDao.upsert(
+            BusinessSettingsEntity(
+                id = 1,
+                businessName = "Mengidata",
+                ownerName = "Mengi",
+                tagline = "Ushauri, mauzo & huduma za kidijitali",
+                address = "Kimara Mwisho, Ubungo, Dar es Salaam",
+                phone = "+255 754 000 000",
+                email = "hello@mengidata.co.tz",
+                tin = "123-456-789",
+                website = "mengidata.co.tz",
+                invoicePrefix = "MD",
+                vatRate = 0.0,
+                paymentDetails = "M-Pesa Lipa Namba: 5521400 (Mengidata)\nBenki: CRDB Bank — A/C 0150 2200 4400",
+                invoiceNote = "Asante kwa kufanya biashara nasi. Malipo yafanyike kabla ya tarehe ya mwisho.",
+                currency = "TZS",
+                demo = true
+            )
+        )
+
+        val seedTxns = listOf(
+            TransactionEntity("demo_t1", "income", today, "Mauzo ya vifaa vya ofisi & kompyuta", "Tumaini Stores", "Mauzo ya bidhaa", 1_850_000.0, "M-Pesa", "MP-884210", "Malipo ya taslimu", "manual", null, today),
+            TransactionEntity("demo_t2", "income", FormatUtils.addDaysIso(today, -3), "Huduma ya ufungaji wa mtandao", "Green Valley Hotel", "Huduma", 950_000.0, "Benki", "CRDB-221045", "Awamu ya pili", "manual", null, today),
+            TransactionEntity("demo_t3", "expense", FormatUtils.addDaysIso(today, -4), "Manunuzi ya stock — vifaa vya ofisi", "Kariakoo Electronics", "Manunuzi / stock", 620_000.0, "Cash", "RCP-9941", "", "manual", null, today),
+            TransactionEntity("demo_t4", "expense", FormatUtils.addDaysIso(today, -6), "Mafuta na usafiri wa kikazi", "Puma Energy", "Usafiri", 180_000.0, "Cash", "", "", "manual", null, today),
+            TransactionEntity("demo_t5", "income", FormatUtils.addDaysIso(m1, -8), "Ushauri wa mfumo wa mauzo na TEHAMA", "Sahara Agro Ltd", "Ushauri", 2_100_000.0, "Benki", "NMB-77812", "", "manual", null, m1),
+            TransactionEntity("demo_t6", "expense", FormatUtils.addDaysIso(m1, -5), "Usafiri wa kikazi — Mwanza", "Air Tanzania", "Usafiri", 350_000.0, "M-Pesa", "ATCL-114", "", "manual", null, m1),
+            TransactionEntity("demo_t7", "income", FormatUtils.addDaysIso(m2, -10), "Mauzo ya printer na toner za ofisi", "Mlimani Fabrics", "Mauzo ya bidhaa", 1_450_000.0, "Benki", "", "", "manual", null, m2),
+            TransactionEntity("demo_t8", "expense", FormatUtils.addDaysIso(m2, -7), "Matengenezo ya gari la kazi", "Garage ya Mjini", "Matengenezo", 280_000.0, "Cash", "", "", "manual", null, m2),
+            TransactionEntity("demo_t9", "income", FormatUtils.addDaysIso(m3, -12), "Mradi wa mfumo wa stoo na data", "Bahari Logistics", "Huduma", 3_200_000.0, "Benki", "CRDB-8812", "", "manual", null, m3),
+            TransactionEntity("demo_t10", "expense", FormatUtils.addDaysIso(m3, -9), "Umeme na maji ya ofisi", "TANESCO & DAWASA", "Umeme & maji", 190_000.0, "M-Pesa", "", "", "manual", null, m3)
+        )
+        txnDao.upsertAll(seedTxns)
+
+        saveInvoice(
+            InvoiceEntity(
+                id = "demo_inv_1",
+                number = "MD-$year-003",
+                customerName = "Bahari Logistics Ltd",
+                customerPhone = "+255 713 220 110",
+                customerEmail = "accounts@bahari.co.tz",
+                customerAddress = "Kurasini Bandari, Dar es Salaam",
+                issueDate = FormatUtils.addDaysIso(today, -2),
+                dueDate = FormatUtils.addDaysIso(today, 12),
+                state = "draft",
+                notes = "Rasimu inayosubiri saini ya mteja."
+            ),
+            listOf(
+                InvoiceItemEntity(invoiceId = "demo_inv_1", description = "Mfumo wa kufuatilia mizigo na maghala", qty = 1.0, price = 2_400_000.0, position = 0),
+                InvoiceItemEntity(invoiceId = "demo_inv_1", description = "Mafunzo ya timu ya stoo na ripoti", qty = 1.0, price = 600_000.0, position = 1)
+            )
+        )
+
+        saveInvoice(
+            InvoiceEntity(
+                id = "demo_inv_2",
+                number = "MD-$year-002",
+                customerName = "Kilimanjaro Coffee Co.",
+                customerPhone = "+255 754 889 200",
+                customerEmail = "orders@kilimanjarocoffee.co.tz",
+                customerAddress = "Moshi Mjini, Kilimanjaro",
+                issueDate = FormatUtils.addDaysIso(today, -7),
+                dueDate = FormatUtils.addDaysIso(today, 7),
+                state = "issued",
+                amountPaid = 600_000.0,
+                paidDate = FormatUtils.addDaysIso(today, -3),
+                notes = "Awamu ya kwanza imepokelewa."
+            ),
+            listOf(
+                InvoiceItemEntity(invoiceId = "demo_inv_2", description = "Ubunifu na uchapishaji wa vifungashio", qty = 1.0, price = 1_250_000.0, position = 0),
+                InvoiceItemEntity(invoiceId = "demo_inv_2", description = "Ushauri wa chapa na masoko", qty = 1.0, price = 700_000.0, position = 1)
+            )
+        )
+
+        saveInvoice(
+            InvoiceEntity(
+                id = "demo_inv_3",
+                number = "MD-$year-001",
+                customerName = "Tumaini Stores",
+                customerPhone = "+255 765 330 440",
+                customerAddress = "Kariakoo Msimbazi, Dar es Salaam",
+                issueDate = FormatUtils.addDaysIso(today, -16),
+                dueDate = FormatUtils.addDaysIso(today, -2),
+                state = "issued",
+                amountPaid = 2_300_000.0,
+                paidDate = FormatUtils.addDaysIso(today, -2),
+                notes = "Imelipwa yote kupitia M-Pesa."
+            ),
+            listOf(
+                InvoiceItemEntity(invoiceId = "demo_inv_3", description = "Kuweka mfumo wa mauzo (POS)", qty = 1.0, price = 1_800_000.0, position = 0),
+                InvoiceItemEntity(invoiceId = "demo_inv_3", description = "Mafunzo ya wafanyakazi wa kaunta", qty = 1.0, price = 500_000.0, position = 1)
+            )
+        )
+
+        saveBill(BillEntity("demo_bill_1", "Kodi ya pango ya ofisi", "Kodi ya pango", "Mengi Plaza Ltd", 700_000.0, FormatUtils.addDaysIso(today, -5), true, FormatUtils.addDaysIso(today, -6), "Benki", true, "Pango la ofisi ya Ubungo"))
+        saveBill(BillEntity("demo_bill_2", "Mishahara ya timu", "Mishahara", "Timu ya Mengidata", 1_200_000.0, FormatUtils.addDaysIso(today, 6), false, "", "Benki", true, "Malipo ya mwisho wa mwezi"))
+        saveBill(BillEntity("demo_bill_3", "Bili ya Umeme — LUKU", "Umeme & maji", "TANESCO", 85_000.0, FormatUtils.addDaysIso(today, 3), false, "", "M-Pesa", true, ""))
+        saveBill(BillEntity("demo_bill_4", "Internet ya kasi (Fiber 50Mbps)", "Internet & simu", "Vodacom Business", 120_000.0, FormatUtils.addDaysIso(today, -1), false, "", "M-Pesa", true, "Muda umepita — lipa leo"))
+        saveBill(BillEntity("demo_bill_5", "Kodi ya Mapato (TRA)", "Kodi & vibali", "TRA", 450_000.0, FormatUtils.addDaysIso(today, 10), false, "", "Benki", false, "Makadirio ya robo mwaka"))
+
+        val g1 = SavingsGoalEntity("demo_svg_1", "Mfuko wa Dharura ya Biashara", 5_000_000.0, 2_800_000.0, FormatUtils.addDaysIso(today, 180), "Akiba ya kulinda biashara.", today, today)
+        val g2 = SavingsGoalEntity("demo_svg_2", "Kodi ya Pango ya Mwaka Ujao", 3_500_000.0, 1_400_000.0, FormatUtils.addDaysIso(today, 120), "Akiba ya kodi ya pango.", today, today)
+        val g3 = SavingsGoalEntity("demo_svg_3", "Kupanua Akiba ya Vifaa", 2_000_000.0, 650_000.0, FormatUtils.addDaysIso(today, 90), "Kununua vifaa vipya vya kazi.", today, today)
+        savingsDao.upsertGoals(listOf(g1, g2, g3))
+        savingsDao.upsertLogs(
+            listOf(
+                SavingsLogEntity("demo_slog_1", g1.id, "deposit", 2_800_000.0, FormatUtils.addDaysIso(today, -20), "Akiba ya kuanzia", today),
+                SavingsLogEntity("demo_slog_2", g2.id, "deposit", 1_400_000.0, FormatUtils.addDaysIso(today, -12), "Mchango wa robo mwaka", today)
+            )
+        )
+    }
+
+    // --- Backward-compatible JSON Backup Export & Import ---
+
+    suspend fun exportBackupJson(): String = withContext(Dispatchers.IO) {
+        val root = JSONObject()
+        root.put("version", 3)
+        root.put("exportedAt", FormatUtils.todayIso())
+
+        val s = settingsDao.getSettings() ?: BusinessSettingsEntity()
+        root.put("settings", JSONObject().apply {
+            put("businessName", s.businessName)
+            put("ownerName", s.ownerName)
+            put("tagline", s.tagline)
+            put("address", s.address)
+            put("phone", s.phone)
+            put("email", s.email)
+            put("tin", s.tin)
+            put("website", s.website)
+            put("invoicePrefix", s.invoicePrefix)
+            put("vatRate", s.vatRate)
+            put("paymentDetails", s.paymentDetails)
+            put("invoiceNote", s.invoiceNote)
+            put("currency", s.currency)
+            put("demo", s.demo)
+        })
+
+        val txnsArray = JSONArray()
+        txnDao.getAll().forEach { t ->
+            txnsArray.put(JSONObject().apply {
+                put("id", t.id)
+                put("type", t.type)
+                put("date", t.date)
+                put("description", t.description)
+                put("party", t.party)
+                put("category", t.category)
+                put("amount", t.amount)
+                put("method", t.method)
+                put("reference", t.reference)
+                put("notes", t.notes)
+                put("source", t.source)
+                put("linkedId", t.linkedId)
+                put("createdAt", t.createdAt)
+            })
+        }
+        root.put("transactions", txnsArray)
+
+        val invArray = JSONArray()
+        invoiceDao.getAllWithItems().forEach { invWithItems ->
+            val inv = invWithItems.invoice
+            val itemsJson = JSONArray()
+            invWithItems.orderedItems.forEach { item ->
+                itemsJson.put(JSONObject().apply {
+                    put("description", item.description)
+                    put("qty", item.qty)
+                    put("price", item.price)
+                })
+            }
+            invArray.put(JSONObject().apply {
+                put("id", inv.id)
+                put("number", inv.number)
+                put("customerName", inv.customerName)
+                put("customerPhone", inv.customerPhone)
+                put("customerEmail", inv.customerEmail)
+                put("customerAddress", inv.customerAddress)
+                put("issueDate", inv.issueDate)
+                put("dueDate", inv.dueDate)
+                put("discount", inv.discount)
+                put("vatRate", inv.vatRate)
+                put("amountPaid", inv.amountPaid)
+                put("state", inv.state)
+                put("paidDate", inv.paidDate)
+                put("notes", inv.notes)
+                put("linkedTxnId", inv.linkedTxnId)
+                put("createdAt", inv.createdAt)
+                put("updatedAt", inv.updatedAt)
+                put("items", itemsJson)
+            })
+        }
+        root.put("invoices", invArray)
+
+        val billsArray = JSONArray()
+        billDao.getAll().forEach { b ->
+            billsArray.put(JSONObject().apply {
+                put("id", b.id)
+                put("name", b.name)
+                put("category", b.category)
+                put("payee", b.payee)
+                put("amount", b.amount)
+                put("dueDate", b.dueDate)
+                put("paid", b.paid)
+                put("paidDate", b.paidDate)
+                put("method", b.method)
+                put("recurring", b.recurring)
+                put("notes", b.notes)
+                put("linkedTxnId", b.linkedTxnId)
+                put("createdAt", b.createdAt)
+            })
+        }
+        root.put("bills", billsArray)
+
+        val savingsArray = JSONArray()
+        savingsDao.getGoals().forEach { g ->
+            savingsArray.put(JSONObject().apply {
+                put("id", g.id)
+                put("title", g.title)
+                put("targetAmount", g.targetAmount)
+                put("currentAmount", g.currentAmount)
+                put("targetDate", g.targetDate)
+                put("notes", g.notes)
+                put("createdAt", g.createdAt)
+                put("updatedAt", g.updatedAt)
+            })
+        }
+        root.put("savings", savingsArray)
+
+        val logsArray = JSONArray()
+        savingsDao.getAllLogs().forEach { l ->
+            logsArray.put(JSONObject().apply {
+                put("id", l.id)
+                put("savingsId", l.savingsId)
+                put("type", l.type)
+                put("amount", l.amount)
+                put("date", l.date)
+                put("note", l.note)
+                put("createdAt", l.createdAt)
+            })
+        }
+        root.put("savingsLogs", logsArray)
+
+        val categoriesArray = JSONArray()
+        categoryDao.getAll().forEach { c ->
+            categoriesArray.put(JSONObject().apply {
+                put("id", c.id)
+                put("name", c.name)
+                put("type", c.type)
+                put("iconKey", c.iconKey)
+                put("colorHex", c.colorHex)
+                put("monthlyBudget", c.monthlyBudget)
+                put("isDefault", c.isDefault)
+                put("createdAt", c.createdAt)
+            })
+        }
+        root.put("categories", categoriesArray)
+
+        root.toString(2)
+    }
+
+    suspend fun importBackupJson(jsonText: String) = withContext(Dispatchers.IO) {
+        val root = JSONObject(jsonText)
+        val txnsJson = root.optJSONArray("transactions")
+            ?: throw IllegalArgumentException("Backup missing transactions array")
+        val invoicesJson = root.optJSONArray("invoices")
+            ?: throw IllegalArgumentException("Backup missing invoices array")
+
+        db.withTransaction {
+            txnDao.deleteAll()
+            invoiceDao.deleteAll()
+            billDao.deleteAll()
+            savingsDao.deleteAllLogs()
+            savingsDao.deleteAllGoals()
+
+            root.optJSONObject("settings")?.let { js ->
+                val defaultSettings = BusinessSettingsEntity()
+                settingsDao.upsert(
+                    BusinessSettingsEntity(
+                        id = 1,
+                        businessName = js.optString("businessName", defaultSettings.businessName),
+                        ownerName = js.optString("ownerName", ""),
+                        tagline = js.optString("tagline", defaultSettings.tagline),
+                        address = js.optString("address", ""),
+                        phone = js.optString("phone", ""),
+                        email = js.optString("email", ""),
+                        tin = js.optString("tin", ""),
+                        website = js.optString("website", ""),
+                        invoicePrefix = js.optString("invoicePrefix", "MD"),
+                        vatRate = js.optDouble("vatRate", 0.0),
+                        paymentDetails = js.optString("paymentDetails", ""),
+                        invoiceNote = js.optString("invoiceNote", defaultSettings.invoiceNote),
+                        currency = js.optString("currency", "TZS"),
+                        demo = js.optBoolean("demo", false)
+                    )
+                )
+            }
+
+            val txns = mutableListOf<TransactionEntity>()
+            for (i in 0 until txnsJson.length()) {
+                val o = txnsJson.getJSONObject(i)
+                txns += TransactionEntity(
+                    id = o.optString("id").ifBlank { "txn_${UUID.randomUUID()}" },
+                    type = if (o.optString("type") == "expense") "expense" else "income",
+                    date = o.optString("date", FormatUtils.todayIso()),
+                    description = o.optString("description", ""),
+                    party = o.optString("party", ""),
+                    category = o.optString("category", "Mauzo ya bidhaa"),
+                    amount = o.optDouble("amount", 0.0),
+                    method = o.optString("method", "Cash"),
+                    reference = o.optString("reference", ""),
+                    notes = o.optString("notes", ""),
+                    source = o.optString("source", "manual"),
+                    linkedId = o.optString("linkedId").takeIf { it.isNotBlank() && it != "null" },
+                    createdAt = o.optString("createdAt", FormatUtils.todayIso())
+                )
+            }
+            txnDao.upsertAll(txns)
+
+            for (i in 0 until invoicesJson.length()) {
+                val o = invoicesJson.getJSONObject(i)
+                val invId = o.optString("id").ifBlank { "inv_${UUID.randomUUID()}" }
+                invoiceDao.upsertInvoice(
+                    InvoiceEntity(
+                        id = invId,
+                        number = o.optString("number", ""),
+                        customerName = o.optString("customerName", ""),
+                        customerPhone = o.optString("customerPhone", ""),
+                        customerEmail = o.optString("customerEmail", ""),
+                        customerAddress = o.optString("customerAddress", ""),
+                        issueDate = o.optString("issueDate", FormatUtils.todayIso()),
+                        dueDate = o.optString("dueDate", FormatUtils.todayIso()),
+                        discount = o.optDouble("discount", 0.0),
+                        vatRate = o.optDouble("vatRate", 0.0),
+                        amountPaid = o.optDouble("amountPaid", 0.0),
+                        state = o.optString("state", "draft"),
+                        paidDate = o.optString("paidDate", ""),
+                        notes = o.optString("notes", ""),
+                        linkedTxnId = o.optString("linkedTxnId").takeIf { it.isNotBlank() && it != "null" },
+                        createdAt = o.optString("createdAt", FormatUtils.todayIso()),
+                        updatedAt = o.optString("updatedAt", FormatUtils.todayIso())
+                    )
+                )
+                val itemsJson = o.optJSONArray("items")
+                if (itemsJson != null) {
+                    val items = mutableListOf<InvoiceItemEntity>()
+                    for (j in 0 until itemsJson.length()) {
+                        val io = itemsJson.getJSONObject(j)
+                        items += InvoiceItemEntity(
+                            invoiceId = invId,
+                            description = io.optString("description", ""),
+                            qty = io.optDouble("qty", 1.0),
+                            price = io.optDouble("price", 0.0),
+                            position = j
+                        )
+                    }
+                    invoiceDao.insertItems(items)
+                }
+            }
+
+            root.optJSONArray("bills")?.let { arr ->
+                val bills = mutableListOf<BillEntity>()
+                for (i in 0 until arr.length()) {
+                    val o = arr.getJSONObject(i)
+                    bills += BillEntity(
+                        id = o.optString("id").ifBlank { "bill_${UUID.randomUUID()}" },
+                        name = o.optString("name", ""),
+                        category = o.optString("category", "Kodi ya pango"),
+                        payee = o.optString("payee", ""),
+                        amount = o.optDouble("amount", 0.0),
+                        dueDate = o.optString("dueDate", FormatUtils.todayIso()),
+                        paid = o.optBoolean("paid", false),
+                        paidDate = o.optString("paidDate", ""),
+                        method = o.optString("method", "Benki"),
+                        recurring = o.optBoolean("recurring", false),
+                        notes = o.optString("notes", ""),
+                        linkedTxnId = o.optString("linkedTxnId").takeIf { it.isNotBlank() && it != "null" },
+                        createdAt = o.optString("createdAt", FormatUtils.todayIso())
+                    )
+                }
+                billDao.upsertAll(bills)
+            }
+
+            val importedGoalIds = mutableSetOf<String>()
+            root.optJSONArray("savings")?.let { arr ->
+                val goals = mutableListOf<SavingsGoalEntity>()
+                for (i in 0 until arr.length()) {
+                    val o = arr.getJSONObject(i)
+                    val gId = o.optString("id").ifBlank { "svg_${UUID.randomUUID()}" }
+                    importedGoalIds += gId
+                    goals += SavingsGoalEntity(
+                        id = gId,
+                        title = o.optString("title", ""),
+                        targetAmount = o.optDouble("targetAmount", 0.0),
+                        currentAmount = o.optDouble("currentAmount", 0.0),
+                        targetDate = o.optString("targetDate", ""),
+                        notes = o.optString("notes", ""),
+                        createdAt = o.optString("createdAt", FormatUtils.todayIso()),
+                        updatedAt = o.optString("updatedAt", FormatUtils.todayIso())
+                    )
+                }
+                savingsDao.upsertGoals(goals)
+            }
+
+            root.optJSONArray("savingsLogs")?.let { arr ->
+                val logs = mutableListOf<SavingsLogEntity>()
+                for (i in 0 until arr.length()) {
+                    val o = arr.getJSONObject(i)
+                    val sId = o.optString("savingsId", "")
+                    if (sId in importedGoalIds) {
+                        logs += SavingsLogEntity(
+                            id = o.optString("id").ifBlank { "slog_${UUID.randomUUID()}" },
+                            savingsId = sId,
+                            type = if (o.optString("type") == "withdraw") "withdraw" else "deposit",
+                            amount = o.optDouble("amount", 0.0),
+                            date = o.optString("date", FormatUtils.todayIso()),
+                            note = o.optString("note", ""),
+                            createdAt = o.optString("createdAt", FormatUtils.todayIso())
+                        )
+                    }
+                }
+                savingsDao.upsertLogs(logs)
+            }
+
+            root.optJSONArray("categories")?.let { arr ->
+                val cats = mutableListOf<TransactionCategoryEntity>()
+                for (i in 0 until arr.length()) {
+                    val o = arr.getJSONObject(i)
+                    val cName = o.optString("name", "").trim()
+                    if (cName.isNotEmpty()) {
+                        cats += TransactionCategoryEntity(
+                            id = o.optString("id").ifBlank { "cat_${UUID.randomUUID()}" },
+                            name = cName,
+                            type = if (o.optString("type") == "expense") "expense" else "income",
+                            iconKey = o.optString("iconKey", "tag"),
+                            colorHex = o.optString("colorHex", "#2563EB"),
+                            monthlyBudget = o.optDouble("monthlyBudget", 0.0),
+                            isDefault = o.optBoolean("isDefault", false),
+                            createdAt = o.optString("createdAt", FormatUtils.todayIso())
+                        )
+                    }
+                }
+                if (cats.isNotEmpty()) {
+                    categoryDao.deleteAll()
+                    categoryDao.upsertAll(cats)
+                }
+            }
+            ensureDefaultCategoriesSeeded()
+        }
+    }
+
+    // --- Automatic Local Safety Snapshot (Zero-Loss Recovery) ---
+
+    private fun safetySnapshotFile(): File = File(appContext.filesDir, AUTO_SNAPSHOT_FILE)
+
+    fun hasSafetySnapshot(): Boolean = safetySnapshotFile().let { it.exists() && it.length() > 10L }
+
+    suspend fun persistSafetySnapshot() = withContext(Dispatchers.IO) {
+        runCatching {
+            val json = exportBackupJson()
+            val target = safetySnapshotFile()
+            val temp = File(appContext.filesDir, "$AUTO_SNAPSHOT_FILE.tmp")
+            temp.writeText(json, Charsets.UTF_8)
+            if (target.exists()) target.delete()
+            temp.renameTo(target)
+        }
+    }
+
+    suspend fun restoreLatestSafetySnapshot(): Boolean = withContext(Dispatchers.IO) {
+        val file = safetySnapshotFile()
+        if (!file.exists()) return@withContext false
+        runCatching {
+            val json = file.readText(Charsets.UTF_8)
+            importBackupJson(json)
+            true
+        }.getOrDefault(false)
+    }
+
+    // --- Color-Coded & Separated Reports (Excel .xls + Separated CSVs) ---
+
+    suspend fun exportColorExcelReport(language: AppLanguage): String = withContext(Dispatchers.IO) {
+        ColorReportExporter.buildColorExcelXml(
+            settings = settingsDao.getSettings() ?: BusinessSettingsEntity(),
+            transactions = txnDao.getAll(),
+            bills = billDao.getAll(),
+            invoices = invoiceDao.getAllWithItems(),
+            savingsGoals = savingsDao.getGoals(),
+            savingsLogs = savingsDao.getAllLogs(),
+            language = language
+        )
+    }
+
+    suspend fun exportTransactionsCsv(language: AppLanguage = AppLanguage.SW): String = withContext(Dispatchers.IO) {
+        ColorReportExporter.buildTransactionsOnlyCsv(
+            transactions = txnDao.getAll(),
+            language = language
+        )
+    }
+
+    suspend fun exportBillsCsv(language: AppLanguage = AppLanguage.SW): String = withContext(Dispatchers.IO) {
+        val settings = settingsDao.getSettings() ?: BusinessSettingsEntity()
+        ColorReportExporter.buildBillsOnlyCsv(
+            bills = billDao.getAll(),
+            transactions = txnDao.getAll(),
+            invoices = invoiceDao.getAllWithItems(),
+            savingsGoals = savingsDao.getGoals(),
+            savingsLogs = savingsDao.getAllLogs(),
+            currency = settings.currency.ifBlank { "TZS" },
+            language = language
+        )
+    }
+
+    suspend fun exportSavingsCsv(language: AppLanguage = AppLanguage.SW): String = withContext(Dispatchers.IO) {
+        ColorReportExporter.buildSavingsOnlyCsv(
+            savingsGoals = savingsDao.getGoals(),
+            savingsLogs = savingsDao.getAllLogs(),
+            language = language
+        )
+    }
+
+    suspend fun exportMasterSeparatedCsv(language: AppLanguage = AppLanguage.SW): String = withContext(Dispatchers.IO) {
+        ColorReportExporter.buildMasterSeparatedCsv(
+            settings = settingsDao.getSettings() ?: BusinessSettingsEntity(),
+            transactions = txnDao.getAll(),
+            bills = billDao.getAll(),
+            invoices = invoiceDao.getAllWithItems(),
+            savingsGoals = savingsDao.getGoals(),
+            savingsLogs = savingsDao.getAllLogs(),
+            language = language
+        )
+    }
+
+    suspend fun exportCategoryAnalyticsCsv(
+        period: PeriodFilter,
+        language: AppLanguage = AppLanguage.SW
+    ): String = withContext(Dispatchers.IO) {
+        val settings = settingsDao.getSettings() ?: BusinessSettingsEntity()
+        ColorReportExporter.buildCategoryAnalyticsCsv(
+            transactions = txnDao.getAll(),
+            categories = categoryDao.getAll(),
+            period = period,
+            currency = settings.currency.ifBlank { "TZS" },
+            language = language
+        )
+    }
+
+    companion object {
+        private const val AUTO_SNAPSHOT_FILE = "mengidata_auto_snapshot.json"
+    }
+}
