@@ -125,9 +125,14 @@ jobs:
           echo "Using Android build-tools: $BUILD_TOOLS_DIR"
 
       - name: Restore workspace debug keystore for Gradle configuration
+        env:
+          DEBUG_KEYSTORE_BASE64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}
         run: |
           set -euo pipefail
-          if [[ -f "debug.keystore.base64" && ! -f "debug.keystore" ]]; then
+          if [[ -n "$DEBUG_KEYSTORE_BASE64" && ! -f "debug.keystore" ]]; then
+            echo "$DEBUG_KEYSTORE_BASE64" | tr -d '\n\r ' | base64 --decode > debug.keystore
+            chmod 600 debug.keystore
+          elif [[ -f "debug.keystore.base64" && ! -f "debug.keystore" ]]; then
             base64 --decode debug.keystore.base64 > debug.keystore
             chmod 600 debug.keystore
           fi
@@ -145,11 +150,12 @@ jobs:
           RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          DEBUG_KEYSTORE_BASE64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}
         run: |
           set -euo pipefail
 
           cleanup() {
-            rm -f "${RUNNER_TEMP}/release.keystore" "build-aligned.apk" "debug.keystore"
+            rm -f "${RUNNER_TEMP}/release.keystore" "${RUNNER_TEMP}/fallback.keystore" "build-aligned.apk" "debug.keystore"
           }
           trap cleanup EXIT
 
@@ -193,11 +199,34 @@ jobs:
               --out Mengidata.apk \
               build-aligned.apk
 
-            SIGNING_MODE="Project Debug Keystore (AI Studio / Dev compatible)"
-            echo "::notice::RELEASE_* secrets are not configured; signed Mengidata.apk with the repository's debug.keystore so AI Studio installs pass AppUpdateManager SHA-256 verification. Configure RELEASE_KEYSTORE_BASE64, RELEASE_KEYSTORE_PASSWORD, RELEASE_KEY_ALIAS, and RELEASE_KEY_PASSWORD for production signing."
+            SIGNING_MODE="Project Keystore (AI Studio SHA-256 compatible)"
+            echo "::notice::Signed Mengidata.apk with the project debug.keystore so AI Studio installs pass AppUpdateManager SHA-256 verification."
           else
-            echo "::error::No signing keystore available. Configure RELEASE_KEYSTORE_BASE64, RELEASE_KEYSTORE_PASSWORD, RELEASE_KEY_ALIAS, and RELEASE_KEY_PASSWORD in GitHub Repository Secrets."
-            exit 1
+            FALLBACK_PASS="mengidata-ci-temp"
+            keytool -genkeypair -v \
+              -keystore "${RUNNER_TEMP}/fallback.keystore" \
+              -storetype PKCS12 \
+              -alias mengidata \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass "$FALLBACK_PASS" \
+              -keypass "$FALLBACK_PASS" \
+              -dname "CN=Mengidata, OU=Mobile, O=Mengidata, L=Dar es Salaam, C=TZ"
+
+            "$BUILD_TOOLS_DIR/apksigner" sign \
+              --ks "${RUNNER_TEMP}/fallback.keystore" \
+              --ks-pass "pass:${FALLBACK_PASS}" \
+              --ks-key-alias mengidata \
+              --key-pass "pass:${FALLBACK_PASS}" \
+              --v1-signing-enabled true \
+              --v2-signing-enabled true \
+              --v3-signing-enabled true \
+              --out Mengidata.apk \
+              build-aligned.apk
+
+            SIGNING_MODE="Temporary CI Keystore (Add DEBUG_KEYSTORE_BASE64 or RELEASE_* secrets for persistent in-app updates)"
+            echo "::warning::No signing secrets found on GitHub; signed with a temporary keystore. Add DEBUG_KEYSTORE_BASE64 (copy contents of debug.keystore.base64) or RELEASE_* secrets in Repository Settings -> Secrets -> Actions so future updates keep the same SHA-256 signing certificate."
           fi
 
           VERIFY_OUTPUT=$("$BUILD_TOOLS_DIR/apksigner" verify --verbose --print-certs Mengidata.apk)
