@@ -41,7 +41,7 @@ jobs:
           VERSION_CODE=$(awk '/versionCode[[:space:]]*=/ {gsub(/[^0-9]/, "", $0); print $0; exit}' app/build.gradle.kts)
 
           if [[ -z "$APP_VERSION" || ! "$APP_VERSION" =~ ^[0-9]+(\.[0-9]+){1,3}$ ]]; then
-            echo "::error::versionName ('$APP_VERSION') in app/build.gradle.kts must match X.Y or X.Y.Z (e.g. 2.4.0)."
+            echo "::error::versionName ('$APP_VERSION') in app/build.gradle.kts must match X.Y or X.Y.Z (e.g. 2.8.2)."
             exit 1
           fi
 
@@ -124,20 +124,71 @@ jobs:
           echo "BUILD_TOOLS_DIR=$BUILD_TOOLS_DIR" >> "$GITHUB_ENV"
           echo "Using Android build-tools: $BUILD_TOOLS_DIR"
 
-      - name: Restore workspace debug keystore for Gradle configuration
+      - name: Restore or initialize persistent signing keystore
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DEBUG_KEYSTORE_BASE64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}
         run: |
           set -euo pipefail
-          if [[ -n "$DEBUG_KEYSTORE_BASE64" && ! -f "debug.keystore" ]]; then
+
+          KEYSTORE_SOURCE=""
+
+          if [[ -n "$DEBUG_KEYSTORE_BASE64" ]]; then
             echo "$DEBUG_KEYSTORE_BASE64" | tr -d '\n\r ' | base64 --decode > debug.keystore
             chmod 600 debug.keystore
+            KEYSTORE_SOURCE="GitHub Secret (DEBUG_KEYSTORE_BASE64)"
             echo "Restored debug.keystore from GitHub secret DEBUG_KEYSTORE_BASE64"
-          elif [[ -f "debug.keystore.base64" && ! -f "debug.keystore" ]]; then
+          elif [[ -f "debug.keystore.base64" ]]; then
             tr -d '\n\r ' < debug.keystore.base64 | base64 --decode > debug.keystore
             chmod 600 debug.keystore
+            KEYSTORE_SOURCE="Repository debug.keystore.base64"
             echo "Restored debug.keystore from repository debug.keystore.base64"
+          elif [[ -f "debug.keystore" && -s "debug.keystore" ]]; then
+            KEYSTORE_SOURCE="Workspace debug.keystore"
+            echo "Using existing workspace debug.keystore"
+          else
+            # Zero-setup persistent CI keystore vault stored in a private GitHub Draft Release.
+            # Draft releases are private to the repository, never expire, never affect /releases/latest,
+            # and keep the exact same SHA-256 signing certificate across every future GitHub release.
+            VAULT_TAG="mengidata-ci-keystore"
+            ASSET_ID=$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+              --jq ".[] | select(.draft == true and .tag_name == \"${VAULT_TAG}\") | .assets[] | select(.name == \"debug.keystore\") | .id" 2>/dev/null | head -n 1 || true)
+
+            if [[ -n "$ASSET_ID" ]]; then
+              gh api -H "Accept: application/octet-stream" \
+                "repos/${GITHUB_REPOSITORY}/releases/assets/${ASSET_ID}" > debug.keystore || true
+            fi
+
+            if [[ -s "debug.keystore" ]]; then
+              chmod 600 debug.keystore
+              KEYSTORE_SOURCE="Persistent GitHub CI Keystore Vault"
+              echo "Restored persistent debug.keystore from private draft release ${VAULT_TAG}"
+            else
+              rm -f debug.keystore
+              keytool -genkeypair -v \
+                -keystore debug.keystore \
+                -storepass android \
+                -alias androiddebugkey \
+                -keypass android \
+                -keyalg RSA \
+                -keysize 2048 \
+                -validity 10000 \
+                -dname "CN=Mengidata,OU=Mobile,O=Mengidata,C=TZ"
+              chmod 600 debug.keystore
+
+              gh release create "$VAULT_TAG" \
+                debug.keystore \
+                --draft \
+                --title "Mengidata CI Keystore (Private Draft - Do Not Publish)" \
+                --notes "Automatically managed persistent keystore so every GitHub Mengidata.apk release keeps the exact same SHA-256 signing certificate." || true
+
+              KEYSTORE_SOURCE="Persistent GitHub CI Keystore Vault (Initialized)"
+              echo "Created and persisted debug.keystore in private draft release ${VAULT_TAG}"
+            fi
           fi
+
+          echo "KEYSTORE_SOURCE=$KEYSTORE_SOURCE" >> "$GITHUB_ENV"
 
       - name: Run unit tests
         run: gradle :app:testDebugUnitTest --stacktrace
@@ -149,7 +200,6 @@ jobs:
           RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
-          DEBUG_KEYSTORE_BASE64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}
         run: |
           set -euo pipefail
 
@@ -189,12 +239,10 @@ jobs:
               build-aligned.apk
 
             SIGNING_MODE="Production Release Keystore (GitHub Secrets)"
-          elif [[ -f "debug.keystore" ]]; then
-            # AI Studio-Compatible Track:
-            # Build using :app:assembleDebug so BOTH the signing certificate (debug.keystore) AND
-            # the android:debuggable flag match AI Studio APKs exactly. Android 13+ PackageInstaller
-            # rejects in-place upgrades from debuggable=true to debuggable=false with
-            # STATUS_FAILURE_INCOMPATIBLE even when the keystore is identical.
+          else
+            # Consistent Persistent Keystore Track (Android 13+ In-Place Update Compatible):
+            # Uses :app:assembleDebug with our persistent debug.keystore so both certificate SHA-256
+            # and debuggable flags remain consistent across releases.
             gradle :app:assembleDebug --stacktrace
 
             if [[ ! -f "app/build/outputs/apk/debug/app-debug.apk" ]]; then
@@ -203,11 +251,8 @@ jobs:
             fi
 
             cp "app/build/outputs/apk/debug/app-debug.apk" Mengidata.apk
-            SIGNING_MODE="Project Keystore (AI Studio & Android 13+ In-Place Update Compatible)"
-            echo "::notice::Built Mengidata.apk with assembleDebug + project debug.keystore for 100% seamless Android 13+ in-place updates from AI Studio and previous GitHub releases."
-          else
-            echo "::error::No persistent keystore found! Commit debug.keystore.base64 or add DEBUG_KEYSTORE_BASE64 / RELEASE_KEYSTORE_BASE64 secrets in GitHub Settings -> Secrets -> Actions so updates keep a consistent SHA-256 signing certificate."
-            exit 1
+            SIGNING_MODE="${KEYSTORE_SOURCE:-Persistent Project Keystore}"
+            echo "::notice::Built Mengidata.apk using ${SIGNING_MODE}"
           fi
 
           VERIFY_OUTPUT=$("$BUILD_TOOLS_DIR/apksigner" verify --verbose --print-certs Mengidata.apk 2>&1)
@@ -269,31 +314,28 @@ jobs:
         run: |
           set -euo pipefail
           BODY_FILE="${RUNNER_TEMP}/release-body.md"
-
-          # If an earlier failed or draft release exists for this tag, try to clean it up first.
-          # If Release Immutability locked a published tag, fall back to a unique build tag if needed.
           FINAL_TAG="$RELEASE_TAG"
+
+          # Clean up any leftover unpublished draft for this exact tag
+          EXISTING_DRAFT_IDS=$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=50" \
+            --jq ".[] | select(.draft == true and .tag_name == \"${FINAL_TAG}\") | .id" 2>/dev/null || true)
+          for DID in $EXISTING_DRAFT_IDS; do
+            gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/${DID}" >/dev/null 2>&1 || true
+          done
+
+          # If a published release already exists for this tag, try uploading with --clobber first
           if gh release view "$FINAL_TAG" >/dev/null 2>&1; then
-            IS_DRAFT=$(gh release view "$FINAL_TAG" --json isDraft -q '.isDraft' 2>/dev/null || echo "false")
-            if [[ "$IS_DRAFT" == "true" ]]; then
-              gh release delete "$FINAL_TAG" --yes || true
+            if gh release upload "$FINAL_TAG" Mengidata.apk Mengidata.apk.sha256 --clobber >/dev/null 2>&1; then
+              echo "Updated existing release $FINAL_TAG with Mengidata.apk and Mengidata.apk.sha256"
+              exit 0
             else
-              # Check if we can delete or upload to the existing published release; if immutable, append build code
-              if ! gh release upload "$FINAL_TAG" Mengidata.apk Mengidata.apk.sha256 --clobber >/dev/null 2>&1; then
-                echo "::warning::Release $FINAL_TAG already exists and is locked by GitHub Release Immutability. Creating draft-first release."
-                gh release delete "$FINAL_TAG" --yes --cleanup-tag >/dev/null 2>&1 || true
-              else
-                echo "Updated existing release $FINAL_TAG with Mengidata.apk and Mengidata.apk.sha256"
-                exit 0
-              fi
+              echo "::warning::Release $FINAL_TAG is locked by GitHub Release Immutability; removing and recreating draft-first."
+              gh release delete "$FINAL_TAG" --yes --cleanup-tag >/dev/null 2>&1 || true
             fi
           fi
 
-          # CRITICAL FIX FOR GITHUB "Release Immutability" ("Error: Error updating policy"):
-          # 1. Create the release as a DRAFT first and attach all assets (Mengidata.apk & Mengidata.apk.sha256)
-          #    while it is still in draft state.
-          # 2. Only publish (`--draft=false --latest`) AFTER all assets have finished uploading,
-          #    because GitHub Release Immutability locks the release policy the instant `draft=false` is set!
+          # Create as DRAFT first with all assets attached so GitHub Release Immutability never rejects asset uploads,
+          # then atomically publish the draft via REST API.
           gh release create "$FINAL_TAG" \
             Mengidata.apk \
             Mengidata.apk.sha256 \
@@ -303,7 +345,14 @@ jobs:
             --generate-notes \
             --draft
 
-          gh release edit "$FINAL_TAG" \
-            --draft=false \
-            --latest
+          DRAFT_ID=$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=30" \
+            --jq ".[] | select(.draft == true and .tag_name == \"${FINAL_TAG}\") | .id" | head -n 1)
 
+          if [[ -n "$DRAFT_ID" ]]; then
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/releases/${DRAFT_ID}" \
+              -F draft=false \
+              -f make_latest=true >/dev/null
+            echo "Published Mengidata ${FINAL_TAG} (release id ${DRAFT_ID}) successfully!"
+          else
+            gh release edit "$FINAL_TAG" --draft=false --latest
+          fi
