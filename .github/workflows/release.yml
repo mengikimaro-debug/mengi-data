@@ -133,7 +133,7 @@ jobs:
             echo "$DEBUG_KEYSTORE_BASE64" | tr -d '\n\r ' | base64 --decode > debug.keystore
             chmod 600 debug.keystore
           elif [[ -f "debug.keystore.base64" && ! -f "debug.keystore" ]]; then
-            base64 --decode debug.keystore.base64 > debug.keystore
+            tr -d '\n\r ' < debug.keystore.base64 | base64 --decode > debug.keystore
             chmod 600 debug.keystore
           fi
 

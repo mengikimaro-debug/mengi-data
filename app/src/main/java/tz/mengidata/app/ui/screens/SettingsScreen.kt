@@ -681,9 +681,16 @@ fun SettingsScreen(
                                         Icon(Icons.Rounded.ErrorOutline, contentDescription = null, tint = colors.expense, modifier = Modifier.size(18.dp))
                                         Text(updateState.message, style = MaterialTheme.typography.bodySmall, color = colors.expense)
                                     }
-                                    if (updateState.retryInfo != null) {
-                                        OutlinedButton(onClick = { onDownloadUpdate(updateState.retryInfo) }, shape = CircleShape) {
-                                            Text(tr(language, "Jaribu tena", "Retry"))
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        if (updateState.retryInfo != null) {
+                                            OutlinedButton(onClick = { onDownloadUpdate(updateState.retryInfo) }, shape = CircleShape) {
+                                                Text(tr(language, "Jaribu tena", "Retry"))
+                                            }
+                                        }
+                                        OutlinedButton(onClick = onOpenReleasesBrowser, shape = CircleShape) {
+                                            Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Spacer(Modifier.size(4.dp))
+                                            Text(tr(language, "Pakua GitHub", "GitHub APK"))
                                         }
                                     }
                                 }

@@ -69,7 +69,7 @@ class UpdateInstallReceiver : BroadcastReceiver() {
                 cleanupApk(cachedApkPath)
                 UpdateInstallEventBus.emit(
                     InstallResultEvent.Failure(
-                        "Saini ya APK haifanani na toleo lililosakinishwa. Hifadhi backup kwanza."
+                        "Android imezuia kusakinisha juu ya toleo la zamani lenye ufunguo tofauti. Data zako zimehifadhiwa salama kwenye Hifadhi ya Simu (Documents/Mengidata) — ondoa app ya zamani kisha sakinisha Mengidata.apk mpya."
                     )
                 )
             }

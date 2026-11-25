@@ -1243,6 +1243,10 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         viewModelScope.launch {
+            // Proactively sync the database to phone storage (Documents/Mengidata) before updating
+            runCatching { repository.syncToPhoneStorageNow() }
+            refreshStorageStatus()
+
             _updateState.value = UpdateUiState.Downloading(info, 0, 0L, info.expectedSizeBytes)
             updateManager.downloadAndVerifyApk(
                 info = info,

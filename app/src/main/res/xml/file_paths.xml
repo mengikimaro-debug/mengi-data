@@ -3,4 +3,7 @@
     <cache-path
         name="shared_pdfs"
         path="shared_pdfs/" />
+    <cache-path
+        name="mengidata_updates"
+        path="mengidata_updates/" />
 </paths>
