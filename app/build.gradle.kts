@@ -11,10 +11,10 @@ android {
 
     defaultConfig {
         applicationId = "tz.mengidata.app"
-        minSdk = 24
+        minSdk = 33
         targetSdk = 36
-        versionCode = 19
-        versionName = "2.7.0"
+        versionCode = 20
+        versionName = "2.7.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

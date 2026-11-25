@@ -228,14 +228,14 @@ fun SettingsScreen(
                                 text = if (themeState.dynamicColorSupported) {
                                     tr(
                                         language,
-                                        "Badilisha rangi kulingana na mandhari ya simu (Android 12+) ikiwa na ulinzi wa utofauti.",
-                                        "Adapts colors to your Android 12+ wallpaper with automatic contrast protection."
+                                        "Badilisha rangi kulingana na mandhari ya simu (Android 13+) ikiwa na ulinzi wa utofauti.",
+                                        "Adapts colors to your Android 13+ wallpaper with automatic contrast protection."
                                     )
                                 } else {
                                     tr(
                                         language,
-                                        "Inahitaji Android 12+ — inatumia rangi salama za Mengidata.",
-                                        "Requires Android 12+ — using accessible Mengidata palette."
+                                        "Inahitaji Android 13+ — inatumia rangi salama za Mengidata.",
+                                        "Requires Android 13+ — using accessible Mengidata palette."
                                     )
                                 },
                                 style = MaterialTheme.typography.bodySmall,
@@ -438,8 +438,8 @@ fun SettingsScreen(
                     Text(
                         text = tr(
                             language,
-                            "Hukagua matoleo mapya kwenye GitHub, kuthibitisha cheti cha saini (SHA-256) cha APK, na kusakinisha salama kwenye Android 12+.",
-                            "Checks GitHub Releases, verifies APK SHA-256 signing certificate against this install, and installs cleanly on Android 12+."
+                            "Hukagua matoleo mapya kwenye GitHub, kuthibitisha cheti cha saini (SHA-256) cha APK, na kusakinisha salama kwenye Android 13+.",
+                            "Checks GitHub Releases, verifies APK SHA-256 signing certificate, and installs cleanly on Android 13+."
                         ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
