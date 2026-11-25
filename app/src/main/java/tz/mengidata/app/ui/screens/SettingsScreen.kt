@@ -182,14 +182,16 @@ fun SettingsScreen(
             // 1. Samsung One UI 8.5 Appearance, Contrast & Language Grouped Card
             item(key = "theme_card") {
                 val themeState = LocalMengiThemeState.current
-                val bodyContrast = ContrastAccessibility.contrastRatio(
-                    MaterialTheme.colorScheme.onSurface,
-                    MaterialTheme.colorScheme.surface
-                )
-                val mutedContrast = ContrastAccessibility.contrastRatio(
-                    MaterialTheme.colorScheme.onSurfaceVariant,
-                    MaterialTheme.colorScheme.surfaceVariant
-                )
+                val onSurfaceColor = MaterialTheme.colorScheme.onSurface
+                val surfaceColor = MaterialTheme.colorScheme.surface
+                val onSurfaceVariantColor = MaterialTheme.colorScheme.onSurfaceVariant
+                val surfaceVariantColor = MaterialTheme.colorScheme.surfaceVariant
+                val bodyContrast = remember(onSurfaceColor, surfaceColor) {
+                    ContrastAccessibility.contrastRatio(onSurfaceColor, surfaceColor)
+                }
+                val mutedContrast = remember(onSurfaceVariantColor, surfaceVariantColor) {
+                    ContrastAccessibility.contrastRatio(onSurfaceVariantColor, surfaceVariantColor)
+                }
                 val wcagTier = if (themeState.highContrastEnabled && bodyContrast >= 7f) "WCAG AAA" else "WCAG AA"
 
                 MengiCard {

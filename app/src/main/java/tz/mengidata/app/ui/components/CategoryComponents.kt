@@ -11,6 +11,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -19,11 +20,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Label
 import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
@@ -118,12 +120,16 @@ fun parseHexColorSafe(hex: String, fallback: Color = Color(0xFF334B63)): Color {
 
 @Composable
 fun accessibleCategoryAccent(hex: String): Color {
-    val raw = parseHexColorSafe(hex, MaterialTheme.colorScheme.primary)
-    return ContrastAccessibility.ensureAccessibleForeground(
-        preferred = raw,
-        background = MaterialTheme.colorScheme.surface,
-        minRatio = ContrastAccessibility.WCAG_AA_LARGE
-    )
+    val primaryFallback = MaterialTheme.colorScheme.primary
+    val surfaceBg = MaterialTheme.colorScheme.surface
+    return remember(hex, primaryFallback, surfaceBg) {
+        val raw = parseHexColorSafe(hex, primaryFallback)
+        ContrastAccessibility.ensureAccessibleForeground(
+            preferred = raw,
+            background = surfaceBg,
+            minRatio = ContrastAccessibility.WCAG_AA_LARGE
+        )
+    }
 }
 
 @Composable
@@ -322,11 +328,18 @@ private fun CategoryBreakdownRow(
 ) {
     val colors = LocalMengiColors.current
     val accent = accessibleCategoryAccent(item.colorHex)
-    val animatedShare by animateFloatAsState(
-        targetValue = (item.sharePercent / 100f).coerceIn(0.02f, 1f),
-        animationSpec = tween(420, easing = FastOutSlowInEasing),
-        label = "cat_share_bar"
-    )
+    val shareFraction = remember(item.sharePercent) {
+        (item.sharePercent / 100f).coerceIn(0.02f, 1f)
+    }
+    val displayCategory = remember(item.categoryName, language) {
+        FormatUtils.localizedCategory(item.categoryName, language)
+    }
+    val formattedTotal = remember(item.totalAmount, currency) {
+        FormatUtils.formatCompactMoney(item.totalAmount, currency)
+    }
+    val formattedShare = remember(item.sharePercent) {
+        String.format(Locale.US, "%.1f%%", item.sharePercent)
+    }
 
     Column(
         modifier = Modifier
@@ -343,8 +356,10 @@ private fun CategoryBreakdownRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            val solidIconTileBg = lerp(MaterialTheme.colorScheme.surface, accent, if (colors.isDark) 0.24f else 0.14f)
-            val displayCategory = FormatUtils.localizedCategory(item.categoryName, language)
+            val surfaceColor = MaterialTheme.colorScheme.surface
+            val solidIconTileBg = remember(surfaceColor, accent, colors.isDark) {
+                lerp(surfaceColor, accent, if (colors.isDark) 0.24f else 0.14f)
+            }
             Box(
                 modifier = Modifier
                     .size(38.dp)
@@ -386,13 +401,13 @@ private fun CategoryBreakdownRow(
             }
             Column(horizontalAlignment = Alignment.End) {
                 Text(
-                    text = FormatUtils.formatCompactMoney(item.totalAmount, currency),
+                    text = formattedTotal,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = String.format(Locale.US, "%.1f%%", item.sharePercent),
+                    text = formattedShare,
                     style = MaterialTheme.typography.labelSmall,
                     color = accent
                 )
@@ -407,7 +422,7 @@ private fun CategoryBreakdownRow(
         ) {
             Box(
                 modifier = Modifier
-                    .fillMaxWidth(animatedShare)
+                    .fillMaxWidth(shareFraction)
                     .fillMaxHeight()
                     .clip(CircleShape)
                     .background(accent)
@@ -456,323 +471,333 @@ fun CategoryManagerSheet(
         shape = OneUiSheetShape,
         containerColor = MaterialTheme.colorScheme.surface
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text(
-                text = tr(language, "Simamia Makundi ya Biashara", "Manage Business Categories"),
-                style = MaterialTheme.typography.headlineMedium
-            )
-
-            OneUiSegmentedTabs(
-                options = listOf(
-                    tr(language, "Matumizi", "Expenses"),
-                    tr(language, "Mapato", "Income")
-                ),
-                selectedIndex = if (activeType == "expense") 0 else 1,
-                onSelect = { idx ->
-                    activeType = if (idx == 0) "expense" else "income"
-                    resetForm()
-                },
-                testTags = listOf("cat_mgr_tab_expense", "cat_mgr_tab_income")
-            )
-
-            // Create / Edit Form Card
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = colors.subtleSurface,
-                border = BorderStroke(1.dp, colors.cardBorder),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
+            item(key = "cat_mgr_header") {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Text(
-                        text = if (editing == null) {
-                            tr(language, "Ongeza Kundi Jipya", "Create New Category")
-                        } else {
-                            val editedDisplay = FormatUtils.localizedCategory(editing!!.name, language)
-                            tr(language, "Hariri Kundi: $editedDisplay", "Edit Category: $editedDisplay")
+                        text = tr(language, "Simamia Makundi ya Biashara", "Manage Business Categories"),
+                        style = MaterialTheme.typography.headlineMedium
+                    )
+
+                    OneUiSegmentedTabs(
+                        options = listOf(
+                            tr(language, "Matumizi", "Expenses"),
+                            tr(language, "Mapato", "Income")
+                        ),
+                        selectedIndex = if (activeType == "expense") 0 else 1,
+                        onSelect = { idx ->
+                            activeType = if (idx == 0) "expense" else "income"
+                            resetForm()
                         },
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold
+                        testTags = listOf("cat_mgr_tab_expense", "cat_mgr_tab_income")
                     )
 
-                    OutlinedTextField(
-                        value = nameInput,
-                        onValueChange = { nameInput = it; errorText = null },
-                        label = { Text(tr(language, "Jina la kundi *", "Category name *")) },
-                        placeholder = { Text(tr(language, "mf. Mafuta na Usafirishaji", "e.g. Fuel & Delivery")) },
-                        singleLine = true,
-                        shape = OneUiFieldShape,
-                        colors = oneUiTextFieldColors(),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("category_name_input")
-                    )
-
-                    OutlinedTextField(
-                        value = budgetText,
-                        onValueChange = { budgetText = it.filter { ch -> ch.isDigit() || ch == '.' } },
-                        label = { Text(tr(language, "Bajeti / Lengo la Mwezi (Hiari)", "Monthly Budget / Target (Optional)")) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        singleLine = true,
-                        shape = OneUiFieldShape,
-                        colors = oneUiTextFieldColors(),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("category_budget_input")
-                    )
-
-                    Text(
-                        text = tr(language, "Chagua Aikoni", "Pick Icon"),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Row(
-                        modifier = Modifier.horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    // Create / Edit Form Card
+                    Surface(
+                        shape = RoundedCornerShape(24.dp),
+                        color = colors.subtleSurface,
+                        border = BorderStroke(1.dp, colors.cardBorder),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        CategoryAnalyticsEngine.iconKeyOptions.forEach { key ->
-                            val selected = iconKey == key
-                            Box(
-                                modifier = Modifier
-                                    .size(44.dp)
-                                    .clip(RoundedCornerShape(14.dp))
-                                    .background(
-                                        if (selected) MaterialTheme.colorScheme.primaryContainer
-                                        else MaterialTheme.colorScheme.surface
-                                    )
-                                    .border(
-                                        width = if (selected) 1.5.dp else 0.75.dp,
-                                        color = if (selected) MaterialTheme.colorScheme.primary else colors.cardBorder,
-                                        shape = RoundedCornerShape(14.dp)
-                                    )
-                                    .clickable { iconKey = key },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = categoryIconForKey(key),
-                                    contentDescription = key,
-                                    tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    Text(
-                        text = tr(language, "Chagua Rangi", "Pick Color"),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Row(
-                        modifier = Modifier.horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        CategoryAnalyticsEngine.paletteHexOptions.forEach { hex ->
-                            val swatch = parseHexColorSafe(hex)
-                            val selected = colorHex.equals(hex, ignoreCase = true)
-                            Box(
-                                modifier = Modifier
-                                    .size(40.dp)
-                                    .clip(CircleShape)
-                                    .background(swatch)
-                                    .border(
-                                        width = if (selected) 2.5.dp else 1.dp,
-                                        color = if (selected) MaterialTheme.colorScheme.onSurface else colors.cardBorder,
-                                        shape = CircleShape
-                                    )
-                                    .clickable { colorHex = hex },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                if (selected) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Check,
-                                        contentDescription = null,
-                                        tint = Color.White,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    if (errorText != null) {
-                        Text(
-                            text = errorText!!,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        if (editing != null) {
-                            OutlinedButton(
-                                onClick = { resetForm() },
-                                shape = CircleShape,
-                                modifier = Modifier.weight(1f).height(48.dp)
-                            ) {
-                                Text(tr(language, "Ghairi", "Cancel"))
-                            }
-                        }
-                        Button(
-                            onClick = {
-                                val clean = nameInput.trim()
-                                if (clean.length < 2) {
-                                    errorText = tr(language, "Weka jina la kundi.", "Enter a valid category name.")
-                                    return@Button
-                                }
-                                val budgetVal = budgetText.toDoubleOrNull() ?: 0.0
-                                val current = editing
-                                val entity = (current ?: TransactionCategoryEntity(
-                                    id = "",
-                                    name = clean,
-                                    type = activeType
-                                )).copy(
-                                    name = clean,
-                                    type = activeType,
-                                    iconKey = iconKey,
-                                    colorHex = colorHex,
-                                    monthlyBudget = budgetVal
-                                )
-                                onSaveCategory(entity, current?.name)
-                                resetForm()
-                            },
-                            shape = CircleShape,
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp)
-                                .testTag("save_category_btn")
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
                             Text(
-                                if (editing == null) tr(language, "Ongeza", "Add Category")
-                                else tr(language, "Sasisha", "Update")
+                                text = if (editing == null) {
+                                    tr(language, "Ongeza Kundi Jipya", "Create New Category")
+                                } else {
+                                    val editedDisplay = FormatUtils.localizedCategory(editing!!.name, language)
+                                    tr(language, "Hariri Kundi: $editedDisplay", "Edit Category: $editedDisplay")
+                                },
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
                             )
+
+                            OutlinedTextField(
+                                value = nameInput,
+                                onValueChange = { nameInput = it; errorText = null },
+                                label = { Text(tr(language, "Jina la kundi *", "Category name *")) },
+                                placeholder = { Text(tr(language, "mf. Mafuta na Usafirishaji", "e.g. Fuel & Delivery")) },
+                                singleLine = true,
+                                shape = OneUiFieldShape,
+                                colors = oneUiTextFieldColors(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("category_name_input")
+                            )
+
+                            OutlinedTextField(
+                                value = budgetText,
+                                onValueChange = { budgetText = it.filter { ch -> ch.isDigit() || ch == '.' } },
+                                label = { Text(tr(language, "Bajeti / Lengo la Mwezi (Hiari)", "Monthly Budget / Target (Optional)")) },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                singleLine = true,
+                                shape = OneUiFieldShape,
+                                colors = oneUiTextFieldColors(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("category_budget_input")
+                            )
+
+                            Text(
+                                text = tr(language, "Chagua Aikoni", "Pick Icon"),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Row(
+                                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                CategoryAnalyticsEngine.iconKeyOptions.forEach { key ->
+                                    val selected = iconKey == key
+                                    Box(
+                                        modifier = Modifier
+                                            .size(44.dp)
+                                            .clip(RoundedCornerShape(14.dp))
+                                            .background(
+                                                if (selected) MaterialTheme.colorScheme.primaryContainer
+                                                else MaterialTheme.colorScheme.surface
+                                            )
+                                            .border(
+                                                width = if (selected) 1.5.dp else 0.75.dp,
+                                                color = if (selected) MaterialTheme.colorScheme.primary else colors.cardBorder,
+                                                shape = RoundedCornerShape(14.dp)
+                                            )
+                                            .clickable { iconKey = key },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = categoryIconForKey(key),
+                                            contentDescription = key,
+                                            tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            Text(
+                                text = tr(language, "Chagua Rangi", "Pick Color"),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Row(
+                                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                CategoryAnalyticsEngine.paletteHexOptions.forEach { hex ->
+                                    val swatch = remember(hex) { parseHexColorSafe(hex) }
+                                    val selected = colorHex.equals(hex, ignoreCase = true)
+                                    Box(
+                                        modifier = Modifier
+                                            .size(40.dp)
+                                            .clip(CircleShape)
+                                            .background(swatch)
+                                            .border(
+                                                width = if (selected) 2.5.dp else 1.dp,
+                                                color = if (selected) MaterialTheme.colorScheme.onSurface else colors.cardBorder,
+                                                shape = CircleShape
+                                            )
+                                            .clickable { colorHex = hex },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (selected) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Check,
+                                                contentDescription = null,
+                                                tint = Color.White,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (errorText != null) {
+                                Text(
+                                    text = errorText!!,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                if (editing != null) {
+                                    OutlinedButton(
+                                        onClick = { resetForm() },
+                                        shape = CircleShape,
+                                        modifier = Modifier.weight(1f).height(48.dp)
+                                    ) {
+                                        Text(tr(language, "Ghairi", "Cancel"))
+                                    }
+                                }
+                                Button(
+                                    onClick = {
+                                        val clean = nameInput.trim()
+                                        if (clean.length < 2) {
+                                            errorText = tr(language, "Weka jina la kundi.", "Enter a valid category name.")
+                                            return@Button
+                                        }
+                                        val budgetVal = budgetText.toDoubleOrNull() ?: 0.0
+                                        val current = editing
+                                        val entity = (current ?: TransactionCategoryEntity(
+                                            id = "",
+                                            name = clean,
+                                            type = activeType
+                                        )).copy(
+                                            name = clean,
+                                            type = activeType,
+                                            iconKey = iconKey,
+                                            colorHex = colorHex,
+                                            monthlyBudget = budgetVal
+                                        )
+                                        onSaveCategory(entity, current?.name)
+                                        resetForm()
+                                    },
+                                    shape = CircleShape,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(48.dp)
+                                        .testTag("save_category_btn")
+                                ) {
+                                    Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        if (editing == null) tr(language, "Ongeza", "Add Category")
+                                        else tr(language, "Sasisha", "Update")
+                                    )
+                                }
+                            }
                         }
                     }
+
+                    HorizontalDivider(color = colors.cardBorder)
+
+                    Text(
+                        text = tr(
+                            language,
+                            "Makundi yaliyopo (${visibleCats.size})",
+                            "Existing categories (${visibleCats.size})"
+                        ),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
 
-            HorizontalDivider(color = colors.cardBorder)
-
-            Text(
-                text = tr(
-                    language,
-                    "Makundi yaliyopo (${visibleCats.size})",
-                    "Existing categories (${visibleCats.size})"
-                ),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = colors.subtleSurface,
-                border = BorderStroke(1.dp, colors.cardBorder),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    visibleCats.forEachIndexed { idx, cat ->
-                        val accent = accessibleCategoryAccent(cat.colorHex)
-                        val solidTileBg = lerp(MaterialTheme.colorScheme.surface, accent, if (colors.isDark) 0.24f else 0.14f)
-                        val displayName = FormatUtils.localizedCategory(cat.name, language)
-                        val isFallback = cat.name == "Mapato mengine" || cat.name == "Matumizi mengine"
-                        Row(
+            itemsIndexed(
+                items = visibleCats,
+                key = { _, cat -> cat.id },
+                contentType = { _, _ -> "category_row" }
+            ) { _, cat ->
+                val accent = accessibleCategoryAccent(cat.colorHex)
+                val surfaceColor = MaterialTheme.colorScheme.surface
+                val solidTileBg = remember(surfaceColor, accent, colors.isDark) {
+                    lerp(surfaceColor, accent, if (colors.isDark) 0.24f else 0.14f)
+                }
+                val displayName = remember(cat.name, language) {
+                    FormatUtils.localizedCategory(cat.name, language)
+                }
+                val formattedBudget = remember(cat.monthlyBudget) {
+                    if (cat.monthlyBudget > 0.0) FormatUtils.formatCompactMoney(cat.monthlyBudget) else ""
+                }
+                val isFallback = cat.name == "Mapato mengine" || cat.name == "Matumizi mengine"
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    color = colors.subtleSurface,
+                    border = BorderStroke(1.dp, colors.cardBorder),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Box(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 14.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                .size(38.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(solidTileBg),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(38.dp)
-                                    .clip(RoundedCornerShape(14.dp))
-                                    .background(solidTileBg),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = categoryIconForKey(cat.iconKey),
-                                    contentDescription = displayName,
-                                    tint = accent,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                            Column(modifier = Modifier.weight(1f)) {
+                            Icon(
+                                imageVector = categoryIconForKey(cat.iconKey),
+                                contentDescription = displayName,
+                                tint = accent,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = displayName,
+                                style = MaterialTheme.typography.titleSmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (formattedBudget.isNotEmpty()) {
                                 Text(
-                                    text = displayName,
-                                    style = MaterialTheme.typography.titleSmall,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                                    text = tr(language, "Bajeti", "Budget") + ": $formattedBudget",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
-                                if (cat.monthlyBudget > 0.0) {
-                                    Text(
-                                        text = tr(language, "Bajeti", "Budget") + ": ${FormatUtils.formatCompactMoney(cat.monthlyBudget)}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
                             }
+                        }
+                        IconButton(
+                            onClick = {
+                                editing = cat
+                                nameInput = cat.name
+                                iconKey = cat.iconKey
+                                colorHex = cat.colorHex
+                                budgetText = if (cat.monthlyBudget > 0.0) cat.monthlyBudget.toLong().toString() else ""
+                                errorText = null
+                            },
+                            modifier = Modifier.size(44.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Edit,
+                                contentDescription = tr(language, "Hariri", "Edit"),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        if (!isFallback) {
                             IconButton(
-                                onClick = {
-                                    editing = cat
-                                    nameInput = cat.name
-                                    iconKey = cat.iconKey
-                                    colorHex = cat.colorHex
-                                    budgetText = if (cat.monthlyBudget > 0.0) cat.monthlyBudget.toLong().toString() else ""
-                                    errorText = null
-                                },
+                                onClick = { onDeleteCategory(cat.id) },
                                 modifier = Modifier.size(44.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Rounded.Edit,
-                                    contentDescription = tr(language, "Hariri", "Edit"),
+                                    imageVector = Icons.Rounded.Delete,
+                                    contentDescription = tr(language, "Futa", "Delete"),
+                                    tint = MaterialTheme.colorScheme.error,
                                     modifier = Modifier.size(18.dp)
                                 )
                             }
-                            if (!isFallback) {
-                                IconButton(
-                                    onClick = { onDeleteCategory(cat.id) },
-                                    modifier = Modifier.size(44.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Delete,
-                                        contentDescription = tr(language, "Futa", "Delete"),
-                                        tint = MaterialTheme.colorScheme.error,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-                            }
-                        }
-                        if (idx < visibleCats.lastIndex) {
-                            HorizontalDivider(
-                                color = colors.cardBorder,
-                                modifier = Modifier.padding(start = 62.dp, end = 14.dp)
-                            )
                         }
                     }
                 }
             }
 
-            TextButton(
-                onClick = onDismiss,
-                shape = CircleShape,
-                modifier = Modifier.align(Alignment.End)
-            ) {
-                Text(tr(language, "Funga", "Close"))
+            item(key = "cat_mgr_footer") {
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    TextButton(
+                        onClick = onDismiss,
+                        shape = CircleShape,
+                        modifier = Modifier.align(Alignment.CenterEnd)
+                    ) {
+                        Text(tr(language, "Funga", "Close"))
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
             }
-            Spacer(Modifier.height(16.dp))
         }
     }
 }

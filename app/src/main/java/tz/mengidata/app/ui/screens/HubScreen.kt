@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -199,12 +200,15 @@ fun HubScreen(
                     )
                 }
             } else {
-                items(filteredGoals, key = { it.id }) { goal ->
+                items(
+                    items = filteredGoals,
+                    key = { it.id },
+                    contentType = { "savings_goal_card" }
+                ) { goal ->
                     OneUiSavingsGoalCard(
                         goal = goal,
                         currency = currency,
                         language = language,
-                        modifier = Modifier.animateItem(),
                         onDeposit = { txnTarget = goal to "deposit" },
                         onWithdraw = { txnTarget = goal to "withdraw" },
                         onHistory = { logsGoal = goal },
@@ -262,7 +266,9 @@ fun HubScreen(
     }
 
     logsGoal?.let { goal ->
-        val logs = savingsLogs.filter { it.savingsId == goal.id }
+        val logs = remember(savingsLogs, goal.id) {
+            savingsLogs.filter { it.savingsId == goal.id }
+        }
         SavingsHistorySheet(
             goal = goal,
             logs = logs,
@@ -294,13 +300,17 @@ private fun OneUiSavingsVaultSummaryCard(
     val colors = LocalMengiColors.current
     val totalSaved = remember(goals) { goals.sumOf { it.currentAmount } }
     val totalTarget = remember(goals) { goals.sumOf { it.targetAmount } }
-    val ratio = if (totalTarget > 0.0) (totalSaved / totalTarget).toFloat().coerceIn(0f, 1f) else 0f
+    val ratio = remember(totalSaved, totalTarget) {
+        if (totalTarget > 0.0) (totalSaved / totalTarget).toFloat().coerceIn(0f, 1f) else 0f
+    }
     val pct = (ratio * 100f).toInt()
-    val animatedRatio by animateFloatAsState(
-        targetValue = ratio,
-        animationSpec = tween(450, easing = FastOutSlowInEasing),
-        label = "vault_progress"
-    )
+    val formattedTarget = remember(totalTarget, currency) {
+        FormatUtils.formatCompactMoney(totalTarget, currency)
+    }
+    val formattedRemaining = remember(totalTarget, totalSaved, currency) {
+        val remaining = (totalTarget - totalSaved).coerceAtLeast(0.0)
+        FormatUtils.formatCompactMoney(remaining, currency)
+    }
 
     Surface(
         shape = MaterialTheme.shapes.extraLarge,
@@ -353,7 +363,7 @@ private fun OneUiSavingsVaultSummaryCard(
             ) {
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth(animatedRatio.coerceAtLeast(if (totalSaved > 0) 0.03f else 0f))
+                        .fillMaxWidth(ratio.coerceAtLeast(if (totalSaved > 0) 0.03f else 0f))
                         .fillMaxHeight()
                         .clip(CircleShape)
                         .background(Color(0xFF7FA896))
@@ -365,13 +375,12 @@ private fun OneUiSavingsVaultSummaryCard(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = "${tr(language, "Lengo", "Target")}: ${FormatUtils.formatCompactMoney(totalTarget, currency)}",
+                    text = "${tr(language, "Lengo", "Target")}: $formattedTarget",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color(0xFFBDC7D4)
                 )
-                val remaining = (totalTarget - totalSaved).coerceAtLeast(0.0)
                 Text(
-                    text = "${tr(language, "Baki", "Remaining")}: ${FormatUtils.formatCompactMoney(remaining, currency)}",
+                    text = "${tr(language, "Baki", "Remaining")}: $formattedRemaining",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color(0xFFBDC7D4)
                 )
@@ -393,13 +402,16 @@ private fun OneUiSavingsGoalCard(
     onDelete: () -> Unit
 ) {
     val colors = LocalMengiColors.current
-    val progress = if (goal.targetAmount > 0.0) (goal.currentAmount / goal.targetAmount).toFloat().coerceIn(0f, 1f) else 0f
+    val progress = remember(goal.currentAmount, goal.targetAmount) {
+        if (goal.targetAmount > 0.0) (goal.currentAmount / goal.targetAmount).toFloat().coerceIn(0f, 1f) else 0f
+    }
     val pct = (progress * 100f).toInt()
-    val animatedProgress by animateFloatAsState(
-        targetValue = progress,
-        animationSpec = tween(420, easing = FastOutSlowInEasing),
-        label = "goal_progress"
-    )
+    val formattedCurrent = remember(goal.currentAmount, currency) {
+        FormatUtils.formatMoney(goal.currentAmount, currency)
+    }
+    val formattedTarget = remember(goal.targetAmount, currency) {
+        "/ ${FormatUtils.formatCompactMoney(goal.targetAmount, currency)}"
+    }
 
     MengiCard(modifier = modifier) {
         Row(
@@ -457,13 +469,13 @@ private fun OneUiSavingsGoalCard(
             verticalAlignment = Alignment.Bottom
         ) {
             Text(
-                text = FormatUtils.formatMoney(goal.currentAmount, currency),
+                text = formattedCurrent,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
             )
             Text(
-                text = "/ ${FormatUtils.formatCompactMoney(goal.targetAmount, currency)}",
+                text = formattedTarget,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -480,7 +492,7 @@ private fun OneUiSavingsGoalCard(
         ) {
             Box(
                 modifier = Modifier
-                    .fillMaxWidth(animatedProgress.coerceAtLeast(if (goal.currentAmount > 0) 0.03f else 0f))
+                    .fillMaxWidth(progress.coerceAtLeast(if (goal.currentAmount > 0) 0.03f else 0f))
                     .fillMaxHeight()
                     .clip(CircleShape)
                     .background(if (pct >= 100) colors.income else MaterialTheme.colorScheme.primary)
@@ -836,51 +848,80 @@ private fun SavingsHistorySheet(
         shape = OneUiSheetShape,
         containerColor = MaterialTheme.colorScheme.surface
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 8.dp),
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text(goal.title, style = MaterialTheme.typography.headlineMedium)
-            Text(tr(language, "Historia ya Akiba", "Savings History"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            HorizontalDivider(color = colors.cardBorder)
+            item(key = "history_header") {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(goal.title, style = MaterialTheme.typography.headlineMedium)
+                    Text(
+                        tr(language, "Historia ya Akiba", "Savings History"),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    HorizontalDivider(color = colors.cardBorder)
+                }
+            }
+
             if (logs.isEmpty()) {
-                Text(
-                    tr(language, "Hakuna miamala ya akiba bado.", "No savings activity recorded yet."),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(vertical = 16.dp)
-                )
+                item(key = "history_empty") {
+                    Text(
+                        tr(language, "Hakuna miamala ya akiba bado.", "No savings activity recorded yet."),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 16.dp)
+                    )
+                }
             } else {
-                logs.forEachIndexed { idx, log ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 6.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = log.note.ifBlank { if (log.isDeposit) tr(language, "Kuweka akiba", "Deposit") else tr(language, "Kutoa akiba", "Withdrawal") },
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Text(log.date, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Text(
-                            text = (if (log.isDeposit) "+" else "-") + FormatUtils.formatMoney(log.amount, currency),
-                            style = MaterialTheme.typography.titleSmall,
-                            color = if (log.isDeposit) colors.income else colors.expense
-                        )
+                itemsIndexed(
+                    items = logs,
+                    key = { _, log -> log.id },
+                    contentType = { _, _ -> "savings_log_row" }
+                ) { idx, log ->
+                    val formattedLogAmount = remember(log.amount, log.isDeposit, currency) {
+                        (if (log.isDeposit) "+" else "-") + FormatUtils.formatMoney(log.amount, currency)
                     }
-                    if (idx < logs.lastIndex) {
-                        HorizontalDivider(color = colors.cardBorder)
+                    Column {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = log.note.ifBlank {
+                                        if (log.isDeposit) tr(language, "Kuweka akiba", "Deposit")
+                                        else tr(language, "Kutoa akiba", "Withdrawal")
+                                    },
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    log.date,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Text(
+                                text = formattedLogAmount,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = if (log.isDeposit) colors.income else colors.expense
+                            )
+                        }
+                        if (idx < logs.lastIndex) {
+                            HorizontalDivider(color = colors.cardBorder)
+                        }
                     }
                 }
             }
-            Spacer(Modifier.height(24.dp))
+
+            item(key = "history_footer") {
+                Spacer(Modifier.height(24.dp))
+            }
         }
     }
 }

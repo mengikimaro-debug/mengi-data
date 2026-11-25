@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -401,7 +402,11 @@ fun InvoicesScreen(
                     )
                 }
             } else {
-                items(filtered, key = { it.invoice.id }) { item ->
+                items(
+                    items = filtered,
+                    key = { it.invoice.id },
+                    contentType = { "invoice_card" }
+                ) { item ->
                     InvoiceRowCard(
                         item = item,
                         currency = currency,
@@ -535,14 +540,28 @@ private fun InvoiceRowCard(
     onMarkPaid: () -> Unit
 ) {
     val colors = LocalMengiColors.current
+    val totalVal = remember(item) { item.total }
+    val balanceVal = remember(item) { item.balance }
+    val isPaid = remember(item) { item.isPaid }
+    val isDraft = remember(item) { item.isDraft }
+    val isOverdue = remember(item) { item.isOverdue }
+    val isPartial = remember(item) { item.isPartial }
+    val paidRatio = remember(totalVal, item.invoice.amountPaid) {
+        if (totalVal > 0.0) (item.invoice.amountPaid / totalVal).toFloat().coerceIn(0f, 1f) else 0f
+    }
+    val formattedTotal = remember(totalVal, currency) {
+        FormatUtils.formatMoney(totalVal, currency)
+    }
+    val formattedBalance = remember(balanceVal, currency, language) {
+        "${tr(language, "Salio", "Balance")}: ${FormatUtils.formatCompactMoney(balanceVal, currency)}"
+    }
     val (statusLabel, bg, fg) = when {
-        item.isDraft -> Triple(tr(language, "Rasimu", "Draft"), colors.subtleSurface, MaterialTheme.colorScheme.onSurfaceVariant)
-        item.isPaid -> Triple(tr(language, "Imelipwa", "Paid"), colors.incomeSoft, colors.income)
-        item.isOverdue -> Triple(tr(language, "Imechelewa", "Overdue"), colors.expenseSoft, colors.expense)
-        item.isPartial -> Triple(tr(language, "Sehemu", "Partial"), colors.warningSoft, colors.warning)
+        isDraft -> Triple(tr(language, "Rasimu", "Draft"), colors.subtleSurface, MaterialTheme.colorScheme.onSurfaceVariant)
+        isPaid -> Triple(tr(language, "Imelipwa", "Paid"), colors.incomeSoft, colors.income)
+        isOverdue -> Triple(tr(language, "Imechelewa", "Overdue"), colors.expenseSoft, colors.expense)
+        isPartial -> Triple(tr(language, "Sehemu", "Partial"), colors.warningSoft, colors.warning)
         else -> Triple(tr(language, "Inadaiwa", "Due"), colors.warningSoft, colors.warning)
     }
-    val paidRatio = if (item.total > 0.0) (item.invoice.amountPaid / item.total).toFloat().coerceIn(0f, 1f) else 0f
 
     MengiCard(onClick = onClick) {
         Row(
@@ -572,20 +591,20 @@ private fun InvoiceRowCard(
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 StatusPill(text = statusLabel, containerColor = bg, contentColor = fg)
                 Text(
-                    text = FormatUtils.formatMoney(item.total, currency),
+                    text = formattedTotal,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold
                 )
-                if (!item.isPaid && !item.isDraft && item.balance > 0) {
+                if (!isPaid && !isDraft && balanceVal > 0) {
                     Text(
-                        text = "${tr(language, "Salio", "Balance")}: ${FormatUtils.formatCompactMoney(item.balance, currency)}",
+                        text = formattedBalance,
                         style = MaterialTheme.typography.bodySmall,
                         color = colors.expense
                     )
                 }
             }
         }
-        if (item.isPartial) {
+        if (isPartial) {
             Spacer(Modifier.height(8.dp))
             Box(
                 modifier = Modifier
@@ -647,56 +666,79 @@ private fun InvoiceDetailSheet(
     onDelete: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val orderedItems = remember(item.items) { item.orderedItems }
+    val subtotalText = remember(item, currency) { FormatUtils.formatMoney(item.subtotal, currency) }
+    val discountText = remember(item, currency) { "-${FormatUtils.formatMoney(item.effectiveDiscount, currency)}" }
+    val vatText = remember(item, currency) { FormatUtils.formatMoney(item.vatAmount, currency) }
+    val totalText = remember(item, currency) { FormatUtils.formatMoney(item.total, currency) }
+    val paidText = remember(item.invoice.amountPaid, currency) { FormatUtils.formatMoney(item.invoice.amountPaid, currency) }
+    val balanceText = remember(item, currency) { FormatUtils.formatMoney(item.balance, currency) }
+    val customerContactLine = remember(item.invoice) {
+        listOf(item.invoice.customerPhone, item.invoice.customerEmail, item.invoice.customerAddress)
+            .filter { it.isNotBlank() }.joinToString(" · ")
+    }
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         shape = OneUiSheetShape,
         containerColor = MaterialTheme.colorScheme.surface
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 8.dp),
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(item.invoice.number, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                    Text(item.invoice.customerName, style = MaterialTheme.typography.headlineMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-                Row {
-                    IconButton(onClick = onShare, modifier = Modifier.testTag("share_invoice_btn")) {
-                        Icon(Icons.Rounded.Share, contentDescription = tr(language, "Shiriki", "Share"))
+            item(key = "detail_header") {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(item.invoice.number, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                            Text(item.invoice.customerName, style = MaterialTheme.typography.headlineMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        Row {
+                            IconButton(onClick = onShare, modifier = Modifier.testTag("share_invoice_btn")) {
+                                Icon(Icons.Rounded.Share, contentDescription = tr(language, "Shiriki", "Share"))
+                            }
+                            IconButton(onClick = onDuplicate, modifier = Modifier.testTag("duplicate_invoice_btn")) {
+                                Icon(Icons.Rounded.ContentCopy, contentDescription = tr(language, "Nakili", "Duplicate"))
+                            }
+                            IconButton(onClick = onEdit) {
+                                Icon(Icons.Rounded.Edit, contentDescription = tr(language, "Hariri", "Edit"))
+                            }
+                            IconButton(onClick = onDelete) {
+                                Icon(Icons.Rounded.Delete, contentDescription = tr(language, "Futa", "Delete"), tint = MaterialTheme.colorScheme.error)
+                            }
+                        }
                     }
-                    IconButton(onClick = onDuplicate, modifier = Modifier.testTag("duplicate_invoice_btn")) {
-                        Icon(Icons.Rounded.ContentCopy, contentDescription = tr(language, "Nakili", "Duplicate"))
+
+                    if (customerContactLine.isNotBlank()) {
+                        Text(
+                            text = customerContactLine,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
-                    IconButton(onClick = onEdit) {
-                        Icon(Icons.Rounded.Edit, contentDescription = tr(language, "Hariri", "Edit"))
-                    }
-                    IconButton(onClick = onDelete) {
-                        Icon(Icons.Rounded.Delete, contentDescription = tr(language, "Futa", "Delete"), tint = MaterialTheme.colorScheme.error)
-                    }
+
+                    HorizontalDivider(color = LocalMengiColors.current.cardBorder)
                 }
             }
 
-            if (item.invoice.customerPhone.isNotBlank() || item.invoice.customerAddress.isNotBlank()) {
-                Text(
-                    text = listOf(item.invoice.customerPhone, item.invoice.customerEmail, item.invoice.customerAddress)
-                        .filter { it.isNotBlank() }.joinToString(" · "),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            HorizontalDivider(color = LocalMengiColors.current.cardBorder)
-
-            item.orderedItems.forEach { line ->
+            items(
+                items = orderedItems,
+                key = { line -> if (line.id != 0L) "item_${line.id}" else "${line.position}_${line.description}" },
+                contentType = { "invoice_line_item" }
+            ) { line ->
+                val formattedUnitPrice = remember(line.qty, line.price, currency) {
+                    "${line.qty.toInt()} × ${FormatUtils.formatMoney(line.price, currency)}"
+                }
+                val formattedLineTotal = remember(line.lineTotal, currency) {
+                    FormatUtils.formatMoney(line.lineTotal, currency)
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
@@ -704,96 +746,100 @@ private fun InvoiceDetailSheet(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(line.description, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                         Text(
-                            text = "${line.qty.toInt()} × ${FormatUtils.formatMoney(line.price, currency)}",
+                            text = formattedUnitPrice,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Text(FormatUtils.formatMoney(line.lineTotal, currency), style = MaterialTheme.typography.titleSmall)
+                    Text(formattedLineTotal, style = MaterialTheme.typography.titleSmall)
                 }
             }
 
-            HorizontalDivider(color = LocalMengiColors.current.cardBorder)
+            item(key = "detail_footer") {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    HorizontalDivider(color = LocalMengiColors.current.cardBorder)
 
-            SummaryLine(tr(language, "Jumla ndogo", "Subtotal"), FormatUtils.formatMoney(item.subtotal, currency))
-            if (item.effectiveDiscount > 0) {
-                SummaryLine(tr(language, "Punguzo", "Discount"), "-${FormatUtils.formatMoney(item.effectiveDiscount, currency)}")
-            }
-            if (item.invoice.vatRate > 0) {
-                SummaryLine("VAT (${item.invoice.vatRate}%)", FormatUtils.formatMoney(item.vatAmount, currency))
-            }
-            SummaryLine(tr(language, "Jumla Kuu", "Grand Total"), FormatUtils.formatMoney(item.total, currency), bold = true)
-            SummaryLine(tr(language, "Imelipwa", "Paid"), FormatUtils.formatMoney(item.invoice.amountPaid, currency))
-            SummaryLine(tr(language, "Salio", "Balance Due"), FormatUtils.formatMoney(item.balance, currency), bold = true)
+                    SummaryLine(tr(language, "Jumla ndogo", "Subtotal"), subtotalText)
+                    if (item.effectiveDiscount > 0) {
+                        SummaryLine(tr(language, "Punguzo", "Discount"), discountText)
+                    }
+                    if (item.invoice.vatRate > 0) {
+                        SummaryLine("VAT (${item.invoice.vatRate}%)", vatText)
+                    }
+                    SummaryLine(tr(language, "Jumla Kuu", "Grand Total"), totalText, bold = true)
+                    SummaryLine(tr(language, "Imelipwa", "Paid"), paidText)
+                    SummaryLine(tr(language, "Salio", "Balance Due"), balanceText, bold = true)
 
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilledTonalButton(
-                    onClick = onOpenPdf,
-                    shape = CircleShape,
-                    modifier = Modifier.weight(1f).height(48.dp).testTag("open_invoice_pdf_btn")
-                ) {
-                    Icon(Icons.Rounded.Visibility, contentDescription = null, modifier = Modifier.size(17.dp))
-                    Spacer(Modifier.size(5.dp))
-                    Text(tr(language, "Fungua PDF", "Open PDF"), maxLines = 1)
-                }
-                FilledTonalButton(
-                    onClick = onExportPdf,
-                    shape = CircleShape,
-                    modifier = Modifier.weight(1f).height(48.dp).testTag("export_invoice_pdf_btn")
-                ) {
-                    Icon(Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(17.dp))
-                    Spacer(Modifier.size(5.dp))
-                    Text(tr(language, "Hifadhi PDF", "Save PDF"), maxLines = 1)
-                }
-            }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = onSharePdf,
-                    shape = CircleShape,
-                    modifier = Modifier.weight(1f).height(46.dp).testTag("share_invoice_pdf_btn")
-                ) {
-                    Icon(Icons.Rounded.PictureAsPdf, contentDescription = null, modifier = Modifier.size(17.dp))
-                    Spacer(Modifier.size(5.dp))
-                    Text(tr(language, "Tuma PDF", "Share PDF"), maxLines = 1)
-                }
-                OutlinedButton(
-                    onClick = onPrintPdf,
-                    shape = CircleShape,
-                    modifier = Modifier.weight(1f).height(46.dp).testTag("print_invoice_pdf_btn")
-                ) {
-                    Icon(Icons.Rounded.Print, contentDescription = null, modifier = Modifier.size(17.dp))
-                    Spacer(Modifier.size(5.dp))
-                    Text(tr(language, "Chapisha", "Print"), maxLines = 1)
-                }
-            }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilledTonalButton(
+                            onClick = onOpenPdf,
+                            shape = CircleShape,
+                            modifier = Modifier.weight(1f).height(48.dp).testTag("open_invoice_pdf_btn")
+                        ) {
+                            Icon(Icons.Rounded.Visibility, contentDescription = null, modifier = Modifier.size(17.dp))
+                            Spacer(Modifier.size(5.dp))
+                            Text(tr(language, "Fungua PDF", "Open PDF"), maxLines = 1)
+                        }
+                        FilledTonalButton(
+                            onClick = onExportPdf,
+                            shape = CircleShape,
+                            modifier = Modifier.weight(1f).height(48.dp).testTag("export_invoice_pdf_btn")
+                        ) {
+                            Icon(Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(17.dp))
+                            Spacer(Modifier.size(5.dp))
+                            Text(tr(language, "Hifadhi PDF", "Save PDF"), maxLines = 1)
+                        }
+                    }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = onSharePdf,
+                            shape = CircleShape,
+                            modifier = Modifier.weight(1f).height(46.dp).testTag("share_invoice_pdf_btn")
+                        ) {
+                            Icon(Icons.Rounded.PictureAsPdf, contentDescription = null, modifier = Modifier.size(17.dp))
+                            Spacer(Modifier.size(5.dp))
+                            Text(tr(language, "Tuma PDF", "Share PDF"), maxLines = 1)
+                        }
+                        OutlinedButton(
+                            onClick = onPrintPdf,
+                            shape = CircleShape,
+                            modifier = Modifier.weight(1f).height(46.dp).testTag("print_invoice_pdf_btn")
+                        ) {
+                            Icon(Icons.Rounded.Print, contentDescription = null, modifier = Modifier.size(17.dp))
+                            Spacer(Modifier.size(5.dp))
+                            Text(tr(language, "Chapisha", "Print"), maxLines = 1)
+                        }
+                    }
 
-            if (!item.isPaid) {
-                OutlinedButton(
-                    onClick = onOpenPartialPayment,
-                    shape = CircleShape,
-                    modifier = Modifier.fillMaxWidth().height(48.dp).testTag("partial_invoice_pay_btn")
-                ) {
-                    Icon(Icons.Rounded.Payments, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.size(6.dp))
-                    Text(tr(language, "Rekodi Malipo ya Awamu", "Record Partial Payment"))
-                }
-                Button(
-                    onClick = onMarkPaid,
-                    shape = CircleShape,
-                    modifier = Modifier.fillMaxWidth().height(50.dp).testTag("mark_invoice_paid_btn")
-                ) {
-                    Text(tr(language, "Weka Imelipwa Yote", "Mark Fully Paid"))
-                }
-            } else {
-                OutlinedButton(
-                    onClick = onMarkUnpaid,
-                    shape = CircleShape,
-                    modifier = Modifier.fillMaxWidth().height(50.dp)
-                ) {
-                    Text(tr(language, "Rudisha Inadaiwa", "Mark Unpaid"))
+                    if (!item.isPaid) {
+                        OutlinedButton(
+                            onClick = onOpenPartialPayment,
+                            shape = CircleShape,
+                            modifier = Modifier.fillMaxWidth().height(48.dp).testTag("partial_invoice_pay_btn")
+                        ) {
+                            Icon(Icons.Rounded.Payments, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.size(6.dp))
+                            Text(tr(language, "Rekodi Malipo ya Awamu", "Record Partial Payment"))
+                        }
+                        Button(
+                            onClick = onMarkPaid,
+                            shape = CircleShape,
+                            modifier = Modifier.fillMaxWidth().height(50.dp).testTag("mark_invoice_paid_btn")
+                        ) {
+                            Text(tr(language, "Weka Imelipwa Yote", "Mark Fully Paid"))
+                        }
+                    } else {
+                        OutlinedButton(
+                            onClick = onMarkUnpaid,
+                            shape = CircleShape,
+                            modifier = Modifier.fillMaxWidth().height(50.dp)
+                        ) {
+                            Text(tr(language, "Rudisha Inadaiwa", "Mark Unpaid"))
+                        }
+                    }
+                    Spacer(Modifier.height(24.dp))
                 }
             }
-            Spacer(Modifier.height(24.dp))
         }
     }
 }
@@ -927,10 +973,11 @@ private fun InvoiceBuilderSheet(
     }
 
     val subtotal = lineItems.sumOf { (it.qty.toDoubleOrNull() ?: 0.0) * (it.price.toDoubleOrNull() ?: 0.0) }
-    val discount = (discountText.toDoubleOrNull() ?: 0.0).coerceIn(0.0, subtotal)
-    val vatRate = (vatText.toDoubleOrNull() ?: 0.0).coerceAtLeast(0.0)
-    val total = subtotal - discount + ((subtotal - discount) * vatRate / 100.0)
+    val discount = remember(discountText, subtotal) { (discountText.toDoubleOrNull() ?: 0.0).coerceIn(0.0, subtotal) }
+    val vatRate = remember(vatText) { (vatText.toDoubleOrNull() ?: 0.0).coerceAtLeast(0.0) }
+    val total = remember(subtotal, discount, vatRate) { subtotal - discount + ((subtotal - discount) * vatRate / 100.0) }
     val currency = settings.currency.ifBlank { "TZS" }
+    val formattedTotal = remember(total, currency) { FormatUtils.formatMoney(total, currency) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -938,117 +985,122 @@ private fun InvoiceBuilderSheet(
         shape = OneUiSheetShape,
         containerColor = MaterialTheme.colorScheme.surface
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 8.dp),
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text(
-                text = if (initial == null) tr(language, "Ankara Mpya", "New Invoice") else tr(language, "Hariri Ankara", "Edit Invoice"),
-                style = MaterialTheme.typography.headlineMedium
-            )
+            item(key = "builder_header") {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = if (initial == null) tr(language, "Ankara Mpya", "New Invoice") else tr(language, "Hariri Ankara", "Edit Invoice"),
+                        style = MaterialTheme.typography.headlineMedium
+                    )
 
-            OneUiSegmentedTabs(
-                options = listOf(
-                    tr(language, "Imetolewa", "Issued"),
-                    tr(language, "Rasimu", "Draft")
-                ),
-                selectedIndex = if (state == "issued") 0 else 1,
-                onSelect = { state = if (it == 0) "issued" else "draft" }
-            )
+                    OneUiSegmentedTabs(
+                        options = listOf(
+                            tr(language, "Imetolewa", "Issued"),
+                            tr(language, "Rasimu", "Draft")
+                        ),
+                        selectedIndex = if (state == "issued") 0 else 1,
+                        onSelect = { state = if (it == 0) "issued" else "draft" }
+                    )
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = number,
-                    onValueChange = { number = it },
-                    label = { Text(tr(language, "Namba", "Number")) },
-                    singleLine = true,
-                    shape = OneUiFieldShape,
-                    colors = oneUiTextFieldColors(),
-                    modifier = Modifier.weight(1f)
-                )
-                OutlinedTextField(
-                    value = dueDate,
-                    onValueChange = { dueDate = it },
-                    label = { Text(tr(language, "Mwisho", "Due Date")) },
-                    singleLine = true,
-                    shape = OneUiFieldShape,
-                    colors = oneUiTextFieldColors(),
-                    modifier = Modifier.weight(1f)
-                )
-            }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = number,
+                            onValueChange = { number = it },
+                            label = { Text(tr(language, "Namba", "Number")) },
+                            singleLine = true,
+                            shape = OneUiFieldShape,
+                            colors = oneUiTextFieldColors(),
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = dueDate,
+                            onValueChange = { dueDate = it },
+                            label = { Text(tr(language, "Mwisho", "Due Date")) },
+                            singleLine = true,
+                            shape = OneUiFieldShape,
+                            colors = oneUiTextFieldColors(),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
 
-            OutlinedTextField(
-                value = customerName,
-                onValueChange = { customerName = it; errorText = null },
-                label = { Text(tr(language, "Jina Lolote la Mteja *", "Any Customer Name *")) },
-                placeholder = { Text(tr(language, "Jina la mteja au Jina/invoice", "Customer name or Name/invoice")) },
-                singleLine = true,
-                shape = OneUiFieldShape,
-                colors = oneUiTextFieldColors(),
-                modifier = Modifier.fillMaxWidth().testTag("invoice_customer_input")
-            )
+                    OutlinedTextField(
+                        value = customerName,
+                        onValueChange = { customerName = it; errorText = null },
+                        label = { Text(tr(language, "Jina Lolote la Mteja *", "Any Customer Name *")) },
+                        placeholder = { Text(tr(language, "Jina la mteja au Jina/invoice", "Customer name or Name/invoice")) },
+                        singleLine = true,
+                        shape = OneUiFieldShape,
+                        colors = oneUiTextFieldColors(),
+                        modifier = Modifier.fillMaxWidth().testTag("invoice_customer_input")
+                    )
 
-            // Universal Name Recognition Bar (selecting a contact also auto-fills phone, email & address)
-            RecognizedNameSuggestionsBar(
-                query = customerName,
-                knownParties = knownParties,
-                language = language,
-                onSelectParty = { selected ->
-                    customerName = selected.name
-                    if (selected.phone.isNotBlank()) customerPhone = selected.phone
-                    if (selected.email.isNotBlank()) customerEmail = selected.email
-                    if (selected.address.isNotBlank()) customerAddress = selected.address
+                    // Universal Name Recognition Bar (selecting a contact also auto-fills phone, email & address)
+                    RecognizedNameSuggestionsBar(
+                        query = customerName,
+                        knownParties = knownParties,
+                        language = language,
+                        onSelectParty = { selected ->
+                            customerName = selected.name
+                            if (selected.phone.isNotBlank()) customerPhone = selected.phone
+                            if (selected.email.isNotBlank()) customerEmail = selected.email
+                            if (selected.address.isNotBlank()) customerAddress = selected.address
+                        }
+                    )
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = customerPhone,
+                            onValueChange = { customerPhone = it },
+                            label = { Text(tr(language, "Simu", "Phone")) },
+                            singleLine = true,
+                            shape = OneUiFieldShape,
+                            colors = oneUiTextFieldColors(),
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = customerEmail,
+                            onValueChange = { customerEmail = it },
+                            label = { Text(tr(language, "Barua pepe", "Email")) },
+                            singleLine = true,
+                            shape = OneUiFieldShape,
+                            colors = oneUiTextFieldColors(),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    OutlinedTextField(
+                        value = customerAddress,
+                        onValueChange = { customerAddress = it },
+                        label = { Text(tr(language, "Anwani ya Mteja", "Address")) },
+                        singleLine = true,
+                        shape = OneUiFieldShape,
+                        colors = oneUiTextFieldColors(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    HorizontalDivider(color = LocalMengiColors.current.cardBorder)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(tr(language, "Bidhaa / Huduma", "Line Items"), style = MaterialTheme.typography.titleMedium)
+                        TextButton(onClick = { lineItems.add(DraftLineItem()) }, shape = CircleShape) {
+                            Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Text(tr(language, "Ongeza mstari", "Add item"))
+                        }
+                    }
                 }
-            )
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = customerPhone,
-                    onValueChange = { customerPhone = it },
-                    label = { Text(tr(language, "Simu", "Phone")) },
-                    singleLine = true,
-                    shape = OneUiFieldShape,
-                    colors = oneUiTextFieldColors(),
-                    modifier = Modifier.weight(1f)
-                )
-                OutlinedTextField(
-                    value = customerEmail,
-                    onValueChange = { customerEmail = it },
-                    label = { Text(tr(language, "Barua pepe", "Email")) },
-                    singleLine = true,
-                    shape = OneUiFieldShape,
-                    colors = oneUiTextFieldColors(),
-                    modifier = Modifier.weight(1f)
-                )
             }
 
-            OutlinedTextField(
-                value = customerAddress,
-                onValueChange = { customerAddress = it },
-                label = { Text(tr(language, "Anwani ya Mteja", "Address")) },
-                singleLine = true,
-                shape = OneUiFieldShape,
-                colors = oneUiTextFieldColors(),
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            HorizontalDivider(color = LocalMengiColors.current.cardBorder)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(tr(language, "Bidhaa / Huduma", "Line Items"), style = MaterialTheme.typography.titleMedium)
-                TextButton(onClick = { lineItems.add(DraftLineItem()) }, shape = CircleShape) {
-                    Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Text(tr(language, "Ongeza mstari", "Add item"))
-                }
-            }
-
-            lineItems.forEachIndexed { idx, row ->
+            itemsIndexed(
+                items = lineItems,
+                contentType = { _, _ -> "draft_line_item" }
+            ) { idx, row ->
                 MengiCard(containerColor = LocalMengiColors.current.subtleSurface, contentPadding = 14.dp) {
                     OutlinedTextField(
                         value = row.description,
@@ -1093,103 +1145,107 @@ private fun InvoiceBuilderSheet(
                 }
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = discountText,
-                    onValueChange = { discountText = it.filter { c -> c.isDigit() || c == '.' } },
-                    label = { Text(tr(language, "Punguzo", "Discount")) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    singleLine = true,
-                    shape = OneUiFieldShape,
-                    colors = oneUiTextFieldColors(),
-                    modifier = Modifier.weight(1f)
-                )
-                OutlinedTextField(
-                    value = vatText,
-                    onValueChange = { vatText = it.filter { c -> c.isDigit() || c == '.' } },
-                    label = { Text("VAT (%)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    singleLine = true,
-                    shape = OneUiFieldShape,
-                    colors = oneUiTextFieldColors(),
-                    modifier = Modifier.weight(0.8f)
-                )
-                OutlinedTextField(
-                    value = paidText,
-                    onValueChange = { paidText = it.filter { c -> c.isDigit() || c == '.' } },
-                    label = { Text(tr(language, "Amelipa", "Paid")) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    singleLine = true,
-                    shape = OneUiFieldShape,
-                    colors = oneUiTextFieldColors(),
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            OutlinedTextField(
-                value = notes,
-                onValueChange = { notes = it },
-                label = { Text(tr(language, "Maelezo", "Notes")) },
-                minLines = 2,
-                shape = OneUiFieldShape,
-                colors = oneUiTextFieldColors(),
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            MengiCard(containerColor = LocalMengiColors.current.subtleSurface, contentPadding = 16.dp) {
-                SummaryLine(tr(language, "Jumla Kuu", "Grand Total"), FormatUtils.formatMoney(total, currency), bold = true)
-            }
-
-            if (errorText != null) {
-                Text(errorText!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-            }
-
-            Button(
-                onClick = {
-                    val validItems = lineItems.mapIndexedNotNull { idx, item ->
-                        val desc = item.description.trim()
-                        val qty = item.qty.toDoubleOrNull() ?: 0.0
-                        val price = item.price.toDoubleOrNull() ?: 0.0
-                        if (desc.isNotEmpty() && qty > 0.0 && price >= 0.0) {
-                            InvoiceItemEntity(invoiceId = "", description = desc, qty = qty, price = price, position = idx)
-                        } else null
-                    }
-                    if (customerName.isBlank() || validItems.isEmpty()) {
-                        errorText = tr(
-                            language,
-                            "Weka jina la mteja na angalau bidhaa/huduma moja.",
-                            "Enter customer name and at least one valid line item."
+            item(key = "builder_footer") {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = discountText,
+                            onValueChange = { discountText = it.filter { c -> c.isDigit() || c == '.' } },
+                            label = { Text(tr(language, "Punguzo", "Discount")) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            singleLine = true,
+                            shape = OneUiFieldShape,
+                            colors = oneUiTextFieldColors(),
+                            modifier = Modifier.weight(1f)
                         )
-                        return@Button
+                        OutlinedTextField(
+                            value = vatText,
+                            onValueChange = { vatText = it.filter { c -> c.isDigit() || c == '.' } },
+                            label = { Text("VAT (%)") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            singleLine = true,
+                            shape = OneUiFieldShape,
+                            colors = oneUiTextFieldColors(),
+                            modifier = Modifier.weight(0.8f)
+                        )
+                        OutlinedTextField(
+                            value = paidText,
+                            onValueChange = { paidText = it.filter { c -> c.isDigit() || c == '.' } },
+                            label = { Text(tr(language, "Amelipa", "Paid")) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            singleLine = true,
+                            shape = OneUiFieldShape,
+                            colors = oneUiTextFieldColors(),
+                            modifier = Modifier.weight(1f)
+                        )
                     }
-                    val cleanCustomer = AutoAccountingEngine.stripSlashTag(customerName).ifBlank { customerName.trim() }
-                    val paidAmount = (paidText.toDoubleOrNull() ?: 0.0).coerceAtLeast(0.0)
-                    val base = initial?.invoice ?: InvoiceEntity(id = "", number = number, customerName = cleanCustomer)
-                    onSave(
-                        base.copy(
-                            number = number.trim(),
-                            customerName = cleanCustomer,
-                            customerPhone = customerPhone.trim(),
-                            customerEmail = customerEmail.trim(),
-                            customerAddress = customerAddress.trim(),
-                            issueDate = issueDate.ifBlank { FormatUtils.todayIso() },
-                            dueDate = dueDate.ifBlank { FormatUtils.todayIso() },
-                            discount = discount,
-                            vatRate = vatRate,
-                            amountPaid = paidAmount,
-                            state = state,
-                            paidDate = if (paidAmount > 0.0 && base.paidDate.isBlank()) FormatUtils.todayIso() else base.paidDate,
-                            notes = notes.trim()
-                        ),
-                        validItems
+
+                    OutlinedTextField(
+                        value = notes,
+                        onValueChange = { notes = it },
+                        label = { Text(tr(language, "Maelezo", "Notes")) },
+                        minLines = 2,
+                        shape = OneUiFieldShape,
+                        colors = oneUiTextFieldColors(),
+                        modifier = Modifier.fillMaxWidth()
                     )
-                },
-                shape = CircleShape,
-                modifier = Modifier.fillMaxWidth().height(52.dp).testTag("save_invoice_btn")
-            ) {
-                Text(tr(language, "Hifadhi Ankara", "Save Invoice"))
+
+                    MengiCard(containerColor = LocalMengiColors.current.subtleSurface, contentPadding = 16.dp) {
+                        SummaryLine(tr(language, "Jumla Kuu", "Grand Total"), formattedTotal, bold = true)
+                    }
+
+                    if (errorText != null) {
+                        Text(errorText!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    }
+
+                    Button(
+                        onClick = {
+                            val validItems = lineItems.mapIndexedNotNull { idx, item ->
+                                val desc = item.description.trim()
+                                val qty = item.qty.toDoubleOrNull() ?: 0.0
+                                val price = item.price.toDoubleOrNull() ?: 0.0
+                                if (desc.isNotEmpty() && qty > 0.0 && price >= 0.0) {
+                                    InvoiceItemEntity(invoiceId = "", description = desc, qty = qty, price = price, position = idx)
+                                } else null
+                            }
+                            if (customerName.isBlank() || validItems.isEmpty()) {
+                                errorText = tr(
+                                    language,
+                                    "Weka jina la mteja na angalau bidhaa/huduma moja.",
+                                    "Enter customer name and at least one valid line item."
+                                )
+                                return@Button
+                            }
+                            val cleanCustomer = AutoAccountingEngine.stripSlashTag(customerName).ifBlank { customerName.trim() }
+                            val paidAmount = (paidText.toDoubleOrNull() ?: 0.0).coerceAtLeast(0.0)
+                            val base = initial?.invoice ?: InvoiceEntity(id = "", number = number, customerName = cleanCustomer)
+                            onSave(
+                                base.copy(
+                                    number = number.trim(),
+                                    customerName = cleanCustomer,
+                                    customerPhone = customerPhone.trim(),
+                                    customerEmail = customerEmail.trim(),
+                                    customerAddress = customerAddress.trim(),
+                                    issueDate = issueDate.ifBlank { FormatUtils.todayIso() },
+                                    dueDate = dueDate.ifBlank { FormatUtils.todayIso() },
+                                    discount = discount,
+                                    vatRate = vatRate,
+                                    amountPaid = paidAmount,
+                                    state = state,
+                                    paidDate = if (paidAmount > 0.0 && base.paidDate.isBlank()) FormatUtils.todayIso() else base.paidDate,
+                                    notes = notes.trim()
+                                ),
+                                validItems
+                            )
+                        },
+                        shape = CircleShape,
+                        modifier = Modifier.fillMaxWidth().height(52.dp).testTag("save_invoice_btn")
+                    ) {
+                        Text(tr(language, "Hifadhi Ankara", "Save Invoice"))
+                    }
+                    Spacer(Modifier.height(24.dp))
+                }
             }
-            Spacer(Modifier.height(24.dp))
         }
     }
 }
@@ -1214,84 +1270,94 @@ private fun SavedPublicPdfsSheet(
         sheetState = sheetState,
         shape = OneUiSheetShape
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .verticalScroll(rememberScrollState()),
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = tr(language, "PDF za Ankara Kwenye Simu", "Saved Invoice PDFs"),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "Documents/Mengidata/Ankara",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                IconButton(onClick = onRefresh) {
-                    Icon(
-                        imageVector = Icons.Rounded.Refresh,
-                        contentDescription = tr(language, "Onyesha upya", "Refresh")
-                    )
-                }
-            }
-
-            if (!storageManagerGranted) {
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = colors.warningSoft,
-                    border = BorderStroke(1.dp, colors.warning.copy(alpha = 0.4f)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+            item(key = "saved_pdfs_header") {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = tr(
-                                language,
-                                "Ruhusa ya Storage Manager (All Files Access) haijawashwa. Washa ili uweze kuhifadhi na kurejesha PDF zote za ankara kwenye hifadhi ya simu.",
-                                "All Files Access (MANAGE_EXTERNAL_STORAGE) is not enabled yet. Enable it to save and retrieve all invoice PDFs from public storage."
-                            ),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Button(
-                            onClick = onRequestManageStoragePermission,
-                            shape = CircleShape,
-                            modifier = Modifier.fillMaxWidth().testTag("sheet_grant_storage_manager_btn")
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = tr(language, "PDF za Ankara Kwenye Simu", "Saved Invoice PDFs"),
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Documents/Mengidata/Ankara",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        IconButton(onClick = onRefresh) {
+                            Icon(
+                                imageVector = Icons.Rounded.Refresh,
+                                contentDescription = tr(language, "Onyesha upya", "Refresh")
+                            )
+                        }
+                    }
+
+                    if (!storageManagerGranted) {
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = colors.warningSoft,
+                            border = BorderStroke(1.dp, colors.warning.copy(alpha = 0.4f)),
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Icon(Icons.Rounded.Security, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.size(6.dp))
-                            Text(tr(language, "Ruhusu Storage Manager", "Grant All Files Access"))
+                            Column(
+                                modifier = Modifier.padding(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = tr(
+                                        language,
+                                        "Ruhusa ya Storage Manager (All Files Access) haijawashwa. Washa ili uweze kuhifadhi na kurejesha PDF zote za ankara kwenye hifadhi ya simu.",
+                                        "All Files Access (MANAGE_EXTERNAL_STORAGE) is not enabled yet. Enable it to save and retrieve all invoice PDFs from public storage."
+                                    ),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Button(
+                                    onClick = onRequestManageStoragePermission,
+                                    shape = CircleShape,
+                                    modifier = Modifier.fillMaxWidth().testTag("sheet_grant_storage_manager_btn")
+                                ) {
+                                    Icon(Icons.Rounded.Security, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.size(6.dp))
+                                    Text(tr(language, "Ruhusu Storage Manager", "Grant All Files Access"))
+                                }
+                            }
                         }
                     }
                 }
             }
 
             if (savedPdfs.isEmpty()) {
-                EmptyStateCard(
-                    title = tr(language, "Hakuna PDF iliyohifadhiwa bado", "No saved PDFs yet"),
-                    subtitle = tr(
-                        language,
-                        "Fungua ankara yoyote na bonyeza 'Hifadhi PDF' ili ihifadhiwe moja kwa moja kwenye Documents/Mengidata/Ankara.",
-                        "Open any invoice and tap 'Save PDF' to store it directly in Documents/Mengidata/Ankara."
-                    ),
-                    icon = Icons.Rounded.PictureAsPdf
-                )
+                item(key = "saved_pdfs_empty") {
+                    EmptyStateCard(
+                        title = tr(language, "Hakuna PDF iliyohifadhiwa bado", "No saved PDFs yet"),
+                        subtitle = tr(
+                            language,
+                            "Fungua ankara yoyote na bonyeza 'Hifadhi PDF' ili ihifadhiwe moja kwa moja kwenye Documents/Mengidata/Ankara.",
+                            "Open any invoice and tap 'Save PDF' to store it directly in Documents/Mengidata/Ankara."
+                        ),
+                        icon = Icons.Rounded.PictureAsPdf
+                    )
+                }
             } else {
-                savedPdfs.forEach { pdf ->
-                    val sizeKb = ((pdf.sizeBytes + 1023L) / 1024L).coerceAtLeast(1L)
+                items(
+                    items = savedPdfs,
+                    key = { it.absolutePath ?: it.contentUri?.toString() ?: "${it.displayName}_${it.lastModifiedMillis}" },
+                    contentType = { "saved_public_pdf" }
+                ) { pdf ->
+                    val sizeKb = remember(pdf.sizeBytes) {
+                        ((pdf.sizeBytes + 1023L) / 1024L).coerceAtLeast(1L)
+                    }
                     Surface(
                         shape = RoundedCornerShape(16.dp),
                         color = colors.subtleSurface,
@@ -1352,7 +1418,10 @@ private fun SavedPublicPdfsSheet(
                     }
                 }
             }
-            Spacer(Modifier.height(24.dp))
+
+            item(key = "saved_pdfs_footer") {
+                Spacer(Modifier.height(24.dp))
+            }
         }
     }
 }

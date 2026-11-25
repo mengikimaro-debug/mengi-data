@@ -157,32 +157,39 @@ object FormatUtils {
 
     val paymentMethods = listOf("cash", "mobile", "bank", "card")
 
-    fun localizedMethod(code: String, lang: AppLanguage): String = when (code.lowercase(Locale.ROOT)) {
-        "cash" -> tr(lang, "Taslimu", "Cash")
-        "mobile" -> tr(lang, "Simu (M-Pesa/Tigo/Airtel)", "Mobile Money")
-        "bank" -> tr(lang, "Benki", "Bank Transfer")
-        "card" -> tr(lang, "Kadi", "Card")
+    fun localizedMethod(code: String, lang: AppLanguage): String = when (code.trim().lowercase(Locale.ROOT)) {
+        "cash", "taslimu", "pesa taslimu" -> tr(lang, "Taslimu", "Cash")
+        "mobile", "simu", "mobile money" -> tr(lang, "Simu (M-Pesa/Tigo/Airtel)", "Mobile Money")
+        "bank", "benki", "bank transfer", "uhamisho wa benki" -> tr(lang, "Uhamisho wa Benki", "Bank Transfer")
+        "card", "kadi" -> tr(lang, "Kadi", "Card")
         else -> code
     }
 
     fun localizedCategory(category: String, lang: AppLanguage): String {
-        if (lang == AppLanguage.SW) return category
-        return when (category) {
-            "Mauzo ya bidhaa" -> "Product Sales"
-            "Huduma" -> "Services"
-            "Ushauri" -> "Consulting"
-            "Malipo ya ankara" -> "Invoice Payment"
-            "Mapato mengine" -> "Other Income"
-            "Manunuzi / stock" -> "Inventory / Stock"
-            "Kodi ya pango" -> "Rent"
-            "Umeme & maji" -> "Utilities"
-            "Mishahara" -> "Salaries"
-            "Usafiri" -> "Transport"
-            "Masoko" -> "Marketing"
-            "Bili za nyumbani" -> "Household Bills"
-            "Akiba / Akiba Vault" -> "Savings Transfer"
-            "Matumizi mengine" -> "Other Expense"
-            else -> category
+        val clean = category.trim()
+        return when (clean.lowercase(Locale.ROOT)) {
+            "mauzo ya bidhaa", "product sales", "sales" -> tr(lang, "Mauzo ya bidhaa", "Product Sales")
+            "huduma", "services" -> tr(lang, "Huduma", "Services")
+            "ushauri", "consulting" -> tr(lang, "Ushauri", "Consulting")
+            "malipo ya ankara", "invoice payment", "invoice payments" -> tr(lang, "Malipo ya ankara", "Invoice Payment")
+            "kamisheni", "commission" -> tr(lang, "Kamisheni", "Commission")
+            "mapato mengine", "other income" -> tr(lang, "Mapato mengine", "Other Income")
+            "manunuzi / stock", "manunuzi ya stock", "manunuzi ya bidhaa", "inventory / stock", "inventory" ->
+                tr(lang, "Manunuzi ya bidhaa", "Inventory & Stock")
+            "kodi ya pango", "rent" -> tr(lang, "Kodi ya pango", "Rent")
+            "umeme & maji", "utilities" -> tr(lang, "Umeme & maji", "Utilities")
+            "mishahara", "salaries", "payroll" -> tr(lang, "Mishahara", "Salaries")
+            "usafiri", "transport" -> tr(lang, "Usafiri", "Transport")
+            "chakula", "food", "meals" -> tr(lang, "Chakula", "Food & Meals")
+            "internet & simu", "mtandao & simu", "internet & phone", "communication" ->
+                tr(lang, "Mtandao & simu", "Internet & Phone")
+            "masoko", "marketing" -> tr(lang, "Masoko", "Marketing")
+            "household bill", "bili ya nyumbani", "bili za nyumbani", "matumizi ya nyumbani", "household bills" ->
+                tr(lang, "Bili ya Nyumbani", "Household Bill")
+            "bili", "bili zangu", "my bills", "bills" -> tr(lang, "Bili Zangu", "My Bills")
+            "akiba", "akiba / akiba vault", "savings", "savings transfer" -> tr(lang, "Akiba", "Savings")
+            "matumizi mengine", "mengineyo", "other expense", "other" -> tr(lang, "Mengineyo", "Other Expense")
+            else -> clean
         }
     }
 

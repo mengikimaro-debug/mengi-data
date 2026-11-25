@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -148,8 +149,12 @@ fun TransactionsScreen(
         (fromTxns + fromDb).distinct()
     }
 
-    val analyticsReport = remember(transactions, categories, selectedPeriod) {
-        CategoryAnalyticsEngine.analyze(transactions, categories, selectedPeriod)
+    val analyticsReport = remember(transactions, categories, selectedPeriod, activeTab) {
+        if (activeTab == "analytics") {
+            CategoryAnalyticsEngine.analyze(transactions, categories, selectedPeriod)
+        } else {
+            null
+        }
     }
 
     val filtered = remember(transactions, search, typeFilter, categoryFilter, selectedPeriod) {
@@ -290,7 +295,7 @@ fun TransactionsScreen(
                 )
             }
 
-            if (activeTab == "analytics") {
+            if (activeTab == "analytics" && analyticsReport != null) {
 
                 item(key = "analytics_breakdown") {
                     CategoryAnalyticsCard(
@@ -534,15 +539,20 @@ fun TransactionsScreen(
                         )
                     }
                 } else {
-                    items(groupedByDate, key = { it.first }) { (dateIso, dayTxns) ->
-                        val dayNet = dayTxns.sumOf { if (it.isIncome) it.amount else -it.amount }
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .animateItem(),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                    groupedByDate.forEach { (dateIso, dayTxns) ->
+                        item(
+                            key = "date_hdr_$dateIso",
+                            contentType = "date_header"
                         ) {
-                            // Crisp Date Group Header with Daily Net Subtotal
+                            val dayNet = remember(dayTxns) {
+                                dayTxns.sumOf { if (it.isIncome) it.amount else -it.amount }
+                            }
+                            val friendlyDate = remember(dateIso, language) {
+                                FormatUtils.friendlyDateLabel(dateIso, language).uppercase()
+                            }
+                            val formattedDayNet = remember(dayNet, currency) {
+                                (if (dayNet >= 0.0) "+" else "") + FormatUtils.formatCompactMoney(dayNet, currency)
+                            }
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -555,7 +565,7 @@ fun TransactionsScreen(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     Text(
-                                        text = FormatUtils.friendlyDateLabel(dateIso, language).uppercase(),
+                                        text = friendlyDate,
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -572,38 +582,36 @@ fun TransactionsScreen(
                                     }
                                 }
                                 Text(
-                                    text = (if (dayNet >= 0.0) "+" else "") + FormatUtils.formatCompactMoney(dayNet, currency),
+                                    text = formattedDayNet,
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = if (dayNet >= 0.0) colors.income else colors.expense
                                 )
                             }
+                        }
 
-                            // Sculpted 2026 Solid Grouped Date Card
+                        itemsIndexed(
+                            items = dayTxns,
+                            key = { _, txn -> txn.id },
+                            contentType = { _, _ -> "txn_row" }
+                        ) { _, txn ->
+                            val catMeta = remember(categoryLookup, txn.type, txn.category) {
+                                categoryLookup["${txn.type}:${txn.category.trim().lowercase()}"]
+                            }
                             MengiCard(contentPadding = 0.dp) {
-                                dayTxns.forEachIndexed { idx, txn ->
-                                    val catMeta = categoryLookup["${txn.type}:${txn.category.trim().lowercase()}"]
-                                    LedgerTransactionRow(
-                                        txn = txn,
-                                        categoryMeta = catMeta,
-                                        currency = currency,
-                                        language = language,
-                                        onEdit = {
-                                            editingTxn = txn
-                                            showEditor = true
-                                        },
-                                        onDuplicate = { onDuplicateTransaction(txn) },
-                                        onShareReceipt = { onShareTransactionReceipt(txn) },
-                                        onDelete = { pendingDeleteTxnId = txn.id }
-                                    )
-                                    if (idx < dayTxns.lastIndex) {
-                                        HorizontalDivider(
-                                            modifier = Modifier.padding(start = 72.dp, end = 16.dp),
-                                            color = colors.cardBorder,
-                                            thickness = 0.8.dp
-                                        )
-                                    }
-                                }
+                                LedgerTransactionRow(
+                                    txn = txn,
+                                    categoryMeta = catMeta,
+                                    currency = currency,
+                                    language = language,
+                                    onEdit = {
+                                        editingTxn = txn
+                                        showEditor = true
+                                    },
+                                    onDuplicate = { onDuplicateTransaction(txn) },
+                                    onShareReceipt = { onShareTransactionReceipt(txn) },
+                                    onDelete = { pendingDeleteTxnId = txn.id }
+                                )
                             }
                         }
                     }
@@ -724,22 +732,14 @@ private fun LedgerSolidFilterPill(
     modifier: Modifier = Modifier
 ) {
     val colors = LocalMengiColors.current
-    val bg by animateColorAsState(
-        targetValue = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
-        animationSpec = tween(180),
-        label = "txn_filter_bg"
-    )
-    val fg by animateColorAsState(
-        targetValue = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-        animationSpec = tween(180),
-        label = "txn_filter_fg"
-    )
+    val bg = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface
+    val fg = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
     Surface(
         onClick = onClick,
         shape = CircleShape,
         color = bg,
         border = if (selected) null else BorderStroke(1.dp, colors.cardBorder),
-        shadowElevation = if (selected && !colors.isDark) 2.dp else 0.dp,
+        shadowElevation = 0.dp,
         modifier = modifier.heightIn(min = 38.dp)
     ) {
         Box(
@@ -769,7 +769,7 @@ private fun LedgerTransactionRow(
     onDelete: () -> Unit
 ) {
     val colors = LocalMengiColors.current
-    val bucket = AutoAccountingEngine.classifyTransaction(txn)
+    val bucket = remember(txn) { AutoAccountingEngine.classifyTransaction(txn) }
     val bColors = bucketVisualColors(bucket)
     val isHousehold = bucket == AutoBucket.HOUSEHOLD_BILL
     val isSavings = bucket == AutoBucket.SAVINGS
@@ -794,12 +794,21 @@ private fun LedgerTransactionRow(
         else -> colors.expense
     }
 
-    val localizedCat = FormatUtils.localizedCategory(txn.category, language)
-    val localizedMethod = FormatUtils.localizedMethod(txn.method, language)
-    val partyAndCat = listOf(txn.party.trim(), localizedCat)
-        .filter { it.isNotBlank() }
-        .distinct()
-        .joinToString(" · ")
+    val localizedCat = remember(txn.category, language) {
+        FormatUtils.localizedCategory(txn.category, language)
+    }
+    val localizedMethod = remember(txn.method, language) {
+        FormatUtils.localizedMethod(txn.method, language)
+    }
+    val partyAndCat = remember(txn.party, localizedCat) {
+        listOf(txn.party.trim(), localizedCat)
+            .filter { it.isNotBlank() }
+            .distinct()
+            .joinToString(" · ")
+    }
+    val formattedAmount = remember(txn.amount, txn.isIncome, currency) {
+        (if (txn.isIncome) "+" else "-") + FormatUtils.formatMoney(txn.amount, currency)
+    }
 
     Row(
         modifier = Modifier
@@ -897,7 +906,7 @@ private fun LedgerTransactionRow(
         ) {
             Column(horizontalAlignment = Alignment.End) {
                 Text(
-                    text = (if (txn.isIncome) "+" else "-") + FormatUtils.formatMoney(txn.amount, currency),
+                    text = formattedAmount,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.ExtraBold,
                     color = amountColor,

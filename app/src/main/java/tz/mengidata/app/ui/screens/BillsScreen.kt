@@ -450,14 +450,17 @@ fun BillsScreen(
                         accentColor = colors.warning
                     )
                 }
-                items(unpaidSection, key = { it.id }) { bill ->
+                items(
+                    items = unpaidSection,
+                    key = { it.id },
+                    contentType = { "bill_card" }
+                ) { bill ->
                     val isHighToday = bill.id in zeroLossLedger.highBillIds
                     BillCard(
                         bill = bill,
                         isHighToday = isHighToday,
                         currency = currency,
                         language = language,
-                        modifier = Modifier.animateItem(),
                         onTogglePaid = { onTogglePaid(bill.id) },
                         onScheduleNextMonth = { onScheduleNextMonth(bill.id) },
                         onEdit = {
@@ -475,14 +478,17 @@ fun BillsScreen(
                         accentColor = colors.income
                     )
                 }
-                items(paidSection, key = { it.id }) { bill ->
+                items(
+                    items = paidSection,
+                    key = { it.id },
+                    contentType = { "bill_card" }
+                ) { bill ->
                     val isHighToday = bill.id in zeroLossLedger.highBillIds
                     BillCard(
                         bill = bill,
                         isHighToday = isHighToday,
                         currency = currency,
                         language = language,
-                        modifier = Modifier.animateItem(),
                         onTogglePaid = { onTogglePaid(bill.id) },
                         onDuplicate = { onDuplicateBill(bill) },
                         onScheduleNextMonth = { onScheduleNextMonth(bill.id) },
@@ -494,14 +500,17 @@ fun BillsScreen(
                     )
                 }
             } else {
-                items(filtered, key = { it.id }) { bill ->
+                items(
+                    items = filtered,
+                    key = { it.id },
+                    contentType = { "bill_card" }
+                ) { bill ->
                     val isHighToday = bill.id in zeroLossLedger.highBillIds
                     BillCard(
                         bill = bill,
                         isHighToday = isHighToday,
                         currency = currency,
                         language = language,
-                        modifier = Modifier.animateItem(),
                         onTogglePaid = { onTogglePaid(bill.id) },
                         onDuplicate = { onDuplicateBill(bill) },
                         onScheduleNextMonth = { onScheduleNextMonth(bill.id) },
@@ -574,22 +583,14 @@ private fun BillsSolidFilterPill(
     modifier: Modifier = Modifier
 ) {
     val colors = LocalMengiColors.current
-    val bg by animateColorAsState(
-        targetValue = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
-        animationSpec = tween(180),
-        label = "bill_filter_bg"
-    )
-    val fg by animateColorAsState(
-        targetValue = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-        animationSpec = tween(180),
-        label = "bill_filter_fg"
-    )
+    val bg = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface
+    val fg = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
     Surface(
         onClick = onClick,
         shape = CircleShape,
         color = bg,
         border = if (selected) null else BorderStroke(1.dp, colors.cardBorder),
-        shadowElevation = if (selected && !colors.isDark) 2.dp else 0.dp,
+        shadowElevation = 0.dp,
         modifier = modifier.heightIn(min = 38.dp)
     ) {
         Box(
@@ -664,7 +665,20 @@ private fun BillCard(
     onDelete: () -> Unit
 ) {
     val colors = LocalMengiColors.current
-    val isHousehold = AutoAccountingEngine.isHouseholdBill(bill)
+    val isHousehold = remember(bill) { AutoAccountingEngine.isHouseholdBill(bill) }
+    val isOverdue = remember(bill.paid, bill.dueDate) { bill.isOverdue }
+    val subtitleText = remember(bill.payee, bill.category, bill.method, language) {
+        listOf(bill.payee, FormatUtils.localizedCategory(bill.category, language))
+            .filter { it.isNotBlank() }
+            .joinToString(" · ")
+            .ifBlank { FormatUtils.localizedMethod(bill.method, language) }
+    }
+    val formattedAmount = remember(bill.amount, currency) {
+        FormatUtils.formatMoney(bill.amount, currency)
+    }
+    val friendlyDueDate = remember(bill.dueDate, language) {
+        FormatUtils.friendlyDateLabel(bill.dueDate, language)
+    }
     val highColors = bucketVisualColors(AutoBucket.HIGH_BILL_TODAY)
     val householdColors = bucketVisualColors(AutoBucket.HOUSEHOLD_BILL)
     val billColors = bucketVisualColors(AutoBucket.BILL)
@@ -674,20 +688,20 @@ private fun BillCard(
     val (statusText, statusBg, statusFg) = when {
         isHighToday -> Triple(tr(language, "Kubwa Leo", "High Today"), highColors.softBg, highColors.ink)
         bill.paid -> Triple(tr(language, "Imelipwa", "Paid"), colors.incomeSoft, colors.income)
-        bill.isOverdue -> Triple(tr(language, "Imechelewa", "Overdue"), highColors.softBg, highColors.ink)
+        isOverdue -> Triple(tr(language, "Imechelewa", "Overdue"), highColors.softBg, highColors.ink)
         else -> Triple(tr(language, "Inasubiri", "Upcoming"), colors.warningSoft, colors.warning)
     }
 
     val badgeBg = when {
         isHousehold -> householdColors.softBg
         bill.paid -> colors.incomeSoft
-        isHighToday || bill.isOverdue -> highColors.softBg
+        isHighToday || isOverdue -> highColors.softBg
         else -> billColors.softBg
     }
     val badgeFg = when {
         isHousehold -> householdColors.dot
         bill.paid -> colors.income
-        isHighToday || bill.isOverdue -> highColors.ink
+        isHighToday || isOverdue -> highColors.ink
         else -> billColors.dot
     }
 
@@ -740,10 +754,7 @@ private fun BillCard(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = listOf(bill.payee, FormatUtils.localizedCategory(bill.category, language))
-                        .filter { it.isNotBlank() }
-                        .joinToString(" · ")
-                        .ifBlank { FormatUtils.localizedMethod(bill.method, language) },
+                    text = subtitleText,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -756,7 +767,7 @@ private fun BillCard(
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 Text(
-                    text = FormatUtils.formatMoney(bill.amount, currency),
+                    text = formattedAmount,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.ExtraBold,
                     color = when {
@@ -767,9 +778,9 @@ private fun BillCard(
                     maxLines = 1
                 )
                 Text(
-                    text = FormatUtils.friendlyDateLabel(bill.dueDate, language),
+                    text = friendlyDueDate,
                     style = MaterialTheme.typography.labelSmall,
-                    color = if (bill.isOverdue) highColors.ink else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (isOverdue) highColors.ink else MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1
                 )
             }

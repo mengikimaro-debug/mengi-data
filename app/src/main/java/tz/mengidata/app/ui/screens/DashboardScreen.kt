@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -740,22 +741,18 @@ fun DashboardScreen(
                     )
                 }
             } else {
-                item(key = "recent_grouped_card") {
+                itemsIndexed(
+                    items = metrics.recentTransactions,
+                    key = { _, txn -> "recent_${txn.id}" },
+                    contentType = { _, _ -> "recent_txn" }
+                ) { _, txn ->
                     MengiCard(contentPadding = 0.dp) {
-                        metrics.recentTransactions.forEachIndexed { idx, txn ->
-                            RecentTransactionRow(
-                                txn = txn,
-                                currency = currency,
-                                language = language,
-                                onClick = onOpenTransactions
-                            )
-                            if (idx < metrics.recentTransactions.lastIndex) {
-                                HorizontalDivider(
-                                    color = colors.cardBorder,
-                                    modifier = Modifier.padding(start = 70.dp, end = 18.dp)
-                                )
-                            }
-                        }
+                        RecentTransactionRow(
+                            txn = txn,
+                            currency = currency,
+                            language = language,
+                            onClick = onOpenTransactions
+                        )
                     }
                 }
             }
@@ -893,7 +890,7 @@ private fun RecentTransactionRow(
     onClick: () -> Unit
 ) {
     val colors = LocalMengiColors.current
-    val isHousehold = AutoAccountingEngine.isHouseholdTransaction(txn)
+    val isHousehold = remember(txn) { AutoAccountingEngine.isHouseholdTransaction(txn) }
     val householdColors = bucketVisualColors(AutoBucket.HOUSEHOLD_BILL)
     val iconBg = when {
         isHousehold -> householdColors.softBg
@@ -910,10 +907,22 @@ private fun RecentTransactionRow(
         txn.isIncome -> colors.income
         else -> colors.expense
     }
-    val localizedCategory = FormatUtils.localizedCategory(
-        if (isHousehold) AutoAccountingEngine.HOUSEHOLD_CATEGORY else txn.category,
-        language
-    )
+    val localizedCategory = remember(isHousehold, txn.category, language) {
+        FormatUtils.localizedCategory(
+            if (isHousehold) AutoAccountingEngine.HOUSEHOLD_CATEGORY else txn.category,
+            language
+        )
+    }
+    val subtitleLine = remember(txn.party, localizedCategory, txn.date) {
+        listOf(
+            txn.party.trim(),
+            localizedCategory,
+            txn.date
+        ).filter { it.isNotBlank() }.joinToString(" · ")
+    }
+    val formattedAmount = remember(txn.amount, txn.isIncome, currency) {
+        (if (txn.isIncome) "+" else "-") + FormatUtils.formatMoney(txn.amount, currency)
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -949,11 +958,7 @@ private fun RecentTransactionRow(
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                text = listOf(
-                    txn.party.trim(),
-                    localizedCategory,
-                    txn.date
-                ).filter { it.isNotBlank() }.joinToString(" · "),
+                text = subtitleLine,
                 style = MaterialTheme.typography.bodySmall,
                 color = if (isHousehold) householdColors.ink else MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -961,7 +966,7 @@ private fun RecentTransactionRow(
             )
         }
         Text(
-            text = (if (txn.isIncome) "+" else "-") + FormatUtils.formatMoney(txn.amount, currency),
+            text = formattedAmount,
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
             color = amountColor
