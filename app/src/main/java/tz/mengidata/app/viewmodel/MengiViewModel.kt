@@ -395,34 +395,32 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
     fun triggerLargeBillWarning(
         billName: String,
         amount: Double,
-        category: String = "Bili"
+        category: String = "Bili",
+        forceForTest: Boolean = false
     ) {
         val threshold = prefs.largeBillThreshold.value
         val cur = settings.value.currency.ifBlank { "TZS" }
-        val popup = LargeBillWarningPopup(
-            billName = billName.ifBlank { tr(language.value, "Bili Kubwa", "Large Bill") },
-            amountFormatted = FormatUtils.formatMoney(amount, cur),
-            thresholdFormatted = FormatUtils.formatMoney(threshold, cur),
-            category = category.ifBlank { tr(language.value, "Bili", "Bill") },
-            durationMillis = 3_000L
-        )
-        warningDismissJob?.cancel()
-        _largeBillWarningPopup.value = popup
-        warningDismissJob = viewModelScope.launch {
-            delay(3_000L)
-            if (_largeBillWarningPopup.value?.id == popup.id) {
-                _largeBillWarningPopup.value = null
-            }
-        }
-        if (prefs.notificationsEnabled.value && prefs.billAlertsEnabled.value) {
-            notificationManager.notifyLargeBillWarning(
-                billName = popup.billName,
+        val cleanName = billName.ifBlank { tr(language.value, "Bili Kubwa", "Large Bill") }
+        val cleanCategory = category.ifBlank { tr(language.value, "Bili", "Bill") }
+        refreshPhonePermissions()
+        if (forceForTest || (prefs.notificationsEnabled.value && prefs.billAlertsEnabled.value)) {
+            val posted = notificationManager.notifyLargeBillWarning(
+                billName = cleanName,
                 amount = amount,
                 threshold = threshold,
-                category = popup.category,
+                category = cleanCategory,
                 currency = cur,
                 language = language.value
             )
+            if (forceForTest && !posted) {
+                emitNotice(
+                    tr(
+                        language.value,
+                        "Washa ruhusa ya Taarifa za Simu (POST_NOTIFICATIONS) kwanza.",
+                        "Please grant POST_NOTIFICATIONS permission first."
+                    )
+                )
+            }
         }
     }
 
@@ -1452,7 +1450,8 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
         triggerLargeBillWarning(
             billName = tr(language.value, "Bili ya Mfano (Kodi / Umeme)", "Sample Large Bill (Rent / Power)"),
             amount = threshold * 1.25,
-            category = tr(language.value, "Bili ya Nyumbani", "Household Bill")
+            category = tr(language.value, "Bili ya Nyumbani", "Household Bill"),
+            forceForTest = true
         )
     }
 

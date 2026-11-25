@@ -52,10 +52,10 @@ object ColorReportExporter {
         // Strictly separate direct transactions (excluding bills, savings, and household bills)
         val pureTransactions = transactions
             .filter { it.source != "bill" && it.source != "savings" && !AutoAccountingEngine.isHouseholdTransaction(it) }
-            .sortedBy { it.date }
+            .sortedWith(compareByDescending<TransactionEntity> { it.date }.thenByDescending { it.createdAt })
         val householdTransactions = transactions
             .filter { AutoAccountingEngine.isHouseholdTransaction(it) }
-            .sortedBy { it.date }
+            .sortedWith(compareByDescending<TransactionEntity> { it.date }.thenByDescending { it.createdAt })
 
         val goalsMap = savingsGoals.associateBy { it.id }
 
@@ -326,7 +326,7 @@ object ColorReportExporter {
             XmlCell(tr(language, "Tahadhari na Rangi", "Alert & Color"), "Header")
         ))
 
-        bills.sortedBy { it.dueDate }.forEach { b ->
+        bills.sortedWith(compareByDescending<BillEntity> { it.dueDate }.thenByDescending { it.createdAt }).forEach { b ->
             val isHighToday = b.id in summary.highBillIds ||
                 ((b.dueDate == today || b.paidDate == today) && summary.isTodayBillHigh)
             val isOverdue = b.isOverdue
@@ -396,7 +396,7 @@ object ColorReportExporter {
             XmlCell(tr(language, "Maelezo", "Note"), "Header"),
             XmlCell(tr(language, "Rangi", "Color Indicator"), "Header")
         ))
-        savingsLogs.sortedBy { it.date }.forEach { log ->
+        savingsLogs.sortedWith(compareByDescending<SavingsLogEntity> { it.date }.thenByDescending { it.createdAt }).forEach { log ->
             val goalName = goalsMap[log.savingsId]?.title ?: tr(language, "Akiba", "Savings")
             val isDeposit = log.type == "deposit"
             val actionLabel = if (isDeposit) tr(language, "Weka Akiba (+)", "Deposit (+)") else tr(language, "Toa Akiba (-)", "Withdraw (-)")
@@ -463,7 +463,7 @@ object ColorReportExporter {
     ): String {
         val pureTransactions = transactions
             .filter { it.source != "bill" && it.source != "savings" && !AutoAccountingEngine.isHouseholdTransaction(it) }
-            .sortedBy { it.date }
+            .sortedWith(compareByDescending<TransactionEntity> { it.date }.thenByDescending { it.createdAt })
         val sb = StringBuilder(UTF8_BOM)
         sb.append(
             tr(
@@ -519,7 +519,7 @@ object ColorReportExporter {
                 "Bill_Name,Category,Payee,Due_Date,Paid_Date,Status,Amount,Method,Recurring,High_Bill_Alert,Color_Hex,Color_Meaning\n"
             )
         )
-        bills.sortedBy { it.dueDate }.forEach { b ->
+        bills.sortedWith(compareByDescending<BillEntity> { it.dueDate }.thenByDescending { it.createdAt }).forEach { b ->
             val isHighToday = b.id in summary.highBillIds ||
                 ((b.dueDate == today || b.paidDate == today) && summary.isTodayBillHigh)
             val bucket = if (isHighToday || b.isOverdue) AutoBucket.HIGH_BILL_TODAY else AutoBucket.BILL
@@ -565,7 +565,7 @@ object ColorReportExporter {
                 "Date,Savings_Goal,Action,Amount,Goal_Current_Balance,Goal_Target,Note,Color_Hex,Color_Meaning\n"
             )
         )
-        savingsLogs.sortedBy { it.date }.forEach { log ->
+        savingsLogs.sortedWith(compareByDescending<SavingsLogEntity> { it.date }.thenByDescending { it.createdAt }).forEach { log ->
             val goal = goalsMap[log.savingsId]
             sb.append(csv(log.date)).append(',')
                 .append(csv(goal?.title ?: tr(language, "Akiba", "Savings"))).append(',')
@@ -651,7 +651,9 @@ object ColorReportExporter {
             )
         )
         sb.append(tr(language, "Tarehe,Maelezo,Mpokeaji,Kiasi,Njia,Msimbo_Rangi,Maana_Rangi\n", "Date,Description,Recipient,Amount,Method,Color_Hex,Color_Meaning\n"))
-        transactions.filter { AutoAccountingEngine.isHouseholdTransaction(it) }.sortedBy { it.date }.forEach { t ->
+        transactions.filter { AutoAccountingEngine.isHouseholdTransaction(it) }
+            .sortedWith(compareByDescending<TransactionEntity> { it.date }.thenByDescending { it.createdAt })
+            .forEach { t ->
             sb.append(csv(t.date)).append(',')
                 .append(csv(t.description)).append(',')
                 .append(csv(t.party.ifBlank { tr(language, "Nyumbani", "Household") })).append(',')

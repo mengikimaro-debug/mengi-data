@@ -77,7 +77,6 @@ import tz.mengidata.app.ui.components.BusinessHealthScoreCard
 import tz.mengidata.app.ui.components.CategoryAnalyticsCard
 import tz.mengidata.app.ui.components.EmptyStateCard
 import tz.mengidata.app.ui.components.HighBillTodayAlertBanner
-import tz.mengidata.app.ui.components.IncomeExpenseBarChart
 import tz.mengidata.app.ui.components.MengiCard
 import tz.mengidata.app.ui.components.OneUiScreenHeader
 import tz.mengidata.app.ui.components.PeriodSelectorRow
@@ -86,7 +85,6 @@ import tz.mengidata.app.ui.components.PulsingStatusDot
 import tz.mengidata.app.ui.components.SmartAutoEntrySheet
 import tz.mengidata.app.ui.components.SpendingTrendsChartCard
 import tz.mengidata.app.ui.components.StatusPill
-import tz.mengidata.app.ui.components.ZeroLossAutoBreakdownCard
 import tz.mengidata.app.ui.components.bucketVisualColors
 import tz.mengidata.app.ui.theme.LocalMengiColors
 import tz.mengidata.app.updater.UpdateUiState
@@ -567,20 +565,6 @@ fun DashboardScreen(
                 }
             }
 
-            // Zero-Loss Auto-Accounting Breakdown Card
-            item(key = "auto_breakdown_card") {
-                PremiumReveal(delayMillis = 85) {
-                    ZeroLossAutoBreakdownCard(
-                        ledger = zeroLossLedger,
-                        currency = currency,
-                        language = language,
-                        onOpenSmartEntry = { showSmartEntry = true },
-                        onVerifyLedger = onReconcileLedger,
-                        onExportColorExcel = onExportColorExcel
-                    )
-                }
-            }
-
             // Secondary KPI Grid (2x2 One UI Squircles)
             item(key = "kpi_grid") {
                 PremiumReveal(delayMillis = 120) {
@@ -725,29 +709,6 @@ fun DashboardScreen(
                         privacyMaskEnabled = privacyMaskEnabled,
                         onOpenSavings = onOpenHub
                     )
-                }
-            }
-
-            // 6-Month Cashflow Chart
-            item(key = "chart_card") {
-                PremiumReveal(delayMillis = 170) {
-                    MengiCard {
-                        Text(
-                            text = tr(language, "Mtiririko wa Miezi 6", "6-Month Cashflow"),
-                            style = MaterialTheme.typography.titleLarge,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = tr(language, "Mapato dhidi ya matumizi ya biashara", "Business income vs. expenses"),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(14.dp))
-                        IncomeExpenseBarChart(
-                            points = metrics.chartPoints,
-                            language = language
-                        )
-                    }
                 }
             }
 

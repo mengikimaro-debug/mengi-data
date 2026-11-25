@@ -25,6 +25,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.AccountBalanceWallet
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Description
@@ -98,6 +99,7 @@ fun MengiSidebarSheet(
     selectedRouteMatch: (Any) -> Boolean,
     isSettingsSelected: Boolean,
     onSelectDestination: (Any) -> Unit,
+    onOpenAutoAccounting: () -> Unit = {},
     onOpenPartyDirectory: () -> Unit = {},
     onOpenSettings: () -> Unit,
     onCloseDrawer: () -> Unit
@@ -346,6 +348,48 @@ fun MengiSidebarSheet(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                )
+
+                NavigationDrawerItem(
+                    label = {
+                        Text(
+                            text = tr(language, "Uchambuzi wa Kiotomatiki", "Auto-Accounting"),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
+                    selected = false,
+                    onClick = onOpenAutoAccounting,
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Rounded.AutoAwesome,
+                            contentDescription = tr(language, "Uchambuzi wa Kiotomatiki", "Auto-Accounting")
+                        )
+                    },
+                    badge = {
+                        Surface(
+                            color = if (zeroLossLedger.integrityVerified) colors.incomeSoft else colors.warningSoft,
+                            shape = CircleShape
+                        ) {
+                            Text(
+                                text = if (zeroLossLedger.integrityVerified) {
+                                    "0%"
+                                } else {
+                                    tr(language, "Kagua", "Sync")
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (zeroLossLedger.integrityVerified) colors.income else colors.warning,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                            )
+                        }
+                    },
+                    shape = CircleShape,
+                    colors = itemColors,
+                    modifier = Modifier
+                        .padding(vertical = 2.dp)
+                        .testTag("drawer_auto_accounting_item")
                 )
 
                 NavigationDrawerItem(

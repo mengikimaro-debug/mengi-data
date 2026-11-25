@@ -518,8 +518,8 @@ fun SettingsScreen(
                             Text(
                                 text = tr(
                                     language,
-                                    "• Mwonekano mpya wa Giza (Dark Mode) wenye rangi tulivu bila mng'ao\n• Mpangilio bora wa data kwenye Dashibodi, Miamala, Bili, Ankara na Akiba\n• Kituo cha Huduma Zote + Kutuma PDF za Taarifa na Ankara moja kwa moja\n• Hifadhidata ya ndani ya programu + hifadhi salama ya simu",
-                                    "• Refined Dark Mode with calm matte slate surfaces and zero glare\n• Clean, structured data layout across Dashboard, Ledger, Bills, Invoices & Savings\n• All-Services Command Hub + Direct 1-tap Statement & Invoice PDF sharing\n• Local SQLite database + automatic phone storage protection"
+                                    "• Kidhibiti cha Taarifa (Notification Manager) & Ruhusa za Android 13+\n• Onyo la Bili Kubwa la Pop-Up kwa Sekunde 3 unapoweka au kulipa bili kubwa\n• Mwonekano tulivu wa Giza (Dark Mode) bila mng'ao + Mpangilio bora wa data\n• Masasisho ya moja kwa moja ya GitHub + Hifadhi salama ya simu (Documents/Mengidata)",
+                                    "• Full Android 13+ Notification Manager & Phone Permissions hub\n• 3-Second Large Bill Warning Pop-Up banner when recording or paying large bills\n• Calm matte Dark Mode with zero glare & structured data layout\n• Seamless GitHub in-app APK updates + automatic phone storage backup"
                                 ),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant

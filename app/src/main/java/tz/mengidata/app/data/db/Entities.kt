@@ -46,7 +46,7 @@ data class TransactionEntity(
     val notes: String = "",
     val source: String = "manual", // "manual" | "invoice" | "bill"
     val linkedId: String? = null,
-    val createdAt: String = FormatUtils.todayIso()
+    val createdAt: String = FormatUtils.nowIsoTimestamp()
 ) {
     val isIncome: Boolean get() = type == "income"
 }
@@ -71,8 +71,8 @@ data class InvoiceEntity(
     val paidDate: String = "",
     val notes: String = "",
     val linkedTxnId: String? = null,
-    val createdAt: String = FormatUtils.todayIso(),
-    val updatedAt: String = FormatUtils.todayIso()
+    val createdAt: String = FormatUtils.nowIsoTimestamp(),
+    val updatedAt: String = FormatUtils.nowIsoTimestamp()
 )
 
 @Entity(
@@ -154,7 +154,7 @@ data class BillEntity(
     val recurring: Boolean = false,
     val notes: String = "",
     val linkedTxnId: String? = null,
-    val createdAt: String = FormatUtils.todayIso()
+    val createdAt: String = FormatUtils.nowIsoTimestamp()
 ) {
     val isOverdue: Boolean get() = !paid && FormatUtils.isOverdue(dueDate)
 }
@@ -167,8 +167,8 @@ data class SavingsGoalEntity(
     val currentAmount: Double = 0.0,
     val targetDate: String = "",
     val notes: String = "",
-    val createdAt: String = FormatUtils.todayIso(),
-    val updatedAt: String = FormatUtils.todayIso()
+    val createdAt: String = FormatUtils.nowIsoTimestamp(),
+    val updatedAt: String = FormatUtils.nowIsoTimestamp()
 ) {
     val progressRatio: Float
         get() = if (targetAmount <= 0.0) 1f else (currentAmount / targetAmount).toFloat().coerceIn(0f, 1f)
@@ -199,7 +199,7 @@ data class SavingsLogEntity(
     val amount: Double = 0.0,
     val date: String = FormatUtils.todayIso(),
     val note: String = "",
-    val createdAt: String = FormatUtils.todayIso()
+    val createdAt: String = FormatUtils.nowIsoTimestamp()
 ) {
     val isDeposit: Boolean get() = type == "deposit"
 }
@@ -216,7 +216,7 @@ data class TransactionCategoryEntity(
     val colorHex: String = "#2563EB",
     val monthlyBudget: Double = 0.0,
     val isDefault: Boolean = false,
-    val createdAt: String = FormatUtils.todayIso()
+    val createdAt: String = FormatUtils.nowIsoTimestamp()
 ) {
     val isIncome: Boolean get() = type == "income"
 }

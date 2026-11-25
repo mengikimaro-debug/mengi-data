@@ -29,6 +29,7 @@ import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -220,7 +221,6 @@ fun ZeroLossAutoBreakdownCard(
     ledger: ZeroLossLedgerSummary,
     currency: String,
     language: AppLanguage,
-    onOpenSmartEntry: () -> Unit,
     onVerifyLedger: () -> Unit,
     onExportColorExcel: () -> Unit
 ) {
@@ -417,30 +417,64 @@ fun ZeroLossAutoBreakdownCard(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Button(
-                onClick = onOpenSmartEntry,
+            FilledTonalButton(
+                onClick = onExportColorExcel,
                 shape = CircleShape,
                 modifier = Modifier
                     .weight(1f)
-                    .height(46.dp)
-                    .testTag("open_smart_auto_entry_btn")
-            ) {
-                Icon(Icons.Rounded.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.size(6.dp))
-                Text(tr(language, "Ingiza Kiotomatiki", "Smart Entry"), maxLines = 1)
-            }
-            TextButton(
-                onClick = onExportColorExcel,
-                shape = CircleShape,
-                modifier = Modifier.testTag("dashboard_export_color_btn")
+                    .height(44.dp)
+                    .testTag("dashboard_export_color_btn")
             ) {
                 Text(tr(language, "Ripoti Excel", "Excel Report"), maxLines = 1)
             }
             if (!ledger.integrityVerified) {
-                TextButton(onClick = onVerifyLedger, shape = CircleShape) {
+                TextButton(
+                    onClick = onVerifyLedger,
+                    shape = CircleShape,
+                    modifier = Modifier.height(44.dp)
+                ) {
                     Text(tr(language, "Sawazisha", "Sync"), maxLines = 1)
                 }
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AutoAccountingSheet(
+    ledger: ZeroLossLedgerSummary,
+    currency: String,
+    language: AppLanguage,
+    onVerifyLedger: () -> Unit,
+    onExportColorExcel: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = OneUiSheetShape,
+        containerColor = MaterialTheme.colorScheme.background
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            ZeroLossAutoBreakdownCard(
+                ledger = ledger,
+                currency = currency,
+                language = language,
+                onVerifyLedger = onVerifyLedger,
+                onExportColorExcel = onExportColorExcel
+            )
+            MengiCard(contentPadding = 14.dp) {
+                ReportColorLegendStrip(language = language)
+            }
+            Spacer(Modifier.height(16.dp))
         }
     }
 }

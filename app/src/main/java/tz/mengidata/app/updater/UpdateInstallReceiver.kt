@@ -67,9 +67,11 @@ class UpdateInstallReceiver : BroadcastReceiver() {
             PackageInstaller.STATUS_FAILURE_INCOMPATIBLE,
             PackageInstaller.STATUS_FAILURE_CONFLICT -> {
                 cleanupApk(cachedApkPath)
+                Log.e(TAG, "PackageInstaller conflict/incompatible: status=$status msg=$statusMessage")
+                val osReason = statusMessage?.takeIf { it.isNotBlank() }?.let { " ($it)" } ?: ""
                 UpdateInstallEventBus.emit(
                     InstallResultEvent.Failure(
-                        "Android imezuia kusakinisha juu ya toleo la zamani lenye ufunguo tofauti. Data zako zimehifadhiwa salama kwenye Hifadhi ya Simu (Documents/Mengidata) — ondoa app ya zamani kisha sakinisha Mengidata.apk mpya."
+                        "Android imezuia kusakinisha juu ya toleo la zamani$osReason. Data zako zimehifadhiwa salama kwenye Hifadhi ya Simu (Documents/Mengidata) — ondoa app ya zamani kisha sakinisha Mengidata.apk mpya."
                     )
                 )
             }

@@ -65,7 +65,7 @@ object FinancialStatementPdfGenerator {
 
         val periodTxns = transactions
             .filter { FormatUtils.isDateInPeriod(it.date, period) }
-            .sortedByDescending { it.date }
+            .sortedWith(compareByDescending<TransactionEntity> { it.date }.thenByDescending { it.createdAt })
 
         val periodIncome = periodTxns.filter { it.isIncome }.sumOf { it.amount }
         val periodHousehold = periodTxns.filter { AutoAccountingEngine.isHouseholdTransaction(it) }.sumOf { it.amount }

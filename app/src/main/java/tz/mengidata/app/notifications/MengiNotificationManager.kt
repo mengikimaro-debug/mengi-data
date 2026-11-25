@@ -1,15 +1,21 @@
 package tz.mengidata.app.notifications
 
 import android.Manifest
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.media.AudioAttributes
+import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import androidx.annotation.DrawableRes
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -17,7 +23,6 @@ import tz.mengidata.app.MainActivity
 import tz.mengidata.app.R
 import tz.mengidata.app.data.db.BillEntity
 import tz.mengidata.app.data.db.InvoiceWithItems
-import tz.mengidata.app.data.db.SavingsGoalEntity
 import tz.mengidata.app.data.db.TransactionEntity
 import tz.mengidata.app.i18n.AppLanguage
 import tz.mengidata.app.i18n.FormatUtils
@@ -28,24 +33,38 @@ data class PhonePermissionsSnapshot(
     val systemNotificationsEnabled: Boolean = false,
     val installPackagesGranted: Boolean = false,
     val storageVaultReady: Boolean = true,
-    val channelsConfigured: Int = 4
+    val channelsConfigured: Int = 5
 ) {
     val allRequiredGranted: Boolean
         get() = postNotificationsGranted && systemNotificationsEnabled && installPackagesGranted
 }
 
 /**
- * Centralized Android 13+ (API 33+) Notification & Phone Permission Manager for Mengidata.
+ * Centralized Android 13+ (API 33+) System Notification & Phone Permission Manager for Mengidata.
  *
- * Manages 4 dedicated notification channels:
- * 1. `mengidata_bills_invoices` — Overdue/upcoming bills & unpaid invoice alerts
- * 2. `mengidata_transactions` — Income/Expense ledger & household bill activity alerts
- * 3. `mengidata_savings` — Savings deposits, withdrawals & goal milestones
- * 4. `mengidata_system_updates` — Phone storage backup syncs & GitHub release updates
+ * Delivers real Android system notifications (status bar icon, large brand icon, system sound,
+ * vibration, and heads-up pop-up banners) across 5 dedicated channels:
+ * 1. `mengidata_large_bill_warning_v2` — High-importance 3-second system pop-up warning for large bills
+ * 2. `mengidata_bills_invoices_v2` — Overdue/upcoming bills & unpaid invoice alerts
+ * 3. `mengidata_transactions_v2` — Income/Expense ledger & household bill activity alerts
+ * 4. `mengidata_savings_v2` — Savings deposits, withdrawals & goal milestones
+ * 5. `mengidata_system_updates_v2` — Phone storage backup syncs & GitHub release updates
  */
 class MengiNotificationManager(private val context: Context) {
 
     private val appContext = context.applicationContext
+
+    private val largeAppIconBitmap: Bitmap? by lazy {
+        runCatching {
+            val raw = BitmapFactory.decodeResource(
+                appContext.resources,
+                R.drawable.mengidata_oneui_icon_1795525888393
+            ) ?: return@runCatching null
+            Bitmap.createScaledBitmap(raw, 128, 128, true).also {
+                if (it !== raw) raw.recycle()
+            }
+        }.getOrNull()
+    }
 
     init {
         ensureNotificationChannels()
@@ -55,14 +74,29 @@ class MengiNotificationManager(private val context: Context) {
         val manager = appContext.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
             ?: return
 
+        // Clean up legacy v1 channels so updated importance & sound settings take effect immediately
+        LEGACY_CHANNELS.forEach { oldId ->
+            runCatching { manager.deleteNotificationChannel(oldId) }
+        }
+
+        val defaultSoundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+        val audioAttrs = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build()
+
         val channels = listOf(
             NotificationChannel(
                 CHANNEL_LARGE_BILL_WARNING,
                 "Onyo la Bili Kubwa (Large Bill Warning)",
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
-                description = "Tahadhari ya haraka (Pop-up Warning) wakati bili kubwa au matumizi makubwa ya nyumbani yanapoingizwa."
+                description = "Tahadhari ya mfumo (System Heads-Up Warning) wakati bili kubwa au matumizi makubwa ya nyumbani yanapoingizwa."
                 enableVibration(true)
+                vibrationPattern = longArrayOf(0L, 180L, 80L, 180L)
+                setShowBadge(true)
+                setSound(defaultSoundUri, audioAttrs)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
             },
             NotificationChannel(
                 CHANNEL_BILLS_INVOICES,
@@ -71,27 +105,42 @@ class MengiNotificationManager(private val context: Context) {
             ).apply {
                 description = "Vikumbusho vya bili za nyumbani, bili zilizochelewa, na malipo ya ankara."
                 enableVibration(true)
+                setShowBadge(true)
+                setSound(defaultSoundUri, audioAttrs)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
             },
             NotificationChannel(
                 CHANNEL_TRANSACTIONS,
                 "Miamala & Leja (Ledger Activity)",
-                NotificationManager.IMPORTANCE_DEFAULT
+                NotificationManager.IMPORTANCE_HIGH
             ).apply {
-                description = "Taarifa za mapato, matumizi, na miamala mipya iliyohifadhiwa."
+                description = "Taarifa za mfumo kwa mapato, matumizi, na miamala mipya iliyohifadhiwa."
+                enableVibration(true)
+                setShowBadge(true)
+                setSound(defaultSoundUri, audioAttrs)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
             },
             NotificationChannel(
                 CHANNEL_SAVINGS,
                 "Akiba & Malengo (Savings Vault)",
-                NotificationManager.IMPORTANCE_DEFAULT
+                NotificationManager.IMPORTANCE_HIGH
             ).apply {
-                description = "Taarifa za kuweka akiba, kutoa akiba, na kufikia malengo ya akiba."
+                description = "Taarifa za mfumo za kuweka akiba, kutoa akiba, na kufikia malengo ya akiba."
+                enableVibration(true)
+                setShowBadge(true)
+                setSound(defaultSoundUri, audioAttrs)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
             },
             NotificationChannel(
                 CHANNEL_SYSTEM_UPDATES,
                 "Mfumo, Hifadhi & Masasisho (System & Updates)",
-                NotificationManager.IMPORTANCE_DEFAULT
+                NotificationManager.IMPORTANCE_HIGH
             ).apply {
                 description = "Taarifa za usawazishaji wa hifadhidata kwenye simu na masasisho ya GitHub."
+                enableVibration(true)
+                setShowBadge(true)
+                setSound(defaultSoundUri, audioAttrs)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
             }
         )
 
@@ -128,7 +177,7 @@ class MengiNotificationManager(private val context: Context) {
             systemNotificationsEnabled = areSystemNotificationsEnabled(),
             installPackagesGranted = canRequestPackageInstalls(),
             storageVaultReady = storageVaultReady,
-            channelsConfigured = 4
+            channelsConfigured = 5
         )
     }
 
@@ -161,15 +210,17 @@ class MengiNotificationManager(private val context: Context) {
         )
         val body = tr(
             language,
-            "Mfumo wa taarifa za Bili, Ankara, Miamala, Akiba na Masasisho unafanya kazi vizuri kwenye Android 13+.",
-            "Bills, Invoices, Ledger, Savings, and Update alerts are active and working on Android 13+."
+            "Mfumo wa taarifa za Android (System Notifications) za Bili, Ankara, Miamala na Akiba unafanya kazi vizuri.",
+            "Android system notifications for Bills, Invoices, Ledger, Savings, and Updates are active."
         )
         return postNotification(
             channelId = CHANNEL_SYSTEM_UPDATES,
             notificationId = NOTIF_ID_TEST,
             title = title,
             message = body,
-            highPriority = true
+            highPriority = true,
+            smallIconRes = R.drawable.ic_notification_mengidata,
+            accentColor = COLOR_BRAND_EMERALD
         )
     }
 
@@ -191,7 +242,10 @@ class MengiNotificationManager(private val context: Context) {
             channelId = CHANNEL_TRANSACTIONS,
             notificationId = (NOTIF_ID_TXN_BASE + (txn.id.hashCode() and 0x7FF)),
             title = title,
-            message = body
+            message = body,
+            highPriority = true,
+            smallIconRes = R.drawable.ic_notification_mengidata,
+            accentColor = COLOR_BRAND_EMERALD
         )
     }
 
@@ -225,7 +279,9 @@ class MengiNotificationManager(private val context: Context) {
             notificationId = (NOTIF_ID_BILL_BASE + (bill.id.hashCode() and 0x7FF)),
             title = title,
             message = body,
-            highPriority = !justPaid
+            highPriority = true,
+            smallIconRes = R.drawable.ic_notification_mengidata,
+            accentColor = COLOR_BRAND_EMERALD
         )
     }
 
@@ -248,7 +304,10 @@ class MengiNotificationManager(private val context: Context) {
             channelId = CHANNEL_BILLS_INVOICES,
             notificationId = (NOTIF_ID_INVOICE_BASE + (invoiceNumber.hashCode() and 0x7FF)),
             title = title,
-            message = body
+            message = body,
+            highPriority = true,
+            smallIconRes = R.drawable.ic_notification_mengidata,
+            accentColor = COLOR_BRAND_EMERALD
         )
     }
 
@@ -278,7 +337,10 @@ class MengiNotificationManager(private val context: Context) {
             channelId = CHANNEL_SAVINGS,
             notificationId = (NOTIF_ID_SAVINGS_BASE + (goalName.hashCode() and 0x7FF)),
             title = title,
-            message = body
+            message = body,
+            highPriority = true,
+            smallIconRes = R.drawable.ic_notification_mengidata,
+            accentColor = COLOR_BRAND_SLATE
         )
     }
 
@@ -297,7 +359,10 @@ class MengiNotificationManager(private val context: Context) {
             channelId = CHANNEL_SYSTEM_UPDATES,
             notificationId = NOTIF_ID_STORAGE_SYNC,
             title = title,
-            message = body
+            message = body,
+            highPriority = true,
+            smallIconRes = R.drawable.ic_notification_mengidata,
+            accentColor = COLOR_BRAND_EMERALD
         )
     }
 
@@ -317,7 +382,9 @@ class MengiNotificationManager(private val context: Context) {
             notificationId = NOTIF_ID_UPDATE_AVAILABLE,
             title = title,
             message = body,
-            highPriority = true
+            highPriority = true,
+            smallIconRes = R.drawable.ic_notification_mengidata,
+            accentColor = COLOR_BRAND_EMERALD
         )
     }
 
@@ -362,7 +429,9 @@ class MengiNotificationManager(private val context: Context) {
             notificationId = NOTIF_ID_DUE_SUMMARY,
             title = title,
             message = bodyParts.joinToString(" • "),
-            highPriority = true
+            highPriority = true,
+            smallIconRes = R.drawable.ic_notification_warning,
+            accentColor = COLOR_WARNING_AMBER
         )
         return if (posted) (overdueOrTodayBills.size + overdueInvoices.size) else 0
     }
@@ -374,7 +443,7 @@ class MengiNotificationManager(private val context: Context) {
         category: String,
         currency: String,
         language: AppLanguage
-    ) {
+    ): Boolean {
         val formattedAmount = FormatUtils.formatMoney(amount, currency)
         val formattedThreshold = FormatUtils.formatMoney(threshold, currency)
         val title = tr(
@@ -387,13 +456,15 @@ class MengiNotificationManager(private val context: Context) {
             "$billName ($category) imezidi kiwango cha tahadhari cha $formattedThreshold.",
             "$billName ($category) exceeds your warning limit of $formattedThreshold."
         )
-        postNotification(
+        return postNotification(
             channelId = CHANNEL_LARGE_BILL_WARNING,
-            notificationId = (NOTIF_ID_LARGE_BILL_BASE + (billName.hashCode() and 0x7FF)),
+            notificationId = (NOTIF_ID_LARGE_BILL_BASE + ((billName.hashCode() xor System.currentTimeMillis().toInt()) and 0x7FF)),
             title = title,
             message = body,
             highPriority = true,
-            timeoutAfterMs = 3_000L
+            timeoutAfterMs = 3_000L,
+            smallIconRes = R.drawable.ic_notification_warning,
+            accentColor = COLOR_WARNING_AMBER
         )
     }
 
@@ -402,8 +473,10 @@ class MengiNotificationManager(private val context: Context) {
         notificationId: Int,
         title: String,
         message: String,
-        highPriority: Boolean = false,
-        timeoutAfterMs: Long = 0L
+        highPriority: Boolean = true,
+        timeoutAfterMs: Long = 0L,
+        @DrawableRes smallIconRes: Int = R.drawable.ic_notification_mengidata,
+        accentColor: Int = COLOR_BRAND_EMERALD
     ): Boolean {
         if (!isPostNotificationsGranted() || !areSystemNotificationsEnabled()) {
             return false
@@ -427,14 +500,22 @@ class MengiNotificationManager(private val context: Context) {
         }
 
         val builder = NotificationCompat.Builder(appContext, channelId)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(smallIconRes)
+            .setColor(accentColor)
             .setContentTitle(title)
             .setContentText(message)
             .setStyle(NotificationCompat.BigTextStyle().bigText(message))
             .setPriority(priority)
-            .setCategory(if (highPriority) NotificationCompat.CATEGORY_ALARM else NotificationCompat.CATEGORY_STATUS)
+            .setDefaults(NotificationCompat.DEFAULT_ALL)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setShowWhen(true)
+            .setCategory(if (smallIconRes == R.drawable.ic_notification_warning) NotificationCompat.CATEGORY_ALARM else NotificationCompat.CATEGORY_STATUS)
             .setAutoCancel(true)
             .setContentIntent(contentPendingIntent)
+
+        largeAppIconBitmap?.let { bmp ->
+            builder.setLargeIcon(bmp)
+        }
 
         if (timeoutAfterMs > 0L) {
             builder.setTimeoutAfter(timeoutAfterMs)
@@ -449,11 +530,23 @@ class MengiNotificationManager(private val context: Context) {
     }
 
     companion object {
-        const val CHANNEL_LARGE_BILL_WARNING = "mengidata_large_bill_warning"
-        const val CHANNEL_BILLS_INVOICES = "mengidata_bills_invoices"
-        const val CHANNEL_TRANSACTIONS = "mengidata_transactions"
-        const val CHANNEL_SAVINGS = "mengidata_savings"
-        const val CHANNEL_SYSTEM_UPDATES = "mengidata_system_updates"
+        const val CHANNEL_LARGE_BILL_WARNING = "mengidata_large_bill_warning_v2"
+        const val CHANNEL_BILLS_INVOICES = "mengidata_bills_invoices_v2"
+        const val CHANNEL_TRANSACTIONS = "mengidata_transactions_v2"
+        const val CHANNEL_SAVINGS = "mengidata_savings_v2"
+        const val CHANNEL_SYSTEM_UPDATES = "mengidata_system_updates_v2"
+
+        private val LEGACY_CHANNELS = listOf(
+            "mengidata_large_bill_warning",
+            "mengidata_bills_invoices",
+            "mengidata_transactions",
+            "mengidata_savings",
+            "mengidata_system_updates"
+        )
+
+        private const val COLOR_BRAND_EMERALD = 0xFF346352.toInt()
+        private const val COLOR_BRAND_SLATE = 0xFF4E5975.toInt()
+        private const val COLOR_WARNING_AMBER = 0xFF9A5B32.toInt()
 
         private const val NOTIF_ID_TEST = 9001
         private const val NOTIF_ID_DUE_SUMMARY = 9002

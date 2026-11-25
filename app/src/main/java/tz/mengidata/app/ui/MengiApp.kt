@@ -90,8 +90,8 @@ import kotlinx.coroutines.launch
 import tz.mengidata.app.R
 import tz.mengidata.app.i18n.AppLanguage
 import tz.mengidata.app.i18n.tr
+import tz.mengidata.app.ui.components.AutoAccountingSheet
 import tz.mengidata.app.ui.components.GlobalSearchSheet
-import tz.mengidata.app.ui.components.LargeBillWarningPopOverlay
 import tz.mengidata.app.ui.components.MengiSidebarSheet
 import tz.mengidata.app.ui.components.OneUiFloatingNavBar
 import tz.mengidata.app.ui.components.OneUiNavTab
@@ -150,7 +150,6 @@ fun MengiApp(viewModel: MengiViewModel) {
     val savingsAlertsEnabled by viewModel.savingsAlertsEnabled.collectAsStateWithLifecycle()
     val systemAlertsEnabled by viewModel.systemAlertsEnabled.collectAsStateWithLifecycle()
     val largeBillThreshold by viewModel.largeBillThreshold.collectAsStateWithLifecycle()
-    val largeBillWarningPopup by viewModel.largeBillWarningPopup.collectAsStateWithLifecycle()
     val updateState by viewModel.updateState.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val metrics by viewModel.dashboardMetrics.collectAsStateWithLifecycle()
@@ -176,6 +175,7 @@ fun MengiApp(viewModel: MengiViewModel) {
     var pendingExport by remember { mutableStateOf<PendingFileExport?>(null) }
     var quickAddTxnTrigger by remember { mutableIntStateOf(0) }
     var showGlobalSearch by remember { mutableStateOf(false) }
+    var showAutoAccountingSheet by remember { mutableStateOf(false) }
     var showPartyDirectory by remember { mutableStateOf(false) }
     var showGlobalRecoveryVault by remember { mutableStateOf(false) }
 
@@ -300,6 +300,10 @@ fun MengiApp(viewModel: MengiViewModel) {
                     onSelectDestination = { route ->
                         scope.launch { drawerState.close() }
                         navigateTopLevel(route)
+                    },
+                    onOpenAutoAccounting = {
+                        scope.launch { drawerState.close() }
+                        showAutoAccountingSheet = true
                     },
                     onOpenPartyDirectory = {
                         scope.launch { drawerState.close() }
@@ -752,16 +756,6 @@ fun MengiApp(viewModel: MengiViewModel) {
                         }
                     }
 
-                    // 3-Second Large Bill Warning Pop-Up Overlay (Top of Screen)
-                    LargeBillWarningPopOverlay(
-                        popup = largeBillWarningPopup,
-                        language = language,
-                        onDismiss = viewModel::dismissLargeBillWarningPopup,
-                        modifier = Modifier
-                            .align(Alignment.TopCenter)
-                            .padding(top = 56.dp)
-                    )
-
                     // Samsung One UI 8.5 Solid Opaque Floating Capsule Bottom Dock
                     if (showFloatingDock) {
                         OneUiFloatingNavBar(
@@ -791,6 +785,17 @@ fun MengiApp(viewModel: MengiViewModel) {
                 language = language,
                 onNavigate = { route -> navigateTopLevel(route) },
                 onDismiss = { showGlobalSearch = false }
+            )
+        }
+
+        if (showAutoAccountingSheet) {
+            AutoAccountingSheet(
+                ledger = zeroLossLedger,
+                currency = settings.currency.ifBlank { "TZS" },
+                language = language,
+                onVerifyLedger = viewModel::reconcileLedgerNow,
+                onExportColorExcel = viewModel::exportColorExcelReport,
+                onDismiss = { showAutoAccountingSheet = false }
             )
         }
 

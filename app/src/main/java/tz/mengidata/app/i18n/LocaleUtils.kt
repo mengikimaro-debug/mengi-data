@@ -40,10 +40,15 @@ object FormatUtils {
     private val isoFormat: SimpleDateFormat
         get() = SimpleDateFormat("yyyy-MM-dd", Locale.US)
 
+    private val isoTimestampFormat: SimpleDateFormat
+        get() = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS", Locale.US)
+
     private val numberFormat: DecimalFormat
         get() = DecimalFormat("#,##0", DecimalFormatSymbols(Locale.US))
 
     fun todayIso(): String = isoFormat.format(Date())
+
+    fun nowIsoTimestamp(): String = isoTimestampFormat.format(Date())
 
     fun addDaysIso(baseIso: String, days: Int): String {
         val cal = Calendar.getInstance()

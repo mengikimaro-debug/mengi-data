@@ -21,10 +21,10 @@ interface SettingsDao {
 
 @Dao
 interface TransactionDao {
-    @Query("SELECT * FROM transactions ORDER BY date DESC, createdAt DESC")
+    @Query("SELECT * FROM transactions ORDER BY date DESC, createdAt DESC, rowid DESC")
     fun observeAll(): Flow<List<TransactionEntity>>
 
-    @Query("SELECT * FROM transactions ORDER BY date DESC, createdAt DESC")
+    @Query("SELECT * FROM transactions ORDER BY date DESC, createdAt DESC, rowid DESC")
     suspend fun getAll(): List<TransactionEntity>
 
     @Query("SELECT * FROM transactions WHERE id = :id")
@@ -49,11 +49,11 @@ interface TransactionDao {
 @Dao
 interface InvoiceDao {
     @Transaction
-    @Query("SELECT * FROM invoices ORDER BY issueDate DESC, number DESC")
+    @Query("SELECT * FROM invoices ORDER BY issueDate DESC, createdAt DESC, rowid DESC")
     fun observeAllWithItems(): Flow<List<InvoiceWithItems>>
 
     @Transaction
-    @Query("SELECT * FROM invoices ORDER BY issueDate DESC, number DESC")
+    @Query("SELECT * FROM invoices ORDER BY issueDate DESC, createdAt DESC, rowid DESC")
     suspend fun getAllWithItems(): List<InvoiceWithItems>
 
     @Transaction
@@ -81,10 +81,10 @@ interface InvoiceDao {
 
 @Dao
 interface BillDao {
-    @Query("SELECT * FROM bills ORDER BY paid ASC, dueDate ASC")
+    @Query("SELECT * FROM bills ORDER BY dueDate DESC, createdAt DESC, rowid DESC")
     fun observeAll(): Flow<List<BillEntity>>
 
-    @Query("SELECT * FROM bills ORDER BY paid ASC, dueDate ASC")
+    @Query("SELECT * FROM bills ORDER BY dueDate DESC, createdAt DESC, rowid DESC")
     suspend fun getAll(): List<BillEntity>
 
     @Query("SELECT * FROM bills WHERE id = :id")
@@ -105,10 +105,10 @@ interface BillDao {
 
 @Dao
 interface SavingsDao {
-    @Query("SELECT * FROM savings_goals ORDER BY createdAt DESC")
+    @Query("SELECT * FROM savings_goals ORDER BY createdAt DESC, rowid DESC")
     fun observeGoals(): Flow<List<SavingsGoalEntity>>
 
-    @Query("SELECT * FROM savings_goals ORDER BY createdAt DESC")
+    @Query("SELECT * FROM savings_goals ORDER BY createdAt DESC, rowid DESC")
     suspend fun getGoals(): List<SavingsGoalEntity>
 
     @Query("SELECT * FROM savings_goals WHERE id = :id")
@@ -126,13 +126,13 @@ interface SavingsDao {
     @Query("DELETE FROM savings_goals")
     suspend fun deleteAllGoals()
 
-    @Query("SELECT * FROM savings_logs ORDER BY date DESC, createdAt DESC")
+    @Query("SELECT * FROM savings_logs ORDER BY date DESC, createdAt DESC, rowid DESC")
     fun observeAllLogs(): Flow<List<SavingsLogEntity>>
 
-    @Query("SELECT * FROM savings_logs ORDER BY date DESC, createdAt DESC")
+    @Query("SELECT * FROM savings_logs ORDER BY date DESC, createdAt DESC, rowid DESC")
     suspend fun getAllLogs(): List<SavingsLogEntity>
 
-    @Query("SELECT * FROM savings_logs WHERE savingsId = :goalId ORDER BY date DESC, createdAt DESC")
+    @Query("SELECT * FROM savings_logs WHERE savingsId = :goalId ORDER BY date DESC, createdAt DESC, rowid DESC")
     suspend fun getLogsForGoal(goalId: String): List<SavingsLogEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -174,10 +174,10 @@ interface CategoryDao {
 
 @Dao
 interface DeletedRecordDao {
-    @Query("SELECT * FROM deleted_records ORDER BY deletedAtMillis DESC")
+    @Query("SELECT * FROM deleted_records ORDER BY deletedAtMillis DESC, rowid DESC")
     fun observeAll(): Flow<List<DeletedRecordEntity>>
 
-    @Query("SELECT * FROM deleted_records ORDER BY deletedAtMillis DESC")
+    @Query("SELECT * FROM deleted_records ORDER BY deletedAtMillis DESC, rowid DESC")
     suspend fun getAll(): List<DeletedRecordEntity>
 
     @Query("SELECT * FROM deleted_records WHERE id = :id")

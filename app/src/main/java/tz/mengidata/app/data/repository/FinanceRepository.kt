@@ -217,8 +217,8 @@ class FinanceRepository(
                                 currentAmount = 0.0,
                                 targetDate = FormatUtils.addMonthsIso(cleanDate, 6),
                                 notes = "Imeundwa kiotomatiki kupitia /${classification.slashTag.rawTag}.",
-                                createdAt = cleanDate,
-                                updatedAt = cleanDate
+                                createdAt = FormatUtils.nowIsoTimestamp(),
+                                updatedAt = FormatUtils.nowIsoTimestamp()
                             ).also { savingsDao.upsertGoal(it) }
                         }
                         else -> {
@@ -231,8 +231,8 @@ class FinanceRepository(
                                 currentAmount = 0.0,
                                 targetDate = FormatUtils.addMonthsIso(cleanDate, 6),
                                 notes = "Imeundwa kiotomatiki kwa Akiba.",
-                                createdAt = cleanDate,
-                                updatedAt = cleanDate
+                                createdAt = FormatUtils.nowIsoTimestamp(),
+                                updatedAt = FormatUtils.nowIsoTimestamp()
                             ).also { savingsDao.upsertGoal(it) }
                         }
                     }
@@ -263,7 +263,7 @@ class FinanceRepository(
                         reference = "",
                         notes = "Bili ya Nyumbani — imetambuliwa na kuhifadhiwa kwenye mfumo.",
                         source = AutoAccountingEngine.HOUSEHOLD_SOURCE,
-                        createdAt = cleanDate
+                        createdAt = FormatUtils.nowIsoTimestamp()
                     )
                 )
             }
@@ -282,7 +282,7 @@ class FinanceRepository(
                         method = method.ifBlank { "M-Pesa" },
                         recurring = false,
                         notes = "Imetambuliwa kiotomatiki kama Bili Zangu.",
-                        createdAt = cleanDate
+                        createdAt = FormatUtils.nowIsoTimestamp()
                     )
                 )
             }
@@ -327,7 +327,7 @@ class FinanceRepository(
                             reference = "",
                             notes = "Imetambuliwa kiotomatiki: Pesa Kuingia.",
                             source = "manual",
-                            createdAt = cleanDate
+                            createdAt = FormatUtils.nowIsoTimestamp()
                         )
                     )
                 }
@@ -347,7 +347,7 @@ class FinanceRepository(
                         reference = "",
                         notes = "Imetambuliwa kiotomatiki: Matumizi Yangu.",
                         source = "manual",
-                        createdAt = cleanDate
+                        createdAt = FormatUtils.nowIsoTimestamp()
                     )
                 )
             }
@@ -360,7 +360,10 @@ class FinanceRepository(
 
     suspend fun saveTransaction(txn: TransactionEntity) {
         val withId = if (txn.id.isBlank()) {
-            txn.copy(id = "txn_${UUID.randomUUID()}")
+            txn.copy(
+                id = "txn_${UUID.randomUUID()}",
+                createdAt = FormatUtils.nowIsoTimestamp()
+            )
         } else {
             txn
         }
@@ -420,12 +423,12 @@ class FinanceRepository(
         val result = db.withTransaction {
             val id = invoice.id.ifBlank { "inv_${UUID.randomUUID()}" }
             val number = invoice.number.ifBlank { nextInvoiceNumber() }
-            val today = FormatUtils.todayIso()
+            val nowTs = FormatUtils.nowIsoTimestamp()
             val base = invoice.copy(
                 id = id,
                 number = number,
-                createdAt = invoice.createdAt.ifBlank { today },
-                updatedAt = today
+                createdAt = if (invoice.id.isBlank()) nowTs else invoice.createdAt.ifBlank { nowTs },
+                updatedAt = nowTs
             )
 
             val linkedTxnId = syncInvoiceTransactionLocked(base)
@@ -511,8 +514,8 @@ class FinanceRepository(
                 state = "draft",
                 paidDate = "",
                 linkedTxnId = null,
-                createdAt = today,
-                updatedAt = today
+                createdAt = FormatUtils.nowIsoTimestamp(),
+                updatedAt = FormatUtils.nowIsoTimestamp()
             )
             invoiceDao.upsertInvoice(copyInvoice)
             val copiedItems = current.orderedItems.mapIndexed { idx, item ->
@@ -560,7 +563,7 @@ class FinanceRepository(
                 notes = "Imeundwa kiotomatiki kutoka ankara.",
                 source = "invoice",
                 linkedId = invoice.id,
-                createdAt = txnDate
+                createdAt = FormatUtils.nowIsoTimestamp()
             )
         )
         return txnId
@@ -570,10 +573,11 @@ class FinanceRepository(
 
     suspend fun saveBill(bill: BillEntity): BillEntity {
         val result = db.withTransaction {
-            val id = bill.id.ifBlank { "bill_${UUID.randomUUID()}" }
+            val isNew = bill.id.isBlank()
+            val id = if (isNew) "bill_${UUID.randomUUID()}" else bill.id
             val base = bill.copy(
                 id = id,
-                createdAt = bill.createdAt.ifBlank { FormatUtils.todayIso() }
+                createdAt = if (isNew) FormatUtils.nowIsoTimestamp() else bill.createdAt.ifBlank { FormatUtils.nowIsoTimestamp() }
             )
             val linkedId = syncBillTransactionLocked(base)
             val finalBill = base.copy(linkedTxnId = linkedId)
@@ -611,7 +615,7 @@ class FinanceRepository(
                 paidDate = "",
                 recurring = true,
                 linkedTxnId = null,
-                createdAt = FormatUtils.todayIso()
+                createdAt = FormatUtils.nowIsoTimestamp()
             )
             billDao.upsert(nextBill)
             nextBill
@@ -656,7 +660,7 @@ class FinanceRepository(
                 },
                 source = if (isHousehold) AutoAccountingEngine.HOUSEHOLD_SOURCE else "bill",
                 linkedId = bill.id,
-                createdAt = txnDate
+                createdAt = FormatUtils.nowIsoTimestamp()
             )
         )
         return txnId
@@ -666,13 +670,14 @@ class FinanceRepository(
 
     suspend fun saveSavingsGoal(goal: SavingsGoalEntity) {
         val today = FormatUtils.todayIso()
+        val nowTs = FormatUtils.nowIsoTimestamp()
         val isNewGoal = goal.id.isBlank()
         val initialDeposit = if (isNewGoal && goal.currentAmount > 0.0) goal.currentAmount else 0.0
         val clean = goal.copy(
             id = goal.id.ifBlank { "svg_${UUID.randomUUID()}" },
             currentAmount = if (initialDeposit > 0.0) 0.0 else goal.currentAmount,
-            createdAt = goal.createdAt.ifBlank { today },
-            updatedAt = today
+            createdAt = if (isNewGoal) nowTs else goal.createdAt.ifBlank { nowTs },
+            updatedAt = nowTs
         )
         db.withTransaction {
             savingsDao.upsertGoal(clean)
@@ -745,7 +750,8 @@ class FinanceRepository(
             else -> note
         }
         val logId = "slog_${UUID.randomUUID()}"
-        savingsDao.upsertGoal(goal.copy(currentAmount = updatedAmount, updatedAt = date))
+        val nowTs = FormatUtils.nowIsoTimestamp()
+        savingsDao.upsertGoal(goal.copy(currentAmount = updatedAmount, updatedAt = nowTs))
         savingsDao.upsertLog(
             SavingsLogEntity(
                 id = logId,
@@ -754,7 +760,7 @@ class FinanceRepository(
                 amount = amount,
                 date = date,
                 note = combinedNote,
-                createdAt = date
+                createdAt = nowTs
             )
         )
         // Zero-loss ledger mirror tagged with source = "savings" so cashflow never loses a shilling
@@ -772,7 +778,7 @@ class FinanceRepository(
                 notes = combinedNote.ifBlank { "Muamala wa Akiba." },
                 source = "savings",
                 linkedId = logId,
-                createdAt = date
+                createdAt = nowTs
             )
         )
     }

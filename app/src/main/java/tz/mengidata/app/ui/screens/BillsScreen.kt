@@ -155,9 +155,8 @@ fun BillsScreen(
                 FormatUtils.localizedCategory(b.category, language).lowercase(Locale.ROOT).contains(q)
             filterOk && searchOk
         }.sortedWith(
-            compareBy<BillEntity> { it.paid }
-                .thenByDescending { it.isOverdue }
-                .thenBy { it.dueDate }
+            compareByDescending<BillEntity> { it.dueDate }
+                .thenByDescending { it.createdAt }
         )
     }
 
