@@ -76,40 +76,40 @@ fun bucketVisualColors(bucket: AutoBucket): BucketVisualColors {
     return if (isDark) {
         when (bucket) {
             AutoBucket.MONEY_IN -> BucketVisualColors(
-                dot = Color(0xFF7FA896),
-                softBg = Color(0xFF1A2722),
-                border = Color(0xFF2C423A),
-                ink = Color(0xFFBDD4C9)
+                dot = Color(0xFF739E8C),
+                softBg = Color(0xFF1D2C26),
+                border = Color(0xFF334E43),
+                ink = Color(0xFFCAE0D6)
             )
             AutoBucket.SAVINGS -> BucketVisualColors(
-                dot = Color(0xFF939DB8),
-                softBg = Color(0xFF1F2330),
-                border = Color(0xFF353D52),
-                ink = Color(0xFFC8CEE0)
+                dot = Color(0xFF8894B0),
+                softBg = Color(0xFF212736),
+                border = Color(0xFF39445E),
+                ink = Color(0xFFD0D7E8)
             )
             AutoBucket.BILL -> BucketVisualColors(
-                dot = Color(0xFFC2A684),
-                softBg = Color(0xFF29231B),
-                border = Color(0xFF473C2E),
-                ink = Color(0xFFDDD0BE)
+                dot = Color(0xFFB59A7B),
+                softBg = Color(0xFF2B241D),
+                border = Color(0xFF4C3F32),
+                ink = Color(0xFFE3D7C7)
             )
             AutoBucket.HIGH_BILL_TODAY -> BucketVisualColors(
-                dot = Color(0xFFA99EB9),
-                softBg = Color(0xFF231F2B),
-                border = Color(0xFF3E374B),
-                ink = Color(0xFFD5CDE0)
+                dot = Color(0xFF9E92B0),
+                softBg = Color(0xFF272231),
+                border = Color(0xFF453C57),
+                ink = Color(0xFFDDD6E8)
             )
             AutoBucket.HOUSEHOLD_BILL -> BucketVisualColors(
-                dot = Color(0xFF7EA2AD),
-                softBg = Color(0xFF1A252A),
-                border = Color(0xFF2F424A),
-                ink = Color(0xFFBDD1D8)
+                dot = Color(0xFF769AA6),
+                softBg = Color(0xFF1C292F),
+                border = Color(0xFF344C57),
+                ink = Color(0xFFC8DCE3)
             )
             AutoBucket.EXPENSE -> BucketVisualColors(
-                dot = Color(0xFFB59482),
-                softBg = Color(0xFF2A211C),
-                border = Color(0xFF473830),
-                ink = Color(0xFFDBC8BE)
+                dot = Color(0xFFAD8E7D),
+                softBg = Color(0xFF2B221E),
+                border = Color(0xFF4C3C34),
+                ink = Color(0xFFE2D1C8)
             )
         }
     } else {

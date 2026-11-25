@@ -686,14 +686,16 @@ private fun LedgerMetricTile(
     accentColor: androidx.compose.ui.graphics.Color,
     modifier: Modifier = Modifier
 ) {
+    val colors = LocalMengiColors.current
     Surface(
         shape = RoundedCornerShape(18.dp),
         color = containerColor,
+        border = BorderStroke(1.dp, colors.cardBorder),
         modifier = modifier
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 11.dp, vertical = 11.dp),
-            verticalArrangement = Arrangement.spacedBy(3.dp)
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Text(
                 text = label,
@@ -794,7 +796,7 @@ private fun LedgerTransactionRow(
 
     val localizedCat = FormatUtils.localizedCategory(txn.category, language)
     val localizedMethod = FormatUtils.localizedMethod(txn.method, language)
-    val subtitleText = listOf(txn.party, localizedCat, localizedMethod)
+    val partyAndCat = listOf(txn.party.trim(), localizedCat)
         .filter { it.isNotBlank() }
         .distinct()
         .joinToString(" · ")
@@ -803,36 +805,37 @@ private fun LedgerTransactionRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onEdit)
-            .padding(start = 16.dp, end = 6.dp, top = 13.dp, bottom = 13.dp),
+            .padding(start = 16.dp, end = 6.dp, top = 14.dp, bottom = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Left: Crisp 44dp Squircle Icon Badge
-        Box(
-            modifier = Modifier
-                .size(44.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(iconBg),
-            contentAlignment = Alignment.Center
+        // Left: Crisp 44dp Squircle Icon Badge with subtle border
+        Surface(
+            shape = RoundedCornerShape(14.dp),
+            color = iconBg,
+            border = BorderStroke(0.8.dp, bColors.border),
+            modifier = Modifier.size(44.dp)
         ) {
-            Icon(
-                imageVector = when {
-                    isHousehold -> Icons.Rounded.Home
-                    isSavings -> Icons.Rounded.Savings
-                    categoryMeta != null -> categoryIconForKey(categoryMeta.iconKey)
-                    txn.isIncome -> Icons.Rounded.ArrowDownward
-                    else -> Icons.Rounded.ArrowUpward
-                },
-                contentDescription = localizedCat.ifBlank { txn.type },
-                tint = iconTint,
-                modifier = Modifier.size(21.dp)
-            )
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = when {
+                        isHousehold -> Icons.Rounded.Home
+                        isSavings -> Icons.Rounded.Savings
+                        categoryMeta != null -> categoryIconForKey(categoryMeta.iconKey)
+                        txn.isIncome -> Icons.Rounded.ArrowDownward
+                        else -> Icons.Rounded.ArrowUpward
+                    },
+                    contentDescription = localizedCat.ifBlank { txn.type },
+                    tint = iconTint,
+                    modifier = Modifier.size(21.dp)
+                )
+            }
         }
 
-        // Center: Clean Uncramped 3-Tier Info Stack
+        // Center: Structured 3-Tier Data Hierarchy (Title -> Party/Category -> Bucket + Method Badges)
         Column(
             modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(3.dp)
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Text(
                 text = txn.description.ifBlank { localizedCat },
@@ -842,42 +845,73 @@ private fun LedgerTransactionRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            if (subtitleText.isNotBlank()) {
+            if (partyAndCat.isNotBlank()) {
                 Text(
-                    text = subtitleText,
+                    text = partyAndCat,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            // Single compact solid bucket tag (never competes with a date!)
-            Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = bColors.softBg
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = bucket.label(language),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = bColors.ink,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.5.dp)
-                )
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = bColors.softBg,
+                    border = BorderStroke(0.75.dp, bColors.border)
+                ) {
+                    Text(
+                        text = bucket.label(language),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = bColors.ink,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.5.dp)
+                    )
+                }
+                if (localizedMethod.isNotBlank()) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = colors.subtleSurface,
+                        border = BorderStroke(0.75.dp, colors.cardBorder)
+                    ) {
+                        Text(
+                            text = localizedMethod,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.5.dp)
+                        )
+                    }
+                }
             }
         }
 
-        // Right: Crisp Amount + Clean Overflow Menu
+        // Right: Structured Amount + Clean Overflow Menu
         Row(
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = (if (txn.isIncome) "+" else "-") + FormatUtils.formatMoney(txn.amount, currency),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.ExtraBold,
-                color = amountColor,
-                maxLines = 1
-            )
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = (if (txn.isIncome) "+" else "-") + FormatUtils.formatMoney(txn.amount, currency),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = amountColor,
+                    maxLines = 1
+                )
+                if (txn.reference.isNotBlank()) {
+                    Text(
+                        text = "#${txn.reference}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
+                    )
+                }
+            }
             Box {
                 IconButton(
                     onClick = { showMenu = true },

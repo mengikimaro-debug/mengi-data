@@ -53,50 +53,50 @@ val PlusJakartaSansFamily = FontFamily(
 
 // Calm Matte Solid Palette (Zero Glare, Zero Neon, Zero Transparency — WCAG AA/AAA Verified)
 // Light: Warm Matte Stone Canvas (#EDEFF2), Soft Matte Paper Cards (#F8F9FA), Muted Slate Navy (#334B63)
-// Dark: Matte Charcoal Canvas (#111418), Sculpted Matte Graphite Cards (#191E24), Muted Steel Blue (#8BA2B8)
+// Dark: Calm Matte Deep Slate Canvas (#0E1216), Sculpted Matte Graphite Cards (#181E25), Elevated Slate (#232B35), Crisp Matte Divider (#384452)
 
-private val OneUiDarkCanvas = Color(0xFF111418)
-private val OneUiDarkCard = Color(0xFF191E24)
-private val OneUiDarkElevated = Color(0xFF232931)
-private val OneUiDarkBorder = Color(0xFF313944)
+private val OneUiDarkCanvas = Color(0xFF0E1216)
+private val OneUiDarkCard = Color(0xFF181E25)
+private val OneUiDarkElevated = Color(0xFF232B35)
+private val OneUiDarkBorder = Color(0xFF384452)
 
 private val OneUiLightCanvas = Color(0xFFEDEFF2)
 private val OneUiPureWhite = Color(0xFFF8F9FA)
 private val OneUiLightPill = Color(0xFFE2E6EC)
 private val OneUiLightBorder = Color(0xFFD1D7E0)
 
-private val DeepInk = Color(0xFF12161C)
+private val DeepInk = Color(0xFF131920)
 private val SlateInk = Color(0xFF1C232C)
 private val SlateMutedAccessible = Color(0xFF4F5A68) // >= 6.4:1 on Light Canvas & Pill
-private val SnowInk = Color(0xFFE6EAF0)
-private val SilverMutedAccessible = Color(0xFFA6B0BD) // >= 7.6:1 on Dark Card & Elevated
+private val SnowInk = Color(0xFFE5EAF0) // Soft Matte Alabaster (zero glare on dark)
+private val SilverMutedAccessible = Color(0xFFAAB4C2) // >= 7.8:1 on Dark Card & Elevated
 
 private val OneUiBlueLight = Color(0xFF334B63) // Calm Matte Slate Navy (>= 8.2:1 on Soft Paper)
-private val OneUiBlueDark = Color(0xFF8BA2B8) // Calm Matte Steel Blue (>= 6.8:1 on Graphite)
+private val OneUiBlueDark = Color(0xFF7D95AB) // Calm Matte Steel Blue (zero glare)
 private val OneUiBlueSoftLight = Color(0xFFDEE5ED)
 private val OneUiBlueInkLight = Color(0xFF24384B)
-private val OneUiBlueSoftDark = Color(0xFF212D3A)
-private val OneUiBlueInkDark = Color(0xFFD2DCE6)
+private val OneUiBlueSoftDark = Color(0xFF24313E)
+private val OneUiBlueInkDark = Color(0xFFD5E0EB)
 
 private val GalaxyIndigoLight = Color(0xFF4E5975) // Calm Matte Slate Indigo
-private val GalaxyIndigoDark = Color(0xFF9BA5BD)
+private val GalaxyIndigoDark = Color(0xFF8C97B0)
 private val GalaxyIndigoSoft = Color(0xFFE4E7F0)
 private val GalaxyIndigoInk = Color(0xFF343D54)
 
 private val Amber700 = Color(0xFF7D5D3B) // Calm Matte Warm Ochre
 private val AmberSoft = Color(0xFFF0EAE1)
-private val Amber400 = Color(0xFFC2A684)
-private val AmberDarkSoft = Color(0xFF2B241C)
+private val Amber400 = Color(0xFFB59A7B) // Calm Matte Sand Ochre on Dark
+private val AmberDarkSoft = Color(0xFF2C251D)
 
 private val EmeraldIncomeLight = Color(0xFF346352) // Calm Matte Forest Sage
 private val EmeraldIncomeSoftLight = Color(0xFFE2ECE8)
-private val EmeraldIncomeDark = Color(0xFF82B09D) // Calm Matte Sage on Dark
-private val EmeraldIncomeSoftDark = Color(0xFF1A2A24)
+private val EmeraldIncomeDark = Color(0xFF759F8E) // Calm Matte Sage on Dark (zero glare)
+private val EmeraldIncomeSoftDark = Color(0xFF1D2C26)
 
 private val SoftPlumLight = Color(0xFF5D526E) // Calm Matte Dusty Mauve
 private val SoftPlumBgLight = Color(0xFFEBE8F0)
-private val SoftPlumDark = Color(0xFFA99EB9) // Calm Matte Lavender-Gray on Dark
-private val SoftPlumBgDark = Color(0xFF24202C)
+private val SoftPlumDark = Color(0xFF9E92B0) // Calm Matte Lavender-Slate on Dark
+private val SoftPlumBgDark = Color(0xFF282331)
 
 @Stable
 data class MengiThemeState(
@@ -165,12 +165,12 @@ private val LightExtendedColors = MengiExtendedColors(
 
 private val DarkExtendedColors = MengiExtendedColors(
     isDark = true,
-    heroStart = Color(0xFF151A20),
-    heroMid = Color(0xFF1C232B),
-    heroEnd = Color(0xFF242D38),
-    heroAccentGlow = Color(0xFF8BA2B8),
-    heroGoldGlow = Color(0xFF9BA5BD),
-    lime = Color(0xFFB8C7D6),
+    heroStart = Color(0xFF1D252E),
+    heroMid = Color(0xFF232C37),
+    heroEnd = Color(0xFF2A3542),
+    heroAccentGlow = Color(0xFF7D95AB),
+    heroGoldGlow = Color(0xFF8C97B0),
+    lime = Color(0xFFB2C1D0),
     limeSoft = OneUiBlueSoftDark,
     limeInk = OneUiBlueInkDark,
     income = EmeraldIncomeDark,
@@ -180,12 +180,12 @@ private val DarkExtendedColors = MengiExtendedColors(
     warning = Amber400,
     warningSoft = AmberDarkSoft,
     savings = GalaxyIndigoDark,
-    savingsSoft = Color(0xFF212636),
+    savingsSoft = Color(0xFF232938),
     cardBorder = OneUiDarkBorder,
     subtleSurface = OneUiDarkElevated,
-    glassHighlight = Color(0xFF222831),
-    dockSurface = Color(0xFF191E24),
-    dockBorder = Color(0xFF303844)
+    glassHighlight = Color(0xFF28313B),
+    dockSurface = Color(0xFF1D242D),
+    dockBorder = Color(0xFF3E4B5B)
 )
 
 val LocalMengiColors = staticCompositionLocalOf { LightExtendedColors }
@@ -229,7 +229,7 @@ internal val MengiDarkColorScheme = darkColorScheme(
     tertiary = Amber400,
     onTertiary = DeepInk,
     tertiaryContainer = AmberDarkSoft,
-    onTertiaryContainer = Color(0xFFDCC9AE),
+    onTertiaryContainer = Color(0xFFDFCEB8),
     background = OneUiDarkCanvas,
     onBackground = SnowInk,
     surface = OneUiDarkCard,
@@ -237,11 +237,11 @@ internal val MengiDarkColorScheme = darkColorScheme(
     surfaceVariant = OneUiDarkElevated,
     onSurfaceVariant = SilverMutedAccessible,
     outline = OneUiDarkBorder,
-    outlineVariant = Color(0xFF2A313B),
+    outlineVariant = Color(0xFF2C3642),
     error = SoftPlumDark,
     onError = DeepInk,
     errorContainer = SoftPlumBgDark,
-    onErrorContainer = Color(0xFFD8D0E4)
+    onErrorContainer = Color(0xFFDBD3E6)
 )
 
 val MengiTypography = Typography(

@@ -221,6 +221,7 @@ fun InvoicesScreen(
                         Surface(
                             shape = RoundedCornerShape(16.dp),
                             color = colors.incomeSoft,
+                            border = BorderStroke(1.dp, colors.cardBorder),
                             modifier = Modifier.weight(1f)
                         ) {
                             Column(modifier = Modifier.padding(12.dp)) {
@@ -231,6 +232,7 @@ fun InvoicesScreen(
                         Surface(
                             shape = RoundedCornerShape(16.dp),
                             color = colors.warningSoft,
+                            border = BorderStroke(1.dp, colors.cardBorder),
                             modifier = Modifier.weight(1f)
                         ) {
                             Column(modifier = Modifier.padding(12.dp)) {

@@ -341,7 +341,7 @@ private fun OneUiSavingsVaultSummaryCard(
                 amount = totalSaved,
                 currency = currency,
                 style = MaterialTheme.typography.displayLarge,
-                color = Color.White
+                color = Color(0xFFE5EAF0)
             )
 
             Box(

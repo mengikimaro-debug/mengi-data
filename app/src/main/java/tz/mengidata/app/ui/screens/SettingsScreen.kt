@@ -469,8 +469,8 @@ fun SettingsScreen(
                             Text(
                                 text = tr(
                                     language,
-                                    "• Kituo cha Huduma Zote kwenye Dashibodi & Taarifa ya Fedha ya PDF\n• Kutuma Ankara na Taarifa za PDF moja kwa moja (WhatsApp/Email)\n• Malipo ya pamoja ya bili zinazodaiwa & kasi ya malengo ya akiba\n• Hifadhidata ya ndani + hifadhi ya simu yenye rangi tulivu zisizong'aa",
-                                    "• All-Services Command Hub on Dashboard & Financial Statement PDF\n• Direct 1-tap PDF sharing for Invoices & Statements\n• Batch pay due bills, quick duplicate & monthly savings pace\n• Local SQLite + phone storage mirror with calm matte palette"
+                                    "• Mwonekano mpya wa Giza (Dark Mode) wenye rangi tulivu bila mng'ao\n• Mpangilio bora wa data kwenye Dashibodi, Miamala, Bili, Ankara na Akiba\n• Kituo cha Huduma Zote + Kutuma PDF za Taarifa na Ankara moja kwa moja\n• Hifadhidata ya ndani ya programu + hifadhi salama ya simu",
+                                    "• Refined Dark Mode with calm matte slate surfaces and zero glare\n• Clean, structured data layout across Dashboard, Ledger, Bills, Invoices & Savings\n• All-Services Command Hub + Direct 1-tap Statement & Invoice PDF sharing\n• Local SQLite database + automatic phone storage protection"
                                 ),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant

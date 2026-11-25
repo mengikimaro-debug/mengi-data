@@ -257,20 +257,20 @@ fun DashboardScreen(
                                     )
                                 }
 
-                                // Bold 2026 Expressive Balance Display
+                                // Bold 2026 Expressive Balance Display (Calm Matte Alabaster — Zero Glare)
                                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                     if (privacyMaskEnabled) {
                                         Text(
                                             text = "••••••",
                                             style = MaterialTheme.typography.displayLarge,
-                                            color = Color.White
+                                            color = Color(0xFFE5EAF0)
                                         )
                                     } else {
                                         AnimatedMoneyText(
                                             amount = metrics.netProfit,
                                             currency = currency,
                                             style = MaterialTheme.typography.displayLarge,
-                                            color = Color.White
+                                            color = Color(0xFFE5EAF0)
                                         )
                                     }
                                     Text(
@@ -882,7 +882,7 @@ private fun HeroStatChip(
                     Text(
                         text = "••••",
                         style = MaterialTheme.typography.titleSmall,
-                        color = Color.White
+                        color = Color(0xFFE5EAF0)
                     )
                 } else {
                     AnimatedMoneyText(
@@ -890,7 +890,7 @@ private fun HeroStatChip(
                         currency = currency,
                         compact = compact,
                         style = if (compact) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium,
-                        color = Color.White
+                        color = Color(0xFFE5EAF0)
                     )
                 }
             }

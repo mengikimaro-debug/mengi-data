@@ -264,6 +264,7 @@ fun BillsScreen(
                         Surface(
                             shape = RoundedCornerShape(18.dp),
                             color = householdColors.softBg,
+                            border = BorderStroke(1.dp, householdColors.border),
                             modifier = Modifier.weight(1f)
                         ) {
                             Row(
@@ -307,6 +308,7 @@ fun BillsScreen(
                         Surface(
                             shape = RoundedCornerShape(18.dp),
                             color = if (overdueCount > 0) colors.warningSoft else colors.subtleSurface,
+                            border = BorderStroke(1.dp, colors.cardBorder),
                             modifier = Modifier.weight(1f)
                         ) {
                             Row(
