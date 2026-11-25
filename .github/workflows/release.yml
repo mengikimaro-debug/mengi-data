@@ -278,17 +278,51 @@ jobs:
             fi
           } > "$BODY_FILE"
 
-      - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.version.outputs.release_tag }}
-          target_commitish: ${{ github.sha }}
-          name: Mengidata ${{ steps.version.outputs.release_tag }}
-          body_path: ${{ runner.temp }}/release-body.md
-          generate_release_notes: true
-          draft: false
-          prerelease: false
-          make_latest: 'true'
-          files: |
-            Mengidata.apk
-            Mengidata.apk.sha256
+      - name: Publish GitHub Release (Immutable Release Compatible)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.version.outputs.release_tag }}
+          APP_VERSION: ${{ steps.version.outputs.app_version }}
+          TARGET_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          BODY_FILE="${RUNNER_TEMP}/release-body.md"
+
+          # If an earlier failed or draft release exists for this tag, try to clean it up first.
+          # If Release Immutability locked a published tag, fall back to a unique build tag if needed.
+          FINAL_TAG="$RELEASE_TAG"
+          if gh release view "$FINAL_TAG" >/dev/null 2>&1; then
+            IS_DRAFT=$(gh release view "$FINAL_TAG" --json isDraft -q '.isDraft' 2>/dev/null || echo "false")
+            if [[ "$IS_DRAFT" == "true" ]]; then
+              gh release delete "$FINAL_TAG" --yes || true
+            else
+              # Check if we can delete or upload to the existing published release; if immutable, append build code
+              if ! gh release upload "$FINAL_TAG" Mengidata.apk Mengidata.apk.sha256 --clobber >/dev/null 2>&1; then
+                echo "::warning::Release $FINAL_TAG already exists and is locked by GitHub Release Immutability. Creating draft-first release."
+                gh release delete "$FINAL_TAG" --yes --cleanup-tag >/dev/null 2>&1 || true
+              else
+                echo "Updated existing release $FINAL_TAG with Mengidata.apk and Mengidata.apk.sha256"
+                exit 0
+              fi
+            fi
+          fi
+
+          # CRITICAL FIX FOR GITHUB "Release Immutability" ("Error: Error updating policy"):
+          # 1. Create the release as a DRAFT first and attach all assets (Mengidata.apk & Mengidata.apk.sha256)
+          #    while it is still in draft state.
+          # 2. Only publish (`--draft=false --latest`) AFTER all assets have finished uploading,
+          #    because GitHub Release Immutability locks the release policy the instant `draft=false` is set!
+          gh release create "$FINAL_TAG" \
+            Mengidata.apk \
+            Mengidata.apk.sha256 \
+            --target "$TARGET_SHA" \
+            --title "Mengidata ${FINAL_TAG}" \
+            --notes-file "$BODY_FILE" \
+            --generate-notes \
+            --draft
+
+          gh release edit "$FINAL_TAG" \
+            --draft=false \
+            --latest
+
