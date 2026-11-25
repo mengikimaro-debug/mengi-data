@@ -52,7 +52,11 @@ object CategoryAnalyticsEngine {
         "#7D5D3B", // Matte Warm Ochre
         "#5D526E", // Matte Dusty Mauve
         "#4A5563", // Matte Charcoal Slate
-        "#4C6378"  // Matte Steel Blue
+        "#4C6378", // Matte Steel Blue
+        "#2F6B5F", // Matte Deep Emerald
+        "#6B4E57", // Matte Rosewood
+        "#5C6643", // Matte Olive Moss
+        "#3E5A7A"  // Matte Ocean Slate
     )
 
     val iconKeyOptions: List<String> = listOf(
@@ -63,13 +67,28 @@ object CategoryAnalyticsEngine {
         "home",
         "people",
         "bolt",
+        "water",
         "wifi",
+        "phone",
         "truck",
+        "fuel",
         "food",
         "build",
         "campaign",
         "shield",
         "savings",
+        "bank",
+        "payments",
+        "card",
+        "medical",
+        "school",
+        "cart",
+        "laptop",
+        "flight",
+        "cleaning",
+        "gift",
+        "trend",
+        "handshake",
         "tag"
     )
 
@@ -77,23 +96,31 @@ object CategoryAnalyticsEngine {
         // Income categories
         TransactionCategoryEntity("cat_inc_sales", "Mauzo ya bidhaa", "income", "store", "#346352", 0.0, true, today),
         TransactionCategoryEntity("cat_inc_services", "Huduma", "income", "work", "#334B63", 0.0, true, today),
-        TransactionCategoryEntity("cat_inc_consulting", "Ushauri", "income", "campaign", "#4E5975", 0.0, true, today),
         TransactionCategoryEntity("cat_inc_invoices", "Malipo ya ankara", "income", "receipt", "#3F6570", 0.0, true, today),
+        TransactionCategoryEntity("cat_inc_consulting", "Ushauri", "income", "handshake", "#4E5975", 0.0, true, today),
+        TransactionCategoryEntity("cat_inc_commission", "Kamisheni", "income", "trend", "#7D5D3B", 0.0, true, today),
+        TransactionCategoryEntity("cat_inc_rent_in", "Pango & kodi", "income", "home", "#5D526E", 0.0, true, today),
+        TransactionCategoryEntity("cat_inc_refunds", "Marejesho", "income", "payments", "#3F6570", 0.0, true, today),
         TransactionCategoryEntity("cat_inc_other", "Mapato mengine", "income", "tag", "#4C6378", 0.0, true, today),
-        // Expense categories
-        TransactionCategoryEntity("cat_exp_stock", "Manunuzi / stock", "expense", "inventory", "#334B63", 0.0, true, today),
+        // Expense & Bill categories
+        TransactionCategoryEntity("cat_exp_stock", "Manunuzi ya bidhaa", "expense", "inventory", "#334B63", 0.0, true, today),
         TransactionCategoryEntity("cat_exp_rent", "Kodi ya pango", "expense", "home", "#5D526E", 0.0, true, today),
-        TransactionCategoryEntity("cat_exp_payroll", "Mishahara", "expense", "people", "#4E5975", 0.0, true, today),
         TransactionCategoryEntity("cat_exp_utilities", "Umeme & maji", "expense", "bolt", "#7D5D3B", 0.0, true, today),
-        TransactionCategoryEntity("cat_exp_internet", "Internet & simu", "expense", "wifi", "#3F6570", 0.0, true, today),
+        TransactionCategoryEntity("cat_exp_internet", "Mtandao & simu", "expense", "wifi", "#3F6570", 0.0, true, today),
+        TransactionCategoryEntity("cat_exp_payroll", "Mishahara", "expense", "people", "#4E5975", 0.0, true, today),
         TransactionCategoryEntity("cat_exp_transport", "Usafiri", "expense", "truck", "#4C6378", 0.0, true, today),
         TransactionCategoryEntity("cat_exp_food", "Chakula", "expense", "food", "#7D5D3B", 0.0, true, today),
         TransactionCategoryEntity("cat_exp_maintenance", "Matengenezo", "expense", "build", "#4A5563", 0.0, true, today),
         TransactionCategoryEntity("cat_exp_marketing", "Masoko & matangazo", "expense", "campaign", "#4E5975", 0.0, true, today),
-        TransactionCategoryEntity("cat_exp_tax", "Kodi & vibali", "expense", "shield", "#5D526E", 0.0, true, today),
-        TransactionCategoryEntity("cat_exp_health", "Afya & bima", "expense", "shield", "#3F6570", 0.0, true, today),
+        TransactionCategoryEntity("cat_exp_tax", "Kodi & vibali", "expense", "bank", "#5D526E", 0.0, true, today),
+        TransactionCategoryEntity("cat_exp_security", "Ulinzi & usafi", "expense", "shield", "#346352", 0.0, true, today),
+        TransactionCategoryEntity("cat_exp_health", "Afya & bima", "expense", "medical", "#3F6570", 0.0, true, today),
+        TransactionCategoryEntity("cat_exp_loans", "Mkopo & marejesho", "expense", "payments", "#5D526E", 0.0, true, today),
+        TransactionCategoryEntity("cat_exp_office", "Vifaa vya ofisi", "expense", "laptop", "#334B63", 0.0, true, today),
+        TransactionCategoryEntity("cat_exp_bills", "Bili Zangu", "expense", "receipt", "#7D5D3B", 0.0, true, today),
+        TransactionCategoryEntity("cat_exp_household", "Bili ya Nyumbani", "expense", "home", "#3F6570", 0.0, true, today),
         TransactionCategoryEntity("cat_exp_savings", "Akiba", "expense", "savings", "#4E5975", 0.0, true, today),
-        TransactionCategoryEntity("cat_exp_other", "Matumizi mengine", "expense", "tag", "#4A5563", 0.0, true, today)
+        TransactionCategoryEntity("cat_exp_other", "Mengineyo", "expense", "tag", "#4A5563", 0.0, true, today)
     )
 
     fun analyze(

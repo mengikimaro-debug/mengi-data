@@ -139,29 +139,107 @@ object FormatUtils {
     val incomeCategories = listOf(
         "Mauzo ya bidhaa",
         "Huduma",
-        "Ushauri",
         "Malipo ya ankara",
+        "Ushauri",
+        "Kamisheni",
+        "Pango & kodi",
+        "Marejesho",
         "Mapato mengine"
     )
 
     val expenseCategories = listOf(
-        "Manunuzi / stock",
         "Kodi ya pango",
         "Umeme & maji",
+        "Mtandao & simu",
         "Mishahara",
+        "Manunuzi ya bidhaa",
         "Usafiri",
-        "Masoko",
-        "Bili za nyumbani",
-        "Matumizi mengine"
+        "Chakula",
+        "Matengenezo",
+        "Masoko & matangazo",
+        "Kodi & vibali",
+        "Afya & bima",
+        "Ulinzi & usafi",
+        "Mkopo & marejesho",
+        "Vifaa vya ofisi",
+        "Bili Zangu",
+        "Bili ya Nyumbani",
+        "Akiba",
+        "Mengineyo"
     )
 
-    val paymentMethods = listOf("cash", "mobile", "bank", "card")
+    val billCategories = listOf(
+        "Kodi ya pango",
+        "Umeme & maji",
+        "Mtandao & simu",
+        "Mishahara",
+        "Kodi & vibali",
+        "Ulinzi & usafi",
+        "Afya & bima",
+        "Mkopo & marejesho",
+        "Manunuzi ya bidhaa",
+        "Matengenezo",
+        "Usafiri",
+        "Chakula",
+        "Masoko & matangazo",
+        "Vifaa vya ofisi",
+        "Bili ya Nyumbani",
+        "Mengineyo"
+    )
+
+    val paymentMethods = listOf(
+        "Taslimu",
+        "M-Pesa",
+        "Tigo Pesa",
+        "Airtel Money",
+        "HaloPesa",
+        "AzamPesa",
+        "T-Pesa",
+        "Benki",
+        "CRDB / NMB",
+        "Lipa Namba",
+        "Kadi",
+        "Hundi"
+    )
+
+    fun normalizePaymentMethod(raw: String): String {
+        val clean = raw.trim()
+        return when (clean.lowercase(Locale.ROOT)) {
+            "cash", "taslimu", "pesa taslimu" -> "Taslimu"
+            "m-pesa", "mpesa" -> "M-Pesa"
+            "tigo pesa", "tigopesa", "mixx by yas", "tigo" -> "Tigo Pesa"
+            "airtel money", "airtel" -> "Airtel Money"
+            "halopesa", "halo pesa" -> "HaloPesa"
+            "azampesa", "azam pesa" -> "AzamPesa"
+            "t-pesa", "tpesa" -> "T-Pesa"
+            "mobile", "simu", "mobile money" -> "M-Pesa"
+            "bank", "benki", "bank transfer", "uhamisho wa benki" -> "Benki"
+            "crdb", "nmb", "crdb / nmb", "benki (crdb/nmb)" -> "CRDB / NMB"
+            "lipa namba", "lipanamba", "selcom", "masterpass" -> "Lipa Namba"
+            "card", "kadi", "visa", "mastercard" -> "Kadi"
+            "cheque", "check", "hundi" -> "Hundi"
+            else -> clean.ifBlank { "Taslimu" }
+        }
+    }
+
+    fun samePaymentMethod(a: String, b: String): Boolean {
+        return normalizePaymentMethod(a).equals(normalizePaymentMethod(b), ignoreCase = true)
+    }
 
     fun localizedMethod(code: String, lang: AppLanguage): String = when (code.trim().lowercase(Locale.ROOT)) {
         "cash", "taslimu", "pesa taslimu" -> tr(lang, "Taslimu", "Cash")
+        "m-pesa", "mpesa" -> "M-Pesa"
+        "tigo pesa", "tigopesa", "mixx by yas" -> "Tigo Pesa"
+        "airtel money", "airtel" -> "Airtel Money"
+        "halopesa", "halo pesa" -> "HaloPesa"
+        "azampesa", "azam pesa" -> "AzamPesa"
+        "t-pesa", "tpesa" -> "T-Pesa"
         "mobile", "simu", "mobile money" -> tr(lang, "Simu (M-Pesa/Tigo/Airtel)", "Mobile Money")
         "bank", "benki", "bank transfer", "uhamisho wa benki" -> tr(lang, "Uhamisho wa Benki", "Bank Transfer")
+        "crdb / nmb", "crdb", "nmb", "benki (crdb/nmb)" -> tr(lang, "CRDB / NMB", "CRDB / NMB Bank")
+        "lipa namba", "lipanamba" -> tr(lang, "Lipa Namba", "Merchant Till (Lipa Namba)")
         "card", "kadi" -> tr(lang, "Kadi", "Card")
+        "hundi", "cheque", "check" -> tr(lang, "Hundi", "Cheque")
         else -> code
     }
 
@@ -173,6 +251,8 @@ object FormatUtils {
             "ushauri", "consulting" -> tr(lang, "Ushauri", "Consulting")
             "malipo ya ankara", "invoice payment", "invoice payments" -> tr(lang, "Malipo ya ankara", "Invoice Payment")
             "kamisheni", "commission" -> tr(lang, "Kamisheni", "Commission")
+            "pango & kodi", "kodi / pango", "rental income" -> tr(lang, "Pango & kodi", "Rental Income")
+            "marejesho", "refunds & returns", "refunds" -> tr(lang, "Marejesho", "Refunds & Returns")
             "mapato mengine", "other income" -> tr(lang, "Mapato mengine", "Other Income")
             "manunuzi / stock", "manunuzi ya stock", "manunuzi ya bidhaa", "inventory / stock", "inventory" ->
                 tr(lang, "Manunuzi ya bidhaa", "Inventory & Stock")
@@ -180,10 +260,23 @@ object FormatUtils {
             "umeme & maji", "utilities" -> tr(lang, "Umeme & maji", "Utilities")
             "mishahara", "salaries", "payroll" -> tr(lang, "Mishahara", "Salaries")
             "usafiri", "transport" -> tr(lang, "Usafiri", "Transport")
-            "chakula", "food", "meals" -> tr(lang, "Chakula", "Food & Meals")
+            "chakula", "food", "meals", "food & meals" -> tr(lang, "Chakula", "Food & Meals")
             "internet & simu", "mtandao & simu", "internet & phone", "communication" ->
                 tr(lang, "Mtandao & simu", "Internet & Phone")
-            "masoko", "marketing" -> tr(lang, "Masoko", "Marketing")
+            "matengenezo", "ukarabati & vifaa", "maintenance", "repairs & maintenance" ->
+                tr(lang, "Matengenezo", "Repairs & Maintenance")
+            "masoko", "masoko & matangazo", "marketing", "marketing & ads" ->
+                tr(lang, "Masoko & matangazo", "Marketing & Ads")
+            "kodi & vibali", "kodi & leseni", "taxes & permits", "tax & licenses" ->
+                tr(lang, "Kodi & vibali", "Taxes & Permits")
+            "afya & bima", "bima", "health & insurance", "insurance" ->
+                tr(lang, "Afya & bima", "Health & Insurance")
+            "ulinzi & usafi", "security & cleaning" ->
+                tr(lang, "Ulinzi & usafi", "Security & Cleaning")
+            "mkopo & marejesho", "loan repayment", "loans & credit" ->
+                tr(lang, "Mkopo & marejesho", "Loan Repayment")
+            "vifaa vya ofisi", "office supplies" ->
+                tr(lang, "Vifaa vya ofisi", "Office Supplies")
             "household bill", "bili ya nyumbani", "bili za nyumbani", "matumizi ya nyumbani", "household bills" ->
                 tr(lang, "Bili ya Nyumbani", "Household Bill")
             "bili", "bili zangu", "my bills", "bills" -> tr(lang, "Bili Zangu", "My Bills")

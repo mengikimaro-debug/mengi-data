@@ -29,23 +29,38 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Label
 import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
+import androidx.compose.material.icons.automirrored.rounded.TrendingUp
+import androidx.compose.material.icons.rounded.AccountBalance
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.Campaign
+import androidx.compose.material.icons.rounded.CardGiftcard
 import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.CleaningServices
+import androidx.compose.material.icons.rounded.CreditCard
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Flight
 import androidx.compose.material.icons.rounded.Groups
+import androidx.compose.material.icons.rounded.Handshake
 import androidx.compose.material.icons.rounded.HomeWork
 import androidx.compose.material.icons.rounded.Inventory2
+import androidx.compose.material.icons.rounded.LaptopMac
+import androidx.compose.material.icons.rounded.LocalGasStation
 import androidx.compose.material.icons.rounded.LocalShipping
+import androidx.compose.material.icons.rounded.MedicalServices
+import androidx.compose.material.icons.rounded.Payments
+import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.Restaurant
 import androidx.compose.material.icons.rounded.Savings
+import androidx.compose.material.icons.rounded.School
 import androidx.compose.material.icons.rounded.Security
+import androidx.compose.material.icons.rounded.ShoppingCart
 import androidx.compose.material.icons.rounded.Storefront
 import androidx.compose.material.icons.rounded.TableChart
+import androidx.compose.material.icons.rounded.WaterDrop
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material.icons.rounded.WorkOutline
 import androidx.compose.material3.Button
@@ -96,14 +111,56 @@ fun categoryIconForKey(key: String): ImageVector = when (key.lowercase()) {
     "home" -> Icons.Rounded.HomeWork
     "people" -> Icons.Rounded.Groups
     "bolt" -> Icons.Rounded.Bolt
+    "water" -> Icons.Rounded.WaterDrop
     "wifi" -> Icons.Rounded.Wifi
+    "phone" -> Icons.Rounded.PhoneAndroid
     "truck" -> Icons.Rounded.LocalShipping
+    "fuel" -> Icons.Rounded.LocalGasStation
     "food" -> Icons.Rounded.Restaurant
     "build" -> Icons.Rounded.Build
     "campaign" -> Icons.Rounded.Campaign
     "shield" -> Icons.Rounded.Security
     "savings" -> Icons.Rounded.Savings
+    "bank" -> Icons.Rounded.AccountBalance
+    "payments" -> Icons.Rounded.Payments
+    "card" -> Icons.Rounded.CreditCard
+    "medical" -> Icons.Rounded.MedicalServices
+    "school" -> Icons.Rounded.School
+    "cart" -> Icons.Rounded.ShoppingCart
+    "laptop" -> Icons.Rounded.LaptopMac
+    "flight" -> Icons.Rounded.Flight
+    "cleaning" -> Icons.Rounded.CleaningServices
+    "gift" -> Icons.Rounded.CardGiftcard
+    "trend" -> Icons.AutoMirrored.Rounded.TrendingUp
+    "handshake" -> Icons.Rounded.Handshake
     else -> Icons.AutoMirrored.Rounded.Label
+}
+
+fun categoryIconForName(categoryName: String): ImageVector {
+    val lower = categoryName.trim().lowercase(Locale.ROOT)
+    return when {
+        lower.contains("kodi ya pango") || lower.contains("nyumbani") || lower.contains("rent") || lower.contains("household") -> Icons.Rounded.HomeWork
+        lower.contains("umeme") || lower.contains("luku") || lower.contains("utilities") -> Icons.Rounded.Bolt
+        lower.contains("maji") || lower.contains("dawasa") || lower.contains("water") -> Icons.Rounded.WaterDrop
+        lower.contains("mtandao") || lower.contains("internet") || lower.contains("wifi") -> Icons.Rounded.Wifi
+        lower.contains("simu") || lower.contains("phone") -> Icons.Rounded.PhoneAndroid
+        lower.contains("mishahara") || lower.contains("mshahara") || lower.contains("salar") || lower.contains("payroll") -> Icons.Rounded.Groups
+        lower.contains("manunuzi") || lower.contains("bidhaa") || lower.contains("stock") || lower.contains("inventory") -> Icons.Rounded.Inventory2
+        lower.contains("usafiri") || lower.contains("transport") -> Icons.Rounded.LocalShipping
+        lower.contains("mafuta") || lower.contains("fuel") -> Icons.Rounded.LocalGasStation
+        lower.contains("chakula") || lower.contains("food") -> Icons.Rounded.Restaurant
+        lower.contains("matengenezo") || lower.contains("ukarabati") || lower.contains("maintenance") -> Icons.Rounded.Build
+        lower.contains("masoko") || lower.contains("matangazo") || lower.contains("marketing") -> Icons.Rounded.Campaign
+        lower.contains("kodi") || lower.contains("vibali") || lower.contains("leseni") || lower.contains("tra") || lower.contains("tax") -> Icons.Rounded.AccountBalance
+        lower.contains("ulinzi") || lower.contains("security") -> Icons.Rounded.Security
+        lower.contains("usafi") || lower.contains("cleaning") -> Icons.Rounded.CleaningServices
+        lower.contains("afya") || lower.contains("bima") || lower.contains("health") || lower.contains("insurance") -> Icons.Rounded.MedicalServices
+        lower.contains("mkopo") || lower.contains("marejesho") || lower.contains("loan") -> Icons.Rounded.Payments
+        lower.contains("ofisi") || lower.contains("office") -> Icons.Rounded.LaptopMac
+        lower.contains("akiba") || lower.contains("saving") -> Icons.Rounded.Savings
+        lower.contains("bili") || lower.contains("ankara") || lower.contains("bill") || lower.contains("invoice") -> Icons.AutoMirrored.Rounded.ReceiptLong
+        else -> Icons.AutoMirrored.Rounded.Label
+    }
 }
 
 fun parseHexColorSafe(hex: String, fallback: Color = Color(0xFF334B63)): Color {
@@ -545,38 +602,47 @@ fun CategoryManagerSheet(
                             )
 
                             Text(
-                                text = tr(language, "Chagua Aikoni", "Pick Icon"),
+                                text = tr(language, "Chagua Aikoni (${CategoryAnalyticsEngine.iconKeyOptions.size})", "Pick Icon (${CategoryAnalyticsEngine.iconKeyOptions.size})"),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            Row(
+                            val iconRows = remember {
+                                val all = CategoryAnalyticsEngine.iconKeyOptions
+                                val mid = (all.size + 1) / 2
+                                listOf(all.take(mid), all.drop(mid))
+                            }
+                            Column(
                                 modifier = Modifier.horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                CategoryAnalyticsEngine.iconKeyOptions.forEach { key ->
-                                    val selected = iconKey == key
-                                    Box(
-                                        modifier = Modifier
-                                            .size(44.dp)
-                                            .clip(RoundedCornerShape(14.dp))
-                                            .background(
-                                                if (selected) MaterialTheme.colorScheme.primaryContainer
-                                                else MaterialTheme.colorScheme.surface
-                                            )
-                                            .border(
-                                                width = if (selected) 1.5.dp else 0.75.dp,
-                                                color = if (selected) MaterialTheme.colorScheme.primary else colors.cardBorder,
-                                                shape = RoundedCornerShape(14.dp)
-                                            )
-                                            .clickable { iconKey = key },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            imageVector = categoryIconForKey(key),
-                                            contentDescription = key,
-                                            tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.size(20.dp)
-                                        )
+                                iconRows.forEach { rowKeys ->
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        rowKeys.forEach { key ->
+                                            val selected = iconKey == key
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(44.dp)
+                                                    .clip(RoundedCornerShape(14.dp))
+                                                    .background(
+                                                        if (selected) MaterialTheme.colorScheme.primaryContainer
+                                                        else MaterialTheme.colorScheme.surface
+                                                    )
+                                                    .border(
+                                                        width = if (selected) 1.5.dp else 0.75.dp,
+                                                        color = if (selected) MaterialTheme.colorScheme.primary else colors.cardBorder,
+                                                        shape = RoundedCornerShape(14.dp)
+                                                    )
+                                                    .clickable { iconKey = key },
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = categoryIconForKey(key),
+                                                    contentDescription = key,
+                                                    tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                             }

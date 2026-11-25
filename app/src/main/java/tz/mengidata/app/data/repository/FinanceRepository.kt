@@ -126,8 +126,10 @@ class FinanceRepository(
     }
 
     suspend fun ensureDefaultCategoriesSeeded() {
-        if (categoryDao.count() == 0) {
-            categoryDao.upsertAll(CategoryAnalyticsEngine.defaultCategories())
+        val existingIds = categoryDao.getAll().map { it.id }.toSet()
+        val missingDefaults = CategoryAnalyticsEngine.defaultCategories().filter { it.id !in existingIds }
+        if (missingDefaults.isNotEmpty()) {
+            categoryDao.upsertAll(missingDefaults)
         }
     }
 

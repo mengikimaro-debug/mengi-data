@@ -1024,7 +1024,11 @@ private fun TransactionEditorSheet(
                 ?: FormatUtils.incomeCategories.first()
         )
     }
-    var method by remember(initial) { mutableStateOf(initial?.method ?: FormatUtils.paymentMethods.first()) }
+    var method by remember(initial) {
+        mutableStateOf(
+            FormatUtils.normalizePaymentMethod(initial?.method ?: FormatUtils.paymentMethods.first())
+        )
+    }
     var date by remember(initial) { mutableStateOf(initial?.date ?: FormatUtils.todayIso()) }
     var reference by remember(initial) { mutableStateOf(initial?.reference ?: "") }
     var notes by remember(initial) { mutableStateOf(initial?.notes ?: "") }
@@ -1319,7 +1323,7 @@ private fun TransactionEditorSheet(
             }
 
             Text(
-                text = tr(language, "Njia ya Malipo", "Payment Method"),
+                text = tr(language, "Mfumo wa Malipo (${FormatUtils.paymentMethods.size})", "Payment Method (${FormatUtils.paymentMethods.size})"),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1329,7 +1333,7 @@ private fun TransactionEditorSheet(
             ) {
                 FormatUtils.paymentMethods.forEach { m ->
                     FilterChip(
-                        selected = method == m,
+                        selected = FormatUtils.samePaymentMethod(method, m),
                         onClick = { method = m },
                         shape = CircleShape,
                         label = { Text(FormatUtils.localizedMethod(m, language)) }

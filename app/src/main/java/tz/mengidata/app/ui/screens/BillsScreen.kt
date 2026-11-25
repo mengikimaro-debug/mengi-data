@@ -95,6 +95,7 @@ import tz.mengidata.app.ui.components.OneUiSheetShape
 import tz.mengidata.app.ui.components.RecognizedNameSuggestionsBar
 import tz.mengidata.app.ui.components.StatusPill
 import tz.mengidata.app.ui.components.bucketVisualColors
+import tz.mengidata.app.ui.components.categoryIconForName
 import tz.mengidata.app.ui.components.oneUiTextFieldColors
 import tz.mengidata.app.ui.theme.LocalMengiColors
 import java.util.Locale
@@ -990,14 +991,32 @@ private fun BillEditorSheet(
     var dueDate by remember(initial) { mutableStateOf(initial?.dueDate ?: FormatUtils.todayIso()) }
     var category by remember(initial) {
         mutableStateOf(
-            initial?.category ?: FormatUtils.expenseCategories.first()
+            initial?.category ?: FormatUtils.billCategories.first()
         )
     }
-    var method by remember(initial) { mutableStateOf(initial?.method ?: "Benki") }
+    var method by remember(initial) {
+        mutableStateOf(FormatUtils.normalizePaymentMethod(initial?.method ?: "M-Pesa"))
+    }
     var recurring by remember(initial) { mutableStateOf(initial?.recurring ?: false) }
     var paid by remember(initial) { mutableStateOf(initial?.paid ?: false) }
     var notes by remember(initial) { mutableStateOf(initial?.notes ?: "") }
     var errorText by remember { mutableStateOf<String?>(null) }
+
+    val quickBillTemplates = remember(language) {
+        listOf(
+            Triple(tr(language, "LUKU / Umeme", "Electricity (LUKU)"), "TANESCO", "Umeme & maji"),
+            Triple(tr(language, "Maji (DAWASA)", "Water (DAWASA)"), "DAWASA", "Umeme & maji"),
+            Triple(tr(language, "Kodi ya Pango", "Rent"), "", "Kodi ya pango"),
+            Triple(tr(language, "Mtandao / Wi-Fi", "Internet / Wi-Fi"), "", "Mtandao & simu"),
+            Triple(tr(language, "Mishahara", "Salaries / Payroll"), "", "Mishahara"),
+            Triple(tr(language, "Kodi / TRA", "Tax / TRA"), "TRA", "Kodi & vibali"),
+            Triple(tr(language, "Ulinzi & Usafi", "Security & Cleaning"), "", "Ulinzi & usafi"),
+            Triple(tr(language, "Afya / NHIF", "Health / Insurance"), "NHIF", "Afya & bima"),
+            Triple(tr(language, "Marejesho ya Mkopo", "Loan Installment"), "", "Mkopo & marejesho"),
+            Triple(tr(language, "Manunuzi ya Bidhaa", "Inventory / Stock"), "", "Manunuzi ya bidhaa"),
+            Triple(tr(language, "Bili ya Nyumbani", "Household Bill"), "", AutoAccountingEngine.HOUSEHOLD_CATEGORY)
+        )
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -1030,11 +1049,51 @@ private fun BillEditorSheet(
                         category = AutoAccountingEngine.HOUSEHOLD_CATEGORY
                         if (name.isBlank()) name = tr(language, "Bili ya Nyumbani", "Household Bill")
                     } else if (category.equals(AutoAccountingEngine.HOUSEHOLD_CATEGORY, ignoreCase = true)) {
-                        category = FormatUtils.expenseCategories.first()
+                        category = FormatUtils.billCategories.first()
                     }
                 },
                 testTags = listOf("bill_type_personal", "bill_type_household")
             )
+
+            Text(
+                text = tr(language, "Chagua Bili ya Haraka", "Quick Bill Templates"),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                quickBillTemplates.forEach { (presetName, presetPayee, presetCat) ->
+                    val selectedPreset = name.equals(presetName, ignoreCase = true)
+                    FilterChip(
+                        selected = selectedPreset,
+                        onClick = {
+                            name = presetName
+                            if (presetPayee.isNotBlank() && payee.isBlank()) {
+                                payee = presetPayee
+                            }
+                            if (presetCat.equals(AutoAccountingEngine.HOUSEHOLD_CATEGORY, ignoreCase = true)) {
+                                isHouseholdBill = true
+                                category = AutoAccountingEngine.HOUSEHOLD_CATEGORY
+                            } else {
+                                isHouseholdBill = false
+                                category = presetCat
+                            }
+                            errorText = null
+                        },
+                        shape = CircleShape,
+                        leadingIcon = {
+                            Icon(
+                                imageVector = categoryIconForName(presetCat),
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        },
+                        label = { Text(presetName) }
+                    )
+                }
+            }
 
             OutlinedTextField(
                 value = name,
@@ -1050,7 +1109,7 @@ private fun BillEditorSheet(
                         slash.hasSlashTag && slash.detectedBucket == AutoBucket.BILL -> {
                             isHouseholdBill = false
                             if (category.equals(AutoAccountingEngine.HOUSEHOLD_CATEGORY, ignoreCase = true)) {
-                                category = FormatUtils.expenseCategories.first()
+                                category = FormatUtils.billCategories.first()
                             }
                         }
                         AutoAccountingEngine.isHouseholdText(newVal) -> {
@@ -1110,7 +1169,7 @@ private fun BillEditorSheet(
                         slash.hasSlashTag && slash.detectedBucket == AutoBucket.BILL -> {
                             isHouseholdBill = false
                             if (category.equals(AutoAccountingEngine.HOUSEHOLD_CATEGORY, ignoreCase = true)) {
-                                category = FormatUtils.expenseCategories.first()
+                                category = FormatUtils.billCategories.first()
                             }
                         }
                         AutoAccountingEngine.isHouseholdParty(newVal, learnedHouseholdNames) -> {
@@ -1151,30 +1210,37 @@ private fun BillEditorSheet(
             )
 
             if (!isHouseholdBill) {
-                Text(tr(language, "Kundi", "Category"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(tr(language, "Kundi la Bili (${FormatUtils.billCategories.size})", "Bill Category (${FormatUtils.billCategories.size})"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    FormatUtils.expenseCategories.forEach { cat ->
+                    FormatUtils.billCategories.forEach { cat ->
                         FilterChip(
-                            selected = category == cat,
+                            selected = category.equals(cat, ignoreCase = true),
                             onClick = { category = cat },
                             shape = CircleShape,
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = categoryIconForName(cat),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            },
                             label = { Text(FormatUtils.localizedCategory(cat, language)) }
                         )
                     }
                 }
             }
 
-            Text(tr(language, "Njia ya Malipo", "Payment Method"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(tr(language, "Mfumo wa Malipo (${FormatUtils.paymentMethods.size})", "Payment Method (${FormatUtils.paymentMethods.size})"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(
                 modifier = Modifier.horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 FormatUtils.paymentMethods.forEach { m ->
                     FilterChip(
-                        selected = method == m,
+                        selected = FormatUtils.samePaymentMethod(method, m),
                         onClick = { method = m },
                         shape = CircleShape,
                         label = { Text(FormatUtils.localizedMethod(m, language)) }

@@ -827,13 +827,18 @@ fun SmartAutoEntrySheet(
                 }
             }
 
+            Text(
+                text = tr(language, "Mfumo wa Malipo (${FormatUtils.paymentMethods.size})", "Payment Method (${FormatUtils.paymentMethods.size})"),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             Row(
                 modifier = Modifier.horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 FormatUtils.paymentMethods.forEach { m ->
                     FilterChip(
-                        selected = method == m,
+                        selected = FormatUtils.samePaymentMethod(method, m),
                         onClick = { method = m },
                         shape = CircleShape,
                         label = { Text(FormatUtils.localizedMethod(m, language)) }
