@@ -123,11 +123,11 @@ fun MengiSidebarSheet(
                 .padding(horizontal = 14.dp, vertical = 14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Solid Deep Cobalt Header Card (No Transparency)
+            // Solid Calm Matte Slate Header Card (No Transparency)
             Surface(
                 shape = RoundedCornerShape(28.dp),
                 color = colors.heroStart,
-                border = BorderStroke(1.dp, Color(0xFF284F96)),
+                border = BorderStroke(1.dp, Color(0xFF394654)),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Box(
@@ -153,8 +153,8 @@ fun MengiSidebarSheet(
                             ) {
                                 Surface(
                                     shape = RoundedCornerShape(14.dp),
-                                    color = Color(0xFF005CBF),
-                                    border = BorderStroke(1.5.dp, Color(0xFF5CC8FF)),
+                                    color = Color(0xFF2B3745),
+                                    border = BorderStroke(1.5.dp, Color(0xFF56687A)),
                                     modifier = Modifier.size(44.dp)
                                 ) {
                                     Image(
@@ -168,7 +168,7 @@ fun MengiSidebarSheet(
                                     Text(
                                         text = settings.businessName.ifBlank { "Mengidata" },
                                         style = MaterialTheme.typography.titleLarge,
-                                        color = Color.White,
+                                        color = Color(0xFFEFF2F6),
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
@@ -180,7 +180,7 @@ fun MengiSidebarSheet(
                                     Text(
                                         text = subtitle,
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = Color(0xFFDCEBFF),
+                                        color = Color(0xFFC2CCD8),
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
@@ -196,7 +196,7 @@ fun MengiSidebarSheet(
                                         themeState.onSetThemeMode(next)
                                     },
                                     shape = CircleShape,
-                                    color = Color(0xFF1A438A),
+                                    color = Color(0xFF2D3846),
                                     modifier = Modifier
                                         .size(40.dp)
                                         .testTag("sidebar_theme_toggle_btn")
@@ -209,7 +209,7 @@ fun MengiSidebarSheet(
                                                 if (themeState.isDark) "Badili kwenda Mwanga" else "Badili kwenda Giza",
                                                 if (themeState.isDark) "Switch to Light Mode" else "Switch to Dark Mode"
                                             ),
-                                            tint = Color.White,
+                                            tint = Color(0xFFE6EAF0),
                                             modifier = Modifier.size(18.dp)
                                         )
                                     }

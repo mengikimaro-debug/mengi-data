@@ -445,6 +445,39 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
+                    Spacer(Modifier.height(10.dp))
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = colors.subtleSurface,
+                        border = BorderStroke(1.dp, colors.cardBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = tr(
+                                    language,
+                                    "Mpya katika Toleo v${BuildConfig.VERSION_NAME}",
+                                    "What's New in Version v${BuildConfig.VERSION_NAME}"
+                                ),
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = tr(
+                                    language,
+                                    "• Kituo cha Huduma Zote kwenye Dashibodi & Taarifa ya Fedha ya PDF\n• Kutuma Ankara na Taarifa za PDF moja kwa moja (WhatsApp/Email)\n• Malipo ya pamoja ya bili zinazodaiwa & kasi ya malengo ya akiba\n• Hifadhidata ya ndani + hifadhi ya simu yenye rangi tulivu zisizong'aa",
+                                    "• All-Services Command Hub on Dashboard & Financial Statement PDF\n• Direct 1-tap PDF sharing for Invoices & Statements\n• Batch pay due bills, quick duplicate & monthly savings pace\n• Local SQLite + phone storage mirror with calm matte palette"
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
                     Spacer(Modifier.height(12.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
