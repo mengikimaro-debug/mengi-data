@@ -1,6 +1,11 @@
 package tz.mengidata.app.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -8,11 +13,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -28,15 +36,25 @@ import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.FilterList
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.PictureAsPdf
+import androidx.compose.material.icons.rounded.Savings
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.TableChart
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -61,6 +79,9 @@ import androidx.compose.ui.unit.dp
 import tz.mengidata.app.data.accounting.AutoAccountingEngine
 import tz.mengidata.app.data.accounting.AutoBucket
 import tz.mengidata.app.data.accounting.CategoryAnalyticsEngine
+import tz.mengidata.app.data.accounting.PartyDirectoryEngine
+import tz.mengidata.app.data.accounting.PartyRole
+import tz.mengidata.app.data.accounting.PartySummary
 import tz.mengidata.app.data.db.TransactionCategoryEntity
 import tz.mengidata.app.data.db.TransactionEntity
 import tz.mengidata.app.i18n.AppLanguage
@@ -69,6 +90,7 @@ import tz.mengidata.app.i18n.PeriodFilter
 import tz.mengidata.app.i18n.tr
 import tz.mengidata.app.ui.components.CategoryAnalyticsCard
 import tz.mengidata.app.ui.components.CategoryManagerSheet
+import tz.mengidata.app.ui.components.ConfirmActionDialog
 import tz.mengidata.app.ui.components.EmptyStateCard
 import tz.mengidata.app.ui.components.MengiCard
 import tz.mengidata.app.ui.components.OneUiFieldShape
@@ -77,7 +99,7 @@ import tz.mengidata.app.ui.components.OneUiScreenHeader
 import tz.mengidata.app.ui.components.OneUiSegmentedTabs
 import tz.mengidata.app.ui.components.OneUiSheetShape
 import tz.mengidata.app.ui.components.PeriodSelectorRow
-import tz.mengidata.app.ui.components.StatusPill
+import tz.mengidata.app.ui.components.RecognizedNameSuggestionsBar
 import tz.mengidata.app.ui.components.accessibleCategoryAccent
 import tz.mengidata.app.ui.components.bucketVisualColors
 import tz.mengidata.app.ui.components.categoryIconForKey
@@ -89,26 +111,32 @@ import tz.mengidata.app.ui.theme.LocalMengiColors
 fun TransactionsScreen(
     transactions: List<TransactionEntity>,
     categories: List<TransactionCategoryEntity>,
+    knownParties: List<PartySummary> = emptyList(),
     selectedPeriod: PeriodFilter,
     currency: String,
     language: AppLanguage,
     openEditorTrigger: Int,
     onSelectPeriod: (PeriodFilter) -> Unit,
     onSaveTransaction: (TransactionEntity) -> Unit,
+    onDuplicateTransaction: (TransactionEntity) -> Unit = {},
+    onShareTransactionReceipt: (TransactionEntity) -> Unit = {},
     onDeleteTransaction: (String) -> Unit,
     onSaveCategory: (TransactionCategoryEntity, previousName: String?) -> Unit,
     onDeleteCategory: (String) -> Unit,
+    onExportStatementPdf: (PeriodFilter) -> Unit = {},
     onExportTransactionsCsv: () -> Unit,
     onExportCategoryAnalyticsCsv: (PeriodFilter) -> Unit
 ) {
     var search by remember { mutableStateOf("") }
     var typeFilter by remember { mutableStateOf("all") }
     var categoryFilter by remember { mutableStateOf<String?>(null) }
+    var showCategoryStrip by remember { mutableStateOf(false) }
     var activeTab by remember { mutableStateOf("list") } // "list" | "analytics"
     var editingTxn by remember { mutableStateOf<TransactionEntity?>(null) }
     var showEditor by remember(openEditorTrigger) { mutableStateOf(openEditorTrigger > 0) }
     var showCategoryManager by remember { mutableStateOf(false) }
     var categoryManagerInitialType by remember { mutableStateOf("expense") }
+    var pendingDeleteTxnId by remember { mutableStateOf<String?>(null) }
 
     val categoryLookup = remember(categories) {
         categories.associateBy { "${it.type}:${it.name.trim().lowercase()}" }
@@ -124,17 +152,19 @@ fun TransactionsScreen(
         CategoryAnalyticsEngine.analyze(transactions, categories, selectedPeriod)
     }
 
-    val filtered = remember(transactions, search, typeFilter, categoryFilter) {
+    val filtered = remember(transactions, search, typeFilter, categoryFilter, selectedPeriod) {
         val q = search.trim().lowercase()
         transactions.filter { txn ->
+            val periodOk = FormatUtils.isDateInPeriod(txn.date, selectedPeriod)
             val bucket = AutoAccountingEngine.classifyTransaction(txn)
             val matchesType = when (typeFilter) {
                 "all" -> true
-                "direct" -> txn.source != "bill" && txn.source != "savings"
+                "direct" -> txn.source != "bill" && !AutoAccountingEngine.isSavingsTransaction(txn) && !AutoAccountingEngine.isHouseholdTransaction(txn)
                 "income" -> txn.isIncome
                 "expense" -> !txn.isIncome && bucket == AutoBucket.EXPENSE
-                "bill" -> bucket == AutoBucket.BILL || txn.source == "bill"
-                "savings" -> bucket == AutoBucket.SAVINGS || txn.source == "savings"
+                "household" -> bucket == AutoBucket.HOUSEHOLD_BILL || AutoAccountingEngine.isHouseholdTransaction(txn)
+                "bill" -> bucket == AutoBucket.BILL || (txn.source == "bill" && !AutoAccountingEngine.isHouseholdTransaction(txn))
+                "savings" -> bucket == AutoBucket.SAVINGS || AutoAccountingEngine.isSavingsTransaction(txn)
                 else -> true
             }
             val matchesCategory = categoryFilter == null ||
@@ -143,13 +173,23 @@ fun TransactionsScreen(
                 txn.description.lowercase().contains(q) ||
                 txn.party.lowercase().contains(q) ||
                 txn.category.lowercase().contains(q) ||
+                FormatUtils.localizedCategory(txn.category, language).lowercase().contains(q) ||
                 txn.reference.lowercase().contains(q)
-            matchesType && matchesCategory && matchesQuery
+            periodOk && matchesType && matchesCategory && matchesQuery
         }
+    }
+
+    val groupedByDate = remember(filtered) {
+        filtered
+            .groupBy { it.date.ifBlank { FormatUtils.todayIso() } }
+            .entries
+            .sortedByDescending { it.key }
+            .map { it.key to it.value }
     }
 
     val totalIn = remember(filtered) { filtered.filter { it.isIncome }.sumOf { it.amount } }
     val totalOut = remember(filtered) { filtered.filter { !it.isIncome }.sumOf { it.amount } }
+    val netFiltered = totalIn - totalOut
     val colors = LocalMengiColors.current
 
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
@@ -162,7 +202,7 @@ fun TransactionsScreen(
         ) {
             item(key = "header") {
                 OneUiScreenHeader(
-                    eyebrow = tr(language, "Kitabu cha Fedha (0% Upotevu)", "Cash Ledger (Zero-Loss)"),
+                    eyebrow = tr(language, "Kitabu cha Fedha", "Cash Ledger"),
                     title = tr(language, "Miamala", "Transactions"),
                     trailing = {
                         Surface(
@@ -172,6 +212,7 @@ fun TransactionsScreen(
                             },
                             shape = CircleShape,
                             color = MaterialTheme.colorScheme.surface,
+                            border = BorderStroke(1.dp, colors.cardBorder),
                             modifier = Modifier
                                 .size(42.dp)
                                 .testTag("txns_manage_categories_btn")
@@ -181,6 +222,24 @@ fun TransactionsScreen(
                                     imageVector = Icons.Rounded.Category,
                                     contentDescription = tr(language, "Simamia Makundi", "Manage Categories"),
                                     tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                        Surface(
+                            onClick = { onExportStatementPdf(selectedPeriod) },
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surface,
+                            border = BorderStroke(1.dp, colors.cardBorder),
+                            modifier = Modifier
+                                .size(42.dp)
+                                .testTag("txns_export_statement_pdf_btn")
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Rounded.PictureAsPdf,
+                                    contentDescription = tr(language, "Pakua Taarifa PDF", "Export Statement PDF"),
+                                    tint = colors.income,
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
@@ -202,7 +261,7 @@ fun TransactionsScreen(
                                 text = if (activeTab == "analytics") {
                                     tr(language, "Makundi CSV", "Report CSV")
                                 } else {
-                                    tr(language, "Miamala CSV", "Txns CSV")
+                                    tr(language, "CSV", "CSV")
                                 },
                                 maxLines = 1
                             )
@@ -223,14 +282,15 @@ fun TransactionsScreen(
                 )
             }
 
+            item(key = "ledger_period_selector") {
+                PeriodSelectorRow(
+                    selected = selectedPeriod,
+                    language = language,
+                    onSelect = onSelectPeriod
+                )
+            }
+
             if (activeTab == "analytics") {
-                item(key = "analytics_period") {
-                    PeriodSelectorRow(
-                        selected = selectedPeriod,
-                        language = language,
-                        onSelect = onSelectPeriod
-                    )
-                }
 
                 item(key = "analytics_breakdown") {
                     CategoryAnalyticsCard(
@@ -251,34 +311,65 @@ fun TransactionsScreen(
                     )
                 }
             } else {
+                // 2026 3-Column Solid Ledger Summary Bento Card
                 item(key = "summary_strip") {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        MengiCard(modifier = Modifier.weight(1f), containerColor = colors.incomeSoft, contentPadding = 16.dp) {
-                            Text(
-                                text = tr(language, "Mapato", "Income"),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = colors.income
+                    MengiCard(contentPadding = 16.dp) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            LedgerMetricTile(
+                                label = tr(language, "Mapato", "Income"),
+                                value = FormatUtils.formatCompactMoney(totalIn, currency),
+                                containerColor = colors.incomeSoft,
+                                accentColor = colors.income,
+                                modifier = Modifier.weight(1f)
                             )
-                            Text(
-                                text = FormatUtils.formatCompactMoney(totalIn, currency),
-                                style = MaterialTheme.typography.titleLarge,
-                                color = colors.income
+                            LedgerMetricTile(
+                                label = tr(language, "Matumizi", "Outflow"),
+                                value = FormatUtils.formatCompactMoney(totalOut, currency),
+                                containerColor = colors.expenseSoft,
+                                accentColor = colors.expense,
+                                modifier = Modifier.weight(1f)
+                            )
+                            LedgerMetricTile(
+                                label = tr(language, "Salio", "Net"),
+                                value = FormatUtils.formatCompactMoney(netFiltered, currency),
+                                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                accentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.weight(1f)
                             )
                         }
-                        MengiCard(modifier = Modifier.weight(1f), containerColor = colors.expenseSoft, contentPadding = 16.dp) {
-                            Text(
-                                text = tr(language, "Matumizi", "Expenses"),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = colors.expense
-                            )
-                            Text(
-                                text = FormatUtils.formatCompactMoney(totalOut, currency),
-                                style = MaterialTheme.typography.titleLarge,
-                                color = colors.expense
-                            )
+                        val flowTotal = (totalIn + totalOut).coerceAtLeast(1.0)
+                        val inShare = (totalIn / flowTotal).toFloat().coerceIn(0f, 1f)
+                        val outShare = (totalOut / flowTotal).toFloat().coerceIn(0f, 1f)
+                        Spacer(Modifier.height(12.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp)
+                                .clip(CircleShape)
+                                .background(colors.subtleSurface),
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            if (inShare > 0.01f) {
+                                Box(
+                                    modifier = Modifier
+                                        .weight(inShare)
+                                        .fillMaxHeight()
+                                        .clip(CircleShape)
+                                        .background(colors.income)
+                                )
+                            }
+                            if (outShare > 0.01f) {
+                                Box(
+                                    modifier = Modifier
+                                        .weight(outShare)
+                                        .fillMaxHeight()
+                                        .clip(CircleShape)
+                                        .background(colors.expense)
+                                )
+                            }
                         }
                     }
                 }
@@ -289,9 +380,19 @@ fun TransactionsScreen(
                             value = search,
                             onValueChange = { search = it },
                             placeholder = {
-                                Text(tr(language, "Tafuta maelezo, mteja, kundi...", "Search description, party, category..."))
+                                Text(tr(language, "Tafuta maelezo, jina, kundi...", "Search description, party, category..."))
                             },
                             leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                            trailingIcon = if (search.isNotEmpty()) {
+                                {
+                                    IconButton(onClick = { search = "" }) {
+                                        Icon(
+                                            Icons.Rounded.Close,
+                                            contentDescription = tr(language, "Futa utafutaji", "Clear search")
+                                        )
+                                    }
+                                }
+                            } else null,
                             singleLine = true,
                             shape = CircleShape,
                             colors = oneUiTextFieldColors(),
@@ -301,72 +402,129 @@ fun TransactionsScreen(
                         )
 
                         Row(
-                            modifier = Modifier.horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            listOf(
-                                "all" to tr(language, "Yote (${transactions.size})", "All (${transactions.size})"),
-                                "direct" to tr(language, "Miamala Pekee", "Txns Only"),
-                                "income" to tr(language, "Pesa Kuingia", "Money In"),
-                                "expense" to tr(language, "Matumizi", "Expenses"),
-                                "bill" to tr(language, "Bili", "Bills"),
-                                "savings" to tr(language, "Akiba", "Savings")
-                            ).forEach { (key, label) ->
-                                FilterChip(
-                                    selected = typeFilter == key,
-                                    onClick = { typeFilter = key },
-                                    shape = CircleShape,
-                                    label = { Text(label) },
-                                    modifier = Modifier.testTag("txn_filter_$key")
-                                )
-                            }
-                        }
-
-                        // Category Filter Strip
-                        Row(
-                            modifier = Modifier.horizontalScroll(rememberScrollState()),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            if (categoryFilter != null) {
-                                AssistChip(
-                                    onClick = { categoryFilter = null },
-                                    shape = CircleShape,
-                                    label = { Text("${tr(language, "Kundi", "Category")}: $categoryFilter") },
-                                    trailingIcon = {
-                                        Icon(
-                                            Icons.Rounded.Close,
-                                            contentDescription = tr(language, "Ondoa kichujio", "Clear filter"),
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    },
-                                    modifier = Modifier.testTag("clear_category_filter_chip")
+                            listOf(
+                                "all" to tr(language, "Yote (${transactions.size})", "All (${transactions.size})"),
+                                "income" to tr(language, "Mapato", "Income"),
+                                "expense" to tr(language, "Matumizi Yangu", "My Expenses"),
+                                "household" to tr(language, "Bili ya Nyumbani", "Household Bill"),
+                                "savings" to tr(language, "Akiba", "Savings"),
+                                "bill" to tr(language, "Bili Zangu", "My Bills"),
+                                "direct" to tr(language, "Miamala Pekee", "Direct Only")
+                            ).forEach { (key, label) ->
+                                LedgerSolidFilterPill(
+                                    label = label,
+                                    selected = typeFilter == key,
+                                    onClick = { typeFilter = key },
+                                    modifier = Modifier.testTag("txn_filter_$key")
                                 )
                             }
-                            usedCategoryNames.forEach { catName ->
-                                val selected = categoryFilter.equals(catName, ignoreCase = true)
-                                FilterChip(
-                                    selected = selected,
-                                    onClick = {
-                                        categoryFilter = if (selected) null else catName
-                                    },
-                                    shape = CircleShape,
-                                    label = { Text(catName, maxLines = 1) }
-                                )
+
+                            // Compact toggle pill for Category filtering
+                            Surface(
+                                onClick = { showCategoryStrip = !showCategoryStrip },
+                                shape = CircleShape,
+                                color = if (showCategoryStrip || categoryFilter != null) {
+                                    MaterialTheme.colorScheme.secondaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.surface
+                                },
+                                border = BorderStroke(1.dp, colors.cardBorder),
+                                modifier = Modifier.heightIn(min = 38.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.FilterList,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = if (categoryFilter != null) {
+                                            FormatUtils.localizedCategory(categoryFilter!!, language)
+                                        } else {
+                                            tr(language, "Kundi", "Category")
+                                        },
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+                        }
+
+                        AnimatedVisibility(visible = showCategoryStrip || categoryFilter != null) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (categoryFilter != null) {
+                                    Surface(
+                                        onClick = { categoryFilter = null },
+                                        shape = CircleShape,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier
+                                            .heightIn(min = 34.dp)
+                                            .testTag("clear_category_filter_chip")
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Text(
+                                                text = FormatUtils.localizedCategory(categoryFilter!!, language),
+                                                style = MaterialTheme.typography.labelMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onPrimary,
+                                                maxLines = 1
+                                            )
+                                            Icon(
+                                                Icons.Rounded.Close,
+                                                contentDescription = tr(language, "Ondoa kichujio", "Clear filter"),
+                                                tint = MaterialTheme.colorScheme.onPrimary,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                                usedCategoryNames.forEach { catName ->
+                                    val selected = categoryFilter.equals(catName, ignoreCase = true)
+                                    if (!selected) {
+                                        LedgerSolidFilterPill(
+                                            label = FormatUtils.localizedCategory(catName, language),
+                                            selected = false,
+                                            onClick = { categoryFilter = catName }
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
                 }
 
-                if (filtered.isEmpty()) {
+                if (groupedByDate.isEmpty()) {
                     item(key = "empty") {
                         EmptyStateCard(
                             icon = Icons.Rounded.AccountBalanceWallet,
                             title = tr(language, "Hakuna miamala", "No transactions found"),
                             subtitle = tr(
                                 language,
-                                "Ongeza muamala mpya wa mapato au matumizi.",
-                                "Add a new income or expense record."
+                                "Ongeza muamala mpya wa mapato, matumizi, bili ya nyumbani au akiba.",
+                                "Add a new income, expense, household bill, or savings entry."
                             ),
                             actionLabel = tr(language, "Ongeza Muamala", "Add Transaction"),
                             onAction = {
@@ -376,20 +534,78 @@ fun TransactionsScreen(
                         )
                     }
                 } else {
-                    items(filtered, key = { it.id }) { txn ->
-                        val catMeta = categoryLookup["${txn.type}:${txn.category.trim().lowercase()}"]
-                        TransactionItemCard(
-                            txn = txn,
-                            categoryMeta = catMeta,
-                            currency = currency,
-                            language = language,
-                            modifier = Modifier.animateItem(),
-                            onEdit = {
-                                editingTxn = txn
-                                showEditor = true
-                            },
-                            onDelete = { onDeleteTransaction(txn.id) }
-                        )
+                    items(groupedByDate, key = { it.first }) { (dateIso, dayTxns) ->
+                        val dayNet = dayTxns.sumOf { if (it.isIncome) it.amount else -it.amount }
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .animateItem(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            // Crisp Date Group Header with Daily Net Subtotal
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text(
+                                        text = FormatUtils.friendlyDateLabel(dateIso, language).uppercase(),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = MaterialTheme.colorScheme.surfaceVariant
+                                    ) {
+                                        Text(
+                                            text = "${dayTxns.size}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                                Text(
+                                    text = (if (dayNet >= 0.0) "+" else "") + FormatUtils.formatCompactMoney(dayNet, currency),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (dayNet >= 0.0) colors.income else colors.expense
+                                )
+                            }
+
+                            // Sculpted 2026 Solid Grouped Date Card
+                            MengiCard(contentPadding = 0.dp) {
+                                dayTxns.forEachIndexed { idx, txn ->
+                                    val catMeta = categoryLookup["${txn.type}:${txn.category.trim().lowercase()}"]
+                                    LedgerTransactionRow(
+                                        txn = txn,
+                                        categoryMeta = catMeta,
+                                        currency = currency,
+                                        language = language,
+                                        onEdit = {
+                                            editingTxn = txn
+                                            showEditor = true
+                                        },
+                                        onDuplicate = { onDuplicateTransaction(txn) },
+                                        onShareReceipt = { onShareTransactionReceipt(txn) },
+                                        onDelete = { pendingDeleteTxnId = txn.id }
+                                    )
+                                    if (idx < dayTxns.lastIndex) {
+                                        HorizontalDivider(
+                                            modifier = Modifier.padding(start = 72.dp, end = 16.dp),
+                                            color = colors.cardBorder,
+                                            thickness = 0.8.dp
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -413,6 +629,7 @@ fun TransactionsScreen(
         TransactionEditorSheet(
             initial = editingTxn,
             categories = categories,
+            knownParties = knownParties,
             language = language,
             onDismiss = {
                 showEditor = false
@@ -440,99 +657,287 @@ fun TransactionsScreen(
             onDeleteCategory = onDeleteCategory
         )
     }
+
+    pendingDeleteTxnId?.let { id ->
+        ConfirmActionDialog(
+            title = tr(language, "Futa muamala?", "Delete transaction?"),
+            message = tr(
+                language,
+                "Muamala huu utaondolewa kwenye kitabu cha fedha na salio litasasishwa.",
+                "This transaction will be removed from your cash ledger and balances will update."
+            ),
+            confirmLabel = tr(language, "Futa", "Delete"),
+            cancelLabel = tr(language, "Ghairi", "Cancel"),
+            isDanger = true,
+            onConfirm = {
+                onDeleteTransaction(id)
+                pendingDeleteTxnId = null
+            },
+            onDismiss = { pendingDeleteTxnId = null }
+        )
+    }
 }
 
 @Composable
-private fun TransactionItemCard(
+private fun LedgerMetricTile(
+    label: String,
+    value: String,
+    containerColor: androidx.compose.ui.graphics.Color,
+    accentColor: androidx.compose.ui.graphics.Color,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = containerColor,
+        modifier = modifier
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 11.dp, vertical = 11.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = accentColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = value,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.ExtraBold,
+                color = accentColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+private fun LedgerSolidFilterPill(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalMengiColors.current
+    val bg by animateColorAsState(
+        targetValue = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
+        animationSpec = tween(180),
+        label = "txn_filter_bg"
+    )
+    val fg by animateColorAsState(
+        targetValue = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+        animationSpec = tween(180),
+        label = "txn_filter_fg"
+    )
+    Surface(
+        onClick = onClick,
+        shape = CircleShape,
+        color = bg,
+        border = if (selected) null else BorderStroke(1.dp, colors.cardBorder),
+        shadowElevation = if (selected && !colors.isDark) 2.dp else 0.dp,
+        modifier = modifier.heightIn(min = 38.dp)
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                color = fg,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+@Composable
+private fun LedgerTransactionRow(
     txn: TransactionEntity,
     categoryMeta: TransactionCategoryEntity?,
     currency: String,
     language: AppLanguage,
-    modifier: Modifier = Modifier,
     onEdit: () -> Unit,
+    onDuplicate: () -> Unit,
+    onShareReceipt: () -> Unit,
     onDelete: () -> Unit
 ) {
     val colors = LocalMengiColors.current
-    val catAccent = categoryMeta?.let { accessibleCategoryAccent(it.colorHex) }
-        ?: if (txn.isIncome) colors.income else colors.expense
+    val bucket = AutoAccountingEngine.classifyTransaction(txn)
+    val bColors = bucketVisualColors(bucket)
+    val isHousehold = bucket == AutoBucket.HOUSEHOLD_BILL
+    val isSavings = bucket == AutoBucket.SAVINGS
+    var showMenu by remember { mutableStateOf(false) }
 
-    MengiCard(modifier = modifier, contentPadding = 16.dp) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+    val iconBg = when {
+        isHousehold -> bColors.softBg
+        isSavings -> colors.savingsSoft
+        txn.isIncome -> colors.incomeSoft
+        else -> colors.expenseSoft
+    }
+    val iconTint = when {
+        isHousehold -> bColors.dot
+        isSavings -> colors.savings
+        txn.isIncome -> colors.income
+        else -> categoryMeta?.let { accessibleCategoryAccent(it.colorHex) } ?: colors.expense
+    }
+    val amountColor = when {
+        txn.isIncome -> colors.income
+        isHousehold -> bColors.ink
+        isSavings -> colors.savings
+        else -> colors.expense
+    }
+
+    val localizedCat = FormatUtils.localizedCategory(txn.category, language)
+    val localizedMethod = FormatUtils.localizedMethod(txn.method, language)
+    val subtitleText = listOf(txn.party, localizedCat, localizedMethod)
+        .filter { it.isNotBlank() }
+        .distinct()
+        .joinToString(" · ")
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onEdit)
+            .padding(start = 16.dp, end = 6.dp, top = 13.dp, bottom = 13.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // Left: Crisp 44dp Squircle Icon Badge
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(iconBg),
+            contentAlignment = Alignment.Center
         ) {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(RoundedCornerShape(15.dp))
-                    .background(if (txn.isIncome) colors.incomeSoft else colors.expenseSoft),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = categoryMeta?.let { categoryIconForKey(it.iconKey) }
-                        ?: if (txn.isIncome) Icons.Rounded.ArrowDownward else Icons.Rounded.ArrowUpward,
-                    contentDescription = txn.category.ifBlank { txn.type },
-                    tint = if (txn.isIncome) colors.income else catAccent,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-            Column(modifier = Modifier.weight(1f)) {
+            Icon(
+                imageVector = when {
+                    isHousehold -> Icons.Rounded.Home
+                    isSavings -> Icons.Rounded.Savings
+                    categoryMeta != null -> categoryIconForKey(categoryMeta.iconKey)
+                    txn.isIncome -> Icons.Rounded.ArrowDownward
+                    else -> Icons.Rounded.ArrowUpward
+                },
+                contentDescription = localizedCat.ifBlank { txn.type },
+                tint = iconTint,
+                modifier = Modifier.size(21.dp)
+            )
+        }
+
+        // Center: Clean Uncramped 3-Tier Info Stack
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            Text(
+                text = txn.description.ifBlank { localizedCat },
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (subtitleText.isNotBlank()) {
                 Text(
-                    text = txn.description.ifBlank { txn.category },
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = listOf(txn.party, txn.category).filter { it.isNotBlank() }.joinToString(" · "),
+                    text = subtitleText,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Spacer(Modifier.height(5.dp))
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
+            }
+            // Single compact solid bucket tag (never competes with a date!)
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = bColors.softBg
+            ) {
+                Text(
+                    text = bucket.label(language),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = bColors.ink,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.5.dp)
+                )
+            }
+        }
+
+        // Right: Crisp Amount + Clean Overflow Menu
+        Row(
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = (if (txn.isIncome) "+" else "-") + FormatUtils.formatMoney(txn.amount, currency),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.ExtraBold,
+                color = amountColor,
+                maxLines = 1
+            )
+            Box {
+                IconButton(
+                    onClick = { showMenu = true },
+                    modifier = Modifier.size(38.dp)
                 ) {
-                    val bucket = AutoAccountingEngine.classifyTransaction(txn)
-                    val bColors = bucketVisualColors(bucket)
-                    StatusPill(
-                        text = bucket.label(language),
-                        containerColor = bColors.softBg,
-                        contentColor = bColors.ink
-                    )
-                    Text(
-                        text = txn.date,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    Icon(
+                        imageVector = Icons.Rounded.MoreVert,
+                        contentDescription = tr(language, "Chaguo zaidi", "More options"),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
                     )
                 }
-            }
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    text = (if (txn.isIncome) "+" else "-") + FormatUtils.formatMoney(txn.amount, currency),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = if (txn.isIncome) colors.income else colors.expense
-                )
-                Row {
-                    IconButton(onClick = onEdit, modifier = Modifier.size(40.dp)) {
-                        Icon(
-                            Icons.Rounded.Edit,
-                            contentDescription = tr(language, "Hariri", "Edit"),
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                    IconButton(onClick = onDelete, modifier = Modifier.size(40.dp)) {
-                        Icon(
-                            Icons.Rounded.Delete,
-                            contentDescription = tr(language, "Futa", "Delete"),
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
+                DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false },
+                    containerColor = MaterialTheme.colorScheme.surface
+                ) {
+                    DropdownMenuItem(
+                        text = { Text(tr(language, "Hariri Muamala", "Edit Transaction")) },
+                        leadingIcon = { Icon(Icons.Rounded.Edit, contentDescription = null) },
+                        onClick = {
+                            showMenu = false
+                            onEdit()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(tr(language, "Nakili kwa Leo", "Duplicate for Today")) },
+                        leadingIcon = { Icon(Icons.Rounded.ContentCopy, contentDescription = null) },
+                        onClick = {
+                            showMenu = false
+                            onDuplicate()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(tr(language, "Tuma Risiti", "Share Receipt")) },
+                        leadingIcon = { Icon(Icons.Rounded.Share, contentDescription = null) },
+                        onClick = {
+                            showMenu = false
+                            onShareReceipt()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                tr(language, "Futa Muamala", "Delete Transaction"),
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Rounded.Delete,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        },
+                        onClick = {
+                            showMenu = false
+                            onDelete()
+                        }
+                    )
                 }
             }
         }
@@ -544,13 +949,20 @@ private fun TransactionItemCard(
 private fun TransactionEditorSheet(
     initial: TransactionEntity?,
     categories: List<TransactionCategoryEntity>,
+    knownParties: List<PartySummary>,
     language: AppLanguage,
     onDismiss: () -> Unit,
     onOpenCategoryManager: (activeType: String) -> Unit,
     onSave: (TransactionEntity) -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val learnedHouseholdNames = remember(knownParties) {
+        PartyDirectoryEngine.householdNames(knownParties)
+    }
     var type by remember(initial) { mutableStateOf(initial?.type ?: "income") }
+    var isHouseholdSelected by remember(initial) {
+        mutableStateOf(initial?.let { AutoAccountingEngine.isHouseholdTransaction(it) } ?: false)
+    }
     var description by remember(initial) { mutableStateOf(initial?.description ?: "") }
     var amountText by remember(initial) {
         mutableStateOf(if (initial != null && initial.amount > 0) initial.amount.toLong().toString() else "")
@@ -600,26 +1012,91 @@ private fun TransactionEditorSheet(
             OneUiSegmentedTabs(
                 options = listOf(
                     tr(language, "Mapato", "Income"),
-                    tr(language, "Matumizi", "Expense")
+                    tr(language, "Matumizi", "Expense"),
+                    tr(language, "Nyumbani", "Household")
                 ),
-                selectedIndex = if (type == "income") 0 else 1,
+                selectedIndex = when {
+                    isHouseholdSelected -> 2
+                    type == "income" -> 0
+                    else -> 1
+                },
                 onSelect = { idx ->
-                    if (idx == 0) {
-                        type = "income"
-                        val incomeNames = categories.filter { it.isIncome }.map { it.name }.ifEmpty { FormatUtils.incomeCategories }
-                        if (category !in incomeNames) category = incomeNames.first()
-                    } else {
-                        type = "expense"
-                        val expenseNames = categories.filter { !it.isIncome }.map { it.name }.ifEmpty { FormatUtils.expenseCategories }
-                        if (category !in expenseNames) category = expenseNames.first()
+                    when (idx) {
+                        0 -> {
+                            isHouseholdSelected = false
+                            type = "income"
+                            val incomeNames = categories.filter { it.isIncome }.map { it.name }.ifEmpty { FormatUtils.incomeCategories }
+                            if (category !in incomeNames) category = incomeNames.first()
+                        }
+                        1 -> {
+                            isHouseholdSelected = false
+                            type = "expense"
+                            val expenseNames = categories.filter { !it.isIncome }.map { it.name }.ifEmpty { FormatUtils.expenseCategories }
+                            if (category !in expenseNames || category.equals(AutoAccountingEngine.HOUSEHOLD_CATEGORY, ignoreCase = true)) {
+                                category = expenseNames.first()
+                            }
+                        }
+                        else -> {
+                            isHouseholdSelected = true
+                            type = "expense"
+                            category = AutoAccountingEngine.HOUSEHOLD_CATEGORY
+                            if (description.isBlank()) {
+                                description = tr(language, "Bili ya Nyumbani", "Household Bill")
+                            }
+                        }
                     }
-                }
+                },
+                testTags = listOf("txn_type_income", "txn_type_expense", "txn_type_household")
             )
 
             OutlinedTextField(
                 value = description,
-                onValueChange = { description = it; errorText = null },
+                onValueChange = { newVal ->
+                    description = newVal
+                    errorText = null
+                    val slash = AutoAccountingEngine.parseSlashTag(newVal)
+                    when {
+                        slash.hasSlashTag && slash.detectedBucket == AutoBucket.HOUSEHOLD_BILL -> {
+                            isHouseholdSelected = true
+                            type = "expense"
+                            category = AutoAccountingEngine.HOUSEHOLD_CATEGORY
+                        }
+                        slash.hasSlashTag && slash.detectedBucket == AutoBucket.MONEY_IN -> {
+                            isHouseholdSelected = false
+                            type = "income"
+                            category = if (slash.isInvoiceTag) "Malipo ya ankara" else "Mauzo ya bidhaa"
+                        }
+                        slash.hasSlashTag && slash.detectedBucket == AutoBucket.SAVINGS -> {
+                            isHouseholdSelected = false
+                            type = "expense"
+                            category = "Akiba"
+                        }
+                        slash.hasSlashTag && slash.detectedBucket == AutoBucket.BILL -> {
+                            isHouseholdSelected = false
+                            type = "expense"
+                            category = "Bili"
+                        }
+                        slash.hasSlashTag && slash.detectedBucket == AutoBucket.EXPENSE -> {
+                            isHouseholdSelected = false
+                            type = "expense"
+                        }
+                        AutoAccountingEngine.isHouseholdText(newVal) -> {
+                            isHouseholdSelected = true
+                            type = "expense"
+                            category = AutoAccountingEngine.HOUSEHOLD_CATEGORY
+                        }
+                    }
+                },
                 label = { Text(tr(language, "Maelezo *", "Description *")) },
+                placeholder = {
+                    Text(
+                        tr(
+                            language,
+                            "Mfano: Jina/household, Jina/saving, au maelezo ya kawaida",
+                            "e.g. Name/household, Name/saving, or any description"
+                        )
+                    )
+                },
                 singleLine = true,
                 shape = OneUiFieldShape,
                 colors = oneUiTextFieldColors(),
@@ -654,13 +1131,108 @@ private fun TransactionEditorSheet(
 
             OutlinedTextField(
                 value = party,
-                onValueChange = { party = it },
-                label = { Text(tr(language, "Mteja / Msambazaji", "Customer / Supplier")) },
+                onValueChange = { newVal ->
+                    party = newVal
+                    val slash = AutoAccountingEngine.parseSlashTag(newVal)
+                    when {
+                        slash.hasSlashTag && slash.detectedBucket == AutoBucket.HOUSEHOLD_BILL -> {
+                            isHouseholdSelected = true
+                            type = "expense"
+                            category = AutoAccountingEngine.HOUSEHOLD_CATEGORY
+                        }
+                        slash.hasSlashTag && slash.detectedBucket == AutoBucket.MONEY_IN -> {
+                            isHouseholdSelected = false
+                            type = "income"
+                            category = if (slash.isInvoiceTag) "Malipo ya ankara" else "Mauzo ya bidhaa"
+                        }
+                        slash.hasSlashTag && slash.detectedBucket == AutoBucket.SAVINGS -> {
+                            isHouseholdSelected = false
+                            type = "expense"
+                            category = "Akiba"
+                        }
+                        slash.hasSlashTag && slash.detectedBucket == AutoBucket.BILL -> {
+                            isHouseholdSelected = false
+                            type = "expense"
+                            category = "Bili"
+                        }
+                        AutoAccountingEngine.isHouseholdParty(newVal, learnedHouseholdNames) -> {
+                            isHouseholdSelected = true
+                            type = "expense"
+                            category = AutoAccountingEngine.HOUSEHOLD_CATEGORY
+                        }
+                    }
+                },
+                label = { Text(tr(language, "Jina Lolote la Mhusika (hiari)", "Any Contact or Name (optional)")) },
+                placeholder = {
+                    Text(
+                        tr(
+                            language,
+                            "Jina lolote au Jina/household, Jina/invoice, Jina/rentsaving",
+                            "Any name or Name/household, Name/invoice, Name/rentsaving"
+                        )
+                    )
+                },
                 singleLine = true,
                 shape = OneUiFieldShape,
                 colors = oneUiTextFieldColors(),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("txn_party_input")
             )
+
+            // Universal Name Recognition Bar (real saved names across Transactions, Bills, Savings & Invoices)
+            RecognizedNameSuggestionsBar(
+                query = party,
+                knownParties = knownParties,
+                language = language,
+                onSelectParty = { selected ->
+                    party = selected.name
+                    if (selected.role == PartyRole.HOUSEHOLD) {
+                        isHouseholdSelected = true
+                        type = "expense"
+                        category = AutoAccountingEngine.HOUSEHOLD_CATEGORY
+                        if (description.isBlank()) {
+                            description = tr(language, "Bili ya Nyumbani", "Household Bill")
+                        }
+                    }
+                }
+            )
+
+            // Live Auto-Recognition Strip (Household vs Personal Expense vs Savings)
+            val detected = remember(description, category, party, type, isHouseholdSelected, learnedHouseholdNames) {
+                AutoAccountingEngine.classifyText(
+                    description = description,
+                    category = if (isHouseholdSelected) AutoAccountingEngine.HOUSEHOLD_CATEGORY else category,
+                    party = party,
+                    explicitType = type,
+                    learnedHouseholdNames = learnedHouseholdNames
+                )
+            }
+            if (isHouseholdSelected || description.isNotBlank() || party.isNotBlank()) {
+                val dColors = bucketVisualColors(detected.bucket)
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = dColors.softBg,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Text(
+                            text = "${tr(language, "Mfumo umetambua:", "System detected:")} ${detected.bucket.label(language)}",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = dColors.ink
+                        )
+                        Text(
+                            text = detected.reason(language),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = dColors.ink
+                        )
+                    }
+                }
+            }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -698,7 +1270,7 @@ private fun TransactionEditorSheet(
                                 modifier = Modifier.size(16.dp)
                             )
                         },
-                        label = { Text(cat.name) }
+                        label = { Text(FormatUtils.localizedCategory(cat.name, language)) }
                     )
                 }
             }
@@ -717,7 +1289,7 @@ private fun TransactionEditorSheet(
                         selected = method == m,
                         onClick = { method = m },
                         shape = CircleShape,
-                        label = { Text(m) }
+                        label = { Text(FormatUtils.localizedMethod(m, language)) }
                     )
                 }
             }
@@ -761,17 +1333,48 @@ private fun TransactionEditorSheet(
                         )
                         return@Button
                     }
+                    val descSlash = AutoAccountingEngine.parseSlashTag(description)
+                    val partySlash = AutoAccountingEngine.parseSlashTag(party)
+                    val cleanParty = AutoAccountingEngine.stripSlashTag(party).ifBlank {
+                        if (descSlash.hasSlashTag) descSlash.cleanName else ""
+                    }
+                    val cleanDesc = AutoAccountingEngine.stripSlashTag(description).ifBlank {
+                        descSlash.suggestedSavingsGoalTitle
+                            ?: partySlash.suggestedSavingsGoalTitle
+                            ?: detected.bucket.label(language)
+                    }
+                    val isHousehold = isHouseholdSelected || (type == "expense" && (
+                        AutoAccountingEngine.isHouseholdParty(party, learnedHouseholdNames) ||
+                            AutoAccountingEngine.isHouseholdText("$description $category")
+                        ))
+                    val isSavings = !isHousehold && type == "expense" && (
+                        category.equals("Akiba", ignoreCase = true) ||
+                            category.equals("Savings", ignoreCase = true) ||
+                            detected.bucket == AutoBucket.SAVINGS
+                        )
+                    val resolvedSource = when {
+                        isHousehold -> AutoAccountingEngine.HOUSEHOLD_SOURCE
+                        isSavings -> "savings"
+                        initial?.source == AutoAccountingEngine.HOUSEHOLD_SOURCE -> "manual"
+                        else -> initial?.source ?: "manual"
+                    }
+                    val resolvedCategory = when {
+                        isHousehold -> AutoAccountingEngine.HOUSEHOLD_CATEGORY
+                        isSavings -> "Akiba"
+                        else -> category
+                    }
                     onSave(
-                        (initial ?: TransactionEntity(id = "", type = type, date = date, description = description)).copy(
+                        (initial ?: TransactionEntity(id = "", type = type, date = date, description = cleanDesc)).copy(
                             type = type,
                             date = date.ifBlank { FormatUtils.todayIso() },
-                            description = description.trim(),
-                            party = party.trim(),
-                            category = category,
+                            description = cleanDesc,
+                            party = cleanParty,
+                            category = resolvedCategory,
                             amount = amount,
                             method = method,
                             reference = reference.trim(),
-                            notes = notes.trim()
+                            notes = notes.trim(),
+                            source = resolvedSource
                         )
                     )
                 },

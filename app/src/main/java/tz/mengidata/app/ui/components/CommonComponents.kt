@@ -58,9 +58,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import tz.mengidata.app.i18n.AppLanguage
 import tz.mengidata.app.i18n.PeriodFilter
 import tz.mengidata.app.i18n.tr
@@ -73,12 +75,12 @@ val OneUiFieldShape = RoundedCornerShape(18.dp)
 
 @Composable
 fun oneUiTextFieldColors(): TextFieldColors {
-    val isDark = LocalMengiColors.current.isDark
+    val colors = LocalMengiColors.current
     return OutlinedTextFieldDefaults.colors(
-        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (isDark) 0.72f else 0.52f),
-        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (isDark) 0.50f else 0.42f),
+        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
         focusedBorderColor = MaterialTheme.colorScheme.primary,
-        unfocusedBorderColor = Color.Transparent
+        unfocusedBorderColor = colors.cardBorder
     )
 }
 
@@ -96,12 +98,8 @@ fun MengiCard(
     content: @Composable ColumnScope.() -> Unit
 ) {
     val colors = LocalMengiColors.current
-    val resolvedBorder = borderColor ?: if (colors.isDark) {
-        Color.White.copy(alpha = 0.06f)
-    } else {
-        colors.cardBorder.copy(alpha = 0.45f)
-    }
-    val border = BorderStroke(0.75.dp, resolvedBorder)
+    val resolvedBorder = borderColor ?: colors.cardBorder
+    val border = BorderStroke(1.dp, resolvedBorder)
     val shape = MaterialTheme.shapes.large // 26.dp One UI squircle
 
     if (onClick != null) {
@@ -125,7 +123,7 @@ fun MengiCard(
             color = containerColor,
             border = border,
             tonalElevation = 0.dp,
-            shadowElevation = if (colors.isDark) 0.dp else 1.5.dp
+            shadowElevation = if (colors.isDark) 0.dp else 2.5.dp
         ) {
             Column(modifier = Modifier.padding(contentPadding), content = content)
         }
@@ -136,7 +134,7 @@ fun MengiCard(
             color = containerColor,
             border = border,
             tonalElevation = 0.dp,
-            shadowElevation = if (colors.isDark) 0.dp else 1.dp
+            shadowElevation = if (colors.isDark) 0.dp else 1.5.dp
         ) {
             Column(modifier = Modifier.padding(contentPadding), content = content)
         }
@@ -214,11 +212,11 @@ fun OneUiSegmentedTabs(
     val colors = LocalMengiColors.current
     Surface(
         modifier = modifier.fillMaxWidth(),
-        shape = CircleShape,
+        shape = RoundedCornerShape(22.dp),
         color = colors.subtleSurface,
         border = BorderStroke(
-            width = 0.75.dp,
-            color = if (colors.isDark) Color.White.copy(alpha = 0.06f) else colors.cardBorder.copy(alpha = 0.5f)
+            width = 1.dp,
+            color = colors.cardBorder
         )
     ) {
         Row(
@@ -232,16 +230,16 @@ fun OneUiSegmentedTabs(
                 val selected = idx == selectedIndex
                 val pillBg by animateColorAsState(
                     targetValue = if (selected) {
-                        if (colors.isDark) Color(0xFF333540) else MaterialTheme.colorScheme.surface
+                        MaterialTheme.colorScheme.primary
                     } else {
-                        Color.Transparent
+                        colors.subtleSurface
                     },
                     animationSpec = tween(200),
                     label = "seg_pill_bg"
                 )
                 val textColor by animateColorAsState(
                     targetValue = if (selected) {
-                        MaterialTheme.colorScheme.onSurface
+                        MaterialTheme.colorScheme.onPrimary
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },
@@ -251,24 +249,27 @@ fun OneUiSegmentedTabs(
                 val tag = testTags.getOrNull(idx)
                 Surface(
                     onClick = { onSelect(idx) },
-                    shape = CircleShape,
+                    shape = RoundedCornerShape(18.dp),
                     color = pillBg,
                     shadowElevation = if (selected && !colors.isDark) 2.dp else 0.dp,
                     modifier = Modifier
                         .weight(1f)
-                        .heightIn(min = 42.dp)
+                        .heightIn(min = 44.dp)
                         .then(if (tag != null) Modifier.testTag(tag) else Modifier)
                 ) {
                     Box(
                         contentAlignment = Alignment.Center,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp)
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
                     ) {
                         Text(
                             text = label,
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                lineHeight = 16.sp
+                            ),
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
                             color = textColor,
-                            maxLines = 1,
+                            textAlign = TextAlign.Center,
+                            maxLines = 2,
                             overflow = TextOverflow.Ellipsis
                         )
                     }
@@ -307,8 +308,8 @@ fun OneUiFloatingNavBar(
         Surface(
             shape = CircleShape,
             color = colors.dockSurface,
-            border = BorderStroke(1.dp, colors.dockBorder),
-            shadowElevation = if (colors.isDark) 4.dp else 12.dp,
+            border = BorderStroke(1.2.dp, colors.dockBorder),
+            shadowElevation = if (colors.isDark) 6.dp else 14.dp,
             modifier = Modifier
                 .fillMaxWidth()
                 .widthIn(max = 520.dp)
@@ -317,22 +318,22 @@ fun OneUiFloatingNavBar(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 6.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 tabs.forEach { tab ->
                     val pillColor by animateColorAsState(
                         targetValue = if (tab.selected) {
-                            MaterialTheme.colorScheme.primary.copy(alpha = if (colors.isDark) 0.22f else 0.12f)
+                            MaterialTheme.colorScheme.primary
                         } else {
-                            Color.Transparent
+                            colors.dockSurface
                         },
                         animationSpec = tween(220),
                         label = "dock_pill"
                     )
                     val contentColor by animateColorAsState(
                         targetValue = if (tab.selected) {
-                            MaterialTheme.colorScheme.primary
+                            MaterialTheme.colorScheme.onPrimary
                         } else {
                             MaterialTheme.colorScheme.onSurfaceVariant
                         },
@@ -340,7 +341,7 @@ fun OneUiFloatingNavBar(
                         label = "dock_fg"
                     )
                     val iconScale by animateFloatAsState(
-                        targetValue = if (tab.selected) 1.08f else 1f,
+                        targetValue = if (tab.selected) 1.1f else 1f,
                         animationSpec = spring(
                             dampingRatio = Spring.DampingRatioMediumBouncy,
                             stiffness = Spring.StiffnessMedium
@@ -351,11 +352,11 @@ fun OneUiFloatingNavBar(
                     Box(
                         modifier = Modifier
                             .weight(1f)
-                            .heightIn(min = 52.dp)
+                            .heightIn(min = 56.dp)
                             .clip(CircleShape)
                             .background(pillColor)
                             .clickable(onClick = tab.onClick)
-                            .padding(vertical = 6.dp, horizontal = 4.dp)
+                            .padding(vertical = 7.dp, horizontal = 2.dp)
                             .testTag(tab.testTag),
                         contentAlignment = Alignment.Center
                     ) {
@@ -368,15 +369,20 @@ fun OneUiFloatingNavBar(
                                 contentDescription = tab.label,
                                 tint = contentColor,
                                 modifier = Modifier
-                                    .size(22.dp)
+                                    .size(20.dp)
                                     .scale(iconScale)
                             )
                             Text(
                                 text = tab.label,
-                                style = MaterialTheme.typography.labelSmall,
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 11.sp,
+                                    letterSpacing = 0.sp
+                                ),
                                 fontWeight = if (tab.selected) FontWeight.Bold else FontWeight.Medium,
                                 color = contentColor,
+                                textAlign = TextAlign.Center,
                                 maxLines = 1,
+                                softWrap = false,
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
@@ -414,7 +420,7 @@ fun OneUiFloatingFab(
         shape = RoundedCornerShape(22.dp),
         color = MaterialTheme.colorScheme.primary,
         contentColor = MaterialTheme.colorScheme.onPrimary,
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.24f)),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primaryContainer),
         shadowElevation = 8.dp,
         modifier = modifier
             .size(58.dp)
@@ -442,7 +448,8 @@ fun SectionEyebrow(
     ) {
         Box(
             modifier = Modifier
-                .size(6.dp)
+                .width(16.dp)
+                .height(5.dp)
                 .clip(CircleShape)
                 .background(MaterialTheme.colorScheme.primary)
         )
@@ -511,8 +518,8 @@ fun PeriodSelectorRow(
                 shape = CircleShape,
                 color = bg,
                 border = if (isSelected) null else BorderStroke(
-                    0.75.dp,
-                    if (colors.isDark) Color.White.copy(alpha = 0.08f) else colors.cardBorder.copy(alpha = 0.65f)
+                    1.dp,
+                    colors.cardBorder
                 ),
                 shadowElevation = if (isSelected && !colors.isDark) 3.dp else 0.dp,
                 modifier = Modifier
@@ -603,7 +610,7 @@ fun IncomeExpenseBarChart(
     modifier: Modifier = Modifier
 ) {
     val colors = LocalMengiColors.current
-    val gridColor = colors.cardBorder.copy(alpha = if (colors.isDark) 0.45f else 0.55f)
+    val gridColor = colors.cardBorder
     val incomeColor = colors.income
     val incomeTopColor = colors.lime
     val expenseColor = colors.expense

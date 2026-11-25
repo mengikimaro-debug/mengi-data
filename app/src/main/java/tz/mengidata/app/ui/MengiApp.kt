@@ -14,6 +14,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -26,6 +27,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
@@ -69,8 +71,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hasRoute
@@ -80,6 +85,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.launch
+import tz.mengidata.app.R
 import tz.mengidata.app.i18n.AppLanguage
 import tz.mengidata.app.i18n.tr
 import tz.mengidata.app.ui.components.GlobalSearchSheet
@@ -88,6 +94,7 @@ import tz.mengidata.app.ui.components.OneUiFloatingNavBar
 import tz.mengidata.app.ui.components.OneUiNavTab
 import tz.mengidata.app.ui.components.PartyDirectorySheet
 import tz.mengidata.app.ui.components.PinLockScreen
+import tz.mengidata.app.ui.components.RecoveryVaultSheet
 import tz.mengidata.app.ui.navigation.BillsRoute
 import tz.mengidata.app.ui.navigation.DashboardRoute
 import tz.mengidata.app.ui.navigation.HubRoute
@@ -140,6 +147,8 @@ fun MengiApp(viewModel: MengiViewModel) {
     val businessHealth by viewModel.businessHealth.collectAsStateWithLifecycle()
     val partyDirectory by viewModel.partyDirectory.collectAsStateWithLifecycle()
     val hasSafetySnapshot by viewModel.hasSafetySnapshot.collectAsStateWithLifecycle()
+    val deletedRecords by viewModel.deletedRecords.collectAsStateWithLifecycle()
+    val phoneStorageStatus by viewModel.phoneStorageStatus.collectAsStateWithLifecycle()
     val selectedPeriod by viewModel.selectedPeriod.collectAsStateWithLifecycle()
     val transactions by viewModel.transactions.collectAsStateWithLifecycle()
     val invoices by viewModel.invoices.collectAsStateWithLifecycle()
@@ -157,6 +166,7 @@ fun MengiApp(viewModel: MengiViewModel) {
     var quickAddTxnTrigger by remember { mutableIntStateOf(0) }
     var showGlobalSearch by remember { mutableStateOf(false) }
     var showPartyDirectory by remember { mutableStateOf(false) }
+    var showGlobalRecoveryVault by remember { mutableStateOf(false) }
 
     val createDocumentLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("*/*")
@@ -319,8 +329,8 @@ fun MengiApp(viewModel: MengiViewModel) {
                                             shape = CircleShape,
                                             color = MaterialTheme.colorScheme.surface,
                                             border = BorderStroke(
-                                                0.75.dp,
-                                                if (colors.isDark) Color.White.copy(alpha = 0.08f) else colors.cardBorder.copy(alpha = 0.55f)
+                                                1.dp,
+                                                colors.cardBorder
                                             ),
                                             modifier = Modifier
                                                 .size(44.dp)
@@ -342,14 +352,39 @@ fun MengiApp(viewModel: MengiViewModel) {
                                     }
                                 },
                                 title = {
-                                    Text(
-                                        text = if (isSettings) {
-                                            tr(language, "Mipangilio", "Settings")
-                                        } else {
-                                            settings.businessName.ifBlank { "Mengidata" }
-                                        },
-                                        style = MaterialTheme.typography.titleLarge
-                                    )
+                                    if (isSettings) {
+                                        Text(
+                                            text = tr(language, "Mipangilio", "Settings"),
+                                            style = MaterialTheme.typography.titleLarge,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    } else {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Surface(
+                                                shape = RoundedCornerShape(10.dp),
+                                                color = Color(0xFF242E38),
+                                                border = BorderStroke(1.dp, Color(0xFF56687A)),
+                                                modifier = Modifier.size(30.dp)
+                                            ) {
+                                                Image(
+                                                    painter = painterResource(id = R.drawable.mengidata_oneui_icon_1795525888393),
+                                                    contentDescription = "Mengidata",
+                                                    contentScale = ContentScale.Crop,
+                                                    modifier = Modifier.fillMaxSize()
+                                                )
+                                            }
+                                            Text(
+                                                text = settings.businessName.ifBlank { "Mengidata" },
+                                                style = MaterialTheme.typography.titleLarge,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                    }
                                 },
                                 actions = {
                                     if (!isSettings) {
@@ -363,8 +398,8 @@ fun MengiApp(viewModel: MengiViewModel) {
                                                 shape = CircleShape,
                                                 color = MaterialTheme.colorScheme.surface,
                                                 border = BorderStroke(
-                                                    0.75.dp,
-                                                    if (colors.isDark) Color.White.copy(alpha = 0.08f) else colors.cardBorder.copy(alpha = 0.55f)
+                                                    1.dp,
+                                                    colors.cardBorder
                                                 ),
                                                 modifier = Modifier
                                                     .size(44.dp)
@@ -384,8 +419,8 @@ fun MengiApp(viewModel: MengiViewModel) {
                                                 shape = CircleShape,
                                                 color = MaterialTheme.colorScheme.surface,
                                                 border = BorderStroke(
-                                                    0.75.dp,
-                                                    if (colors.isDark) Color.White.copy(alpha = 0.08f) else colors.cardBorder.copy(alpha = 0.55f)
+                                                    1.dp,
+                                                    colors.cardBorder
                                                 ),
                                                 modifier = Modifier
                                                     .size(44.dp)
@@ -482,6 +517,8 @@ fun MengiApp(viewModel: MengiViewModel) {
                                             categoryAnalytics = categoryAnalytics,
                                             businessHealth = businessHealth,
                                             partyCount = partyDirectory.size,
+                                            deletedCount = deletedRecords.size,
+                                            knownParties = partyDirectory,
                                             privacyMaskEnabled = privacyMaskEnabled,
                                             settings = settings,
                                             selectedPeriod = selectedPeriod,
@@ -494,6 +531,9 @@ fun MengiApp(viewModel: MengiViewModel) {
                                             onOpenHub = { navigateTopLevel(HubRoute) },
                                             onOpenSettings = { navController.navigate(SettingsRoute) },
                                             onOpenPartyDirectory = { showPartyDirectory = true },
+                                            onOpenRecoveryVault = { showGlobalRecoveryVault = true },
+                                            onSyncPhoneStorage = viewModel::syncDatabaseToPhoneStorage,
+                                            onExportStatementPdf = { viewModel.exportFinancialStatementPdf(selectedPeriod) },
                                             onQuickAddTransaction = {
                                                 quickAddTxnTrigger++
                                                 navigateTopLevel(TransactionsRoute)
@@ -509,15 +549,22 @@ fun MengiApp(viewModel: MengiViewModel) {
                                         TransactionsScreen(
                                             transactions = transactions,
                                             categories = categories,
+                                            knownParties = partyDirectory,
                                             selectedPeriod = selectedPeriod,
                                             currency = settings.currency.ifBlank { "TZS" },
                                             language = language,
                                             openEditorTrigger = quickAddTxnTrigger,
                                             onSelectPeriod = viewModel::setSelectedPeriod,
                                             onSaveTransaction = viewModel::saveTransaction,
+                                            onDuplicateTransaction = viewModel::duplicateTransaction,
+                                            onShareTransactionReceipt = { txn ->
+                                                val send = viewModel.buildShareTransactionReceiptIntent(txn)
+                                                runCatching { context.startActivity(Intent.createChooser(send, null)) }
+                                            },
                                             onDeleteTransaction = viewModel::deleteTransaction,
                                             onSaveCategory = viewModel::saveCategory,
                                             onDeleteCategory = { viewModel.deleteCategory(it) },
+                                            onExportStatementPdf = viewModel::exportFinancialStatementPdf,
                                             onExportTransactionsCsv = viewModel::exportTransactionsCsv,
                                             onExportCategoryAnalyticsCsv = viewModel::exportCategoryAnalyticsCsv
                                         )
@@ -526,6 +573,7 @@ fun MengiApp(viewModel: MengiViewModel) {
                                     composable<InvoicesRoute> {
                                         InvoicesScreen(
                                             invoices = invoices,
+                                            knownParties = partyDirectory,
                                             settings = settings,
                                             language = language,
                                             generateNextNumber = viewModel::generateNextInvoiceNumber,
@@ -542,6 +590,14 @@ fun MengiApp(viewModel: MengiViewModel) {
                                                 }
                                                 runCatching { context.startActivity(Intent.createChooser(send, null)) }
                                             },
+                                            onShareInvoicePdf = { inv ->
+                                                val pdfIntent = viewModel.buildShareInvoicePdfIntent(inv)
+                                                if (pdfIntent != null) {
+                                                    runCatching { context.startActivity(Intent.createChooser(pdfIntent, null)) }
+                                                } else {
+                                                    viewModel.exportInvoicePdf(inv)
+                                                }
+                                            },
                                             onMarkUnpaid = viewModel::markInvoiceUnpaid,
                                             onDeleteInvoice = viewModel::deleteInvoice,
                                             onExportPdf = viewModel::exportInvoicePdf,
@@ -553,10 +609,13 @@ fun MengiApp(viewModel: MengiViewModel) {
                                         BillsScreen(
                                             bills = bills,
                                             zeroLossLedger = zeroLossLedger,
+                                            knownParties = partyDirectory,
                                             currency = settings.currency.ifBlank { "TZS" },
                                             language = language,
                                             onSaveBill = viewModel::saveBill,
                                             onTogglePaid = viewModel::toggleBillPaid,
+                                            onDuplicateBill = viewModel::duplicateBill,
+                                            onPayAllDueBills = viewModel::payAllDueBills,
                                             onScheduleNextMonth = viewModel::scheduleNextRecurringBill,
                                             onDeleteBill = viewModel::deleteBill,
                                             onExportBillsCsv = viewModel::exportBillsCsv
@@ -567,6 +626,7 @@ fun MengiApp(viewModel: MengiViewModel) {
                                         HubScreen(
                                             savingsGoals = savingsGoals,
                                             savingsLogs = savingsLogs,
+                                            knownParties = partyDirectory,
                                             currency = settings.currency.ifBlank { "TZS" },
                                             language = language,
                                             onSaveGoal = viewModel::saveSavingsGoal,
@@ -580,7 +640,7 @@ fun MengiApp(viewModel: MengiViewModel) {
                                         val summary = tr(
                                             language,
                                             "${transactions.size} miamala · ${invoices.size} ankara · ${bills.size} bili · ${savingsGoals.size} akiba",
-                                            "${transactions.size} txns · ${invoices.size} invoices · ${bills.size} bills · ${savingsGoals.size} savings"
+                                            "${transactions.size} transactions · ${invoices.size} invoices · ${bills.size} bills · ${savingsGoals.size} savings"
                                         )
                                         SettingsScreen(
                                             settings = settings,
@@ -592,6 +652,8 @@ fun MengiApp(viewModel: MengiViewModel) {
                                             updateState = updateState,
                                             statsSummary = summary,
                                             hasSafetySnapshot = hasSafetySnapshot,
+                                            deletedRecords = deletedRecords,
+                                            phoneStorageStatus = phoneStorageStatus,
                                             onSetThemeMode = viewModel::setThemeMode,
                                             onSetLanguage = viewModel::setLanguage,
                                             onSetAutoUpdate = viewModel::setAutoUpdateEnabled,
@@ -618,7 +680,11 @@ fun MengiApp(viewModel: MengiViewModel) {
                                                 openBackupLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
                                             },
                                             onReconcileLedger = viewModel::reconcileLedgerNow,
+                                            onSyncPhoneStorage = viewModel::syncDatabaseToPhoneStorage,
                                             onRestoreSafetySnapshot = viewModel::restoreLatestSafetySnapshot,
+                                            onRestoreDeletedRecord = viewModel::restoreDeletedRecord,
+                                            onDeleteTrashPermanently = viewModel::permanentlyDeleteTrashRecord,
+                                            onEmptyTrash = viewModel::emptyTrash,
                                             onLoadDemoData = viewModel::loadDemoData,
                                             onClearAllData = viewModel::clearAllFinancialData
                                         )
@@ -628,7 +694,7 @@ fun MengiApp(viewModel: MengiViewModel) {
                         }
                     }
 
-                    // Samsung One UI 8.5 Floating Frosted-Glass Capsule Bottom Dock
+                    // Samsung One UI 8.5 Solid Opaque Floating Capsule Bottom Dock
                     if (showFloatingDock) {
                         OneUiFloatingNavBar(
                             tabs = PrimaryDestinations.map { dest ->
@@ -667,6 +733,18 @@ fun MengiApp(viewModel: MengiViewModel) {
                 currency = settings.currency.ifBlank { "TZS" },
                 language = language,
                 onDismiss = { showPartyDirectory = false }
+            )
+        }
+
+        if (showGlobalRecoveryVault) {
+            RecoveryVaultSheet(
+                deletedRecords = deletedRecords,
+                currency = settings.currency.ifBlank { "TZS" },
+                language = language,
+                onRestore = viewModel::restoreDeletedRecord,
+                onDeletePermanently = viewModel::permanentlyDeleteTrashRecord,
+                onEmptyVault = viewModel::emptyTrash,
+                onDismiss = { showGlobalRecoveryVault = false }
             )
         }
     }

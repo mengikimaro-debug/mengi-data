@@ -5,8 +5,10 @@ import android.net.Uri
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,15 +22,20 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.AutoGraph
 import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Groups
+import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.NotificationsActive
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.Savings
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.TrendingDown
@@ -64,10 +71,12 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import tz.mengidata.app.data.accounting.AutoAccountingEngine
 import tz.mengidata.app.data.accounting.BusinessHealthReport
 import tz.mengidata.app.data.accounting.BusinessInsight
 import tz.mengidata.app.data.accounting.HealthGrade
 import tz.mengidata.app.data.accounting.InsightSeverity
+import tz.mengidata.app.data.accounting.PartyDirectoryEngine
 import tz.mengidata.app.data.accounting.PartyRole
 import tz.mengidata.app.data.accounting.PartySummary
 import tz.mengidata.app.i18n.AppLanguage
@@ -215,7 +224,7 @@ fun BusinessHealthScoreCard(
                     valueColor = if (report.profitMarginPct >= 0) colors.income else colors.expense
                 )
                 HealthMetricLine(
-                    label = tr(language, "Ukuaji wa Mwezi (MoM)", "Monthly Trend (MoM)"),
+                    label = tr(language, "Mwenendo wa Mwezi", "Monthly Trend"),
                     value = momStr,
                     valueColor = when {
                         momDelta == null -> MaterialTheme.colorScheme.onSurfaceVariant
@@ -238,7 +247,7 @@ fun BusinessHealthScoreCard(
 
         if (report.insights.isNotEmpty()) {
             Spacer(Modifier.height(14.dp))
-            HorizontalDivider(color = colors.cardBorder.copy(alpha = 0.45f))
+            HorizontalDivider(color = colors.cardBorder)
             Spacer(Modifier.height(12.dp))
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 report.insights.forEach { insight ->
@@ -253,7 +262,7 @@ fun BusinessHealthScoreCard(
             shape = CircleShape,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(46.dp)
+                .height(48.dp)
                 .testTag("dashboard_open_crm_btn")
         ) {
             Icon(Icons.Rounded.Groups, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -261,8 +270,8 @@ fun BusinessHealthScoreCard(
             Text(
                 text = tr(
                     language,
-                    "Daftari la Wateja & Wadau ($partyCount)",
-                    "Customers & Vendors Directory ($partyCount)"
+                    "Daftari la Majina ($partyCount)",
+                    "Recognized Names Directory ($partyCount)"
                 ),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -322,7 +331,8 @@ private fun InsightRowItem(
     }
     Surface(
         shape = RoundedCornerShape(18.dp),
-        color = bg.copy(alpha = 0.72f),
+        color = bg,
+        border = BorderStroke(0.8.dp, colors.cardBorder),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
@@ -348,6 +358,163 @@ private fun InsightRowItem(
     }
 }
 
+/**
+ * Universal Name Recognition Bar shared across Transactions, Bills, Savings, Invoices,
+ * and Smart Auto-Entry. Suggests EVERY real name saved in any module and automatically
+ * recognizes user-saved Household Bill names.
+ */
+@Composable
+fun RecognizedNameSuggestionsBar(
+    query: String,
+    knownParties: List<PartySummary>,
+    language: AppLanguage,
+    onSelectParty: (PartySummary) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalMengiColors.current
+    val suggestions = remember(query, knownParties) {
+        PartyDirectoryEngine.suggestParties(query, knownParties, limit = 10)
+    }
+    val matched = remember(query, knownParties) {
+        PartyDirectoryEngine.matchParty(query, knownParties)
+    }
+    val learnedHouseholdNames = remember(knownParties) {
+        PartyDirectoryEngine.householdNames(knownParties)
+    }
+    val trimmedQuery = query.trim()
+
+    if (suggestions.isEmpty() && trimmedQuery.isBlank()) return
+
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        if (suggestions.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                suggestions.forEach { party ->
+                    val isSelected = trimmedQuery.equals(party.name, ignoreCase = true)
+                    val chipIcon = when (party.role) {
+                        PartyRole.HOUSEHOLD -> Icons.Rounded.Home
+                        PartyRole.SAVINGS -> Icons.Rounded.Savings
+                        else -> Icons.Rounded.Person
+                    }
+                    val chipLabel = if (party.role == PartyRole.HOUSEHOLD) {
+                        tr(language, "${party.name} · Nyumbani", "${party.name} · Household")
+                    } else {
+                        party.name
+                    }
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = { onSelectParty(party) },
+                        shape = CircleShape,
+                        leadingIcon = {
+                            Icon(
+                                imageVector = chipIcon,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        },
+                        label = { Text(chipLabel, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        modifier = Modifier.testTag(
+                            "name_suggestion_${party.name.lowercase(Locale.ROOT).replace(Regex("[^a-z0-9]+"), "_")}"
+                        )
+                    )
+                }
+            }
+        }
+
+        if (trimmedQuery.isNotBlank()) {
+            val isHousehold = matched?.role == PartyRole.HOUSEHOLD ||
+                AutoAccountingEngine.isHouseholdParty(trimmedQuery, learnedHouseholdNames)
+            val (bannerBg, bannerBorder, bannerInk, bannerIcon, bannerText) = when {
+                isHousehold -> {
+                    val c = bucketVisualColors(tz.mengidata.app.data.accounting.AutoBucket.HOUSEHOLD_BILL)
+                    Tuple5(
+                        c.softBg,
+                        c.border,
+                        c.ink,
+                        Icons.Rounded.Home,
+                        tr(
+                            language,
+                            "Jina limetambuliwa: $trimmedQuery — Bili ya Nyumbani (litahifadhiwa kama Bili ya Nyumbani).",
+                            "Name recognized: $trimmedQuery — Household Bill (will be saved under Household Bills)."
+                        )
+                    )
+                }
+                matched != null -> {
+                    val modules = matched.modulesLabel(language)
+                    val suffix = if (modules.isNotBlank()) " · $modules" else ""
+                    Tuple5(
+                        colors.incomeSoft,
+                        colors.income,
+                        colors.income,
+                        Icons.Rounded.CheckCircle,
+                        tr(
+                            language,
+                            "Jina limetambuliwa: ${matched.name} (${matched.role.label(language)}$suffix)",
+                            "Recognized contact: ${matched.name} (${matched.role.label(language)}$suffix)"
+                        )
+                    )
+                }
+                else -> {
+                    Tuple5(
+                        MaterialTheme.colorScheme.primaryContainer,
+                        MaterialTheme.colorScheme.primary,
+                        MaterialTheme.colorScheme.onPrimaryContainer,
+                        Icons.Rounded.AutoAwesome,
+                        tr(
+                            language,
+                            "Jina jipya \"$trimmedQuery\" — litatambuliwa na kuhifadhiwa kiotomatiki kwenye mfumo mzima.",
+                            "New name \"$trimmedQuery\" — will be saved and recognized automatically across the app."
+                        )
+                    )
+                }
+            }
+
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = bannerBg,
+                border = BorderStroke(0.85.dp, bannerBorder),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("name_recognition_banner")
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = bannerIcon,
+                        contentDescription = null,
+                        tint = bannerInk,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = bannerText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = bannerInk,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+        }
+    }
+}
+
+private data class Tuple5<A, B, C, D, E>(
+    val a: A,
+    val b: B,
+    val c: C,
+    val d: D,
+    val e: E
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PartyDirectorySheet(
@@ -367,15 +534,18 @@ fun PartyDirectorySheet(
         val q = query.trim().lowercase(Locale.ROOT)
         parties.filter { p ->
             val roleOk = when (filter) {
+                "household" -> p.role == PartyRole.HOUSEHOLD || p.role == PartyRole.OWNER_BILLS
                 "customers" -> p.role == PartyRole.CUSTOMER || p.role == PartyRole.BOTH
                 "vendors" -> p.role == PartyRole.VENDOR || p.role == PartyRole.BOTH
+                "savings" -> p.role == PartyRole.SAVINGS || p.savingsCount > 0
                 "owing" -> p.unpaidReceivables > 0.005
                 else -> true
             }
             val searchOk = q.isEmpty() ||
                 p.name.lowercase(Locale.ROOT).contains(q) ||
                 p.phone.lowercase(Locale.ROOT).contains(q) ||
-                p.email.lowercase(Locale.ROOT).contains(q)
+                p.email.lowercase(Locale.ROOT).contains(q) ||
+                p.modulesLabel(language).lowercase(Locale.ROOT).contains(q)
             roleOk && searchOk
         }
     }
@@ -402,14 +572,14 @@ fun PartyDirectorySheet(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = tr(language, "Wateja & Wadau (CRM)", "Customers & Vendors"),
+                        text = tr(language, "Daftari la Majina na Wateja", "Names & Contacts Directory"),
                         style = MaterialTheme.typography.headlineMedium
                     )
                     Text(
                         text = tr(
                             language,
-                            "${parties.size} wadau · Madai: ${FormatUtils.formatCompactMoney(totalOwed, currency)}",
-                            "${parties.size} contacts · Receivables: ${FormatUtils.formatCompactMoney(totalOwed, currency)}"
+                            "Majina ${parties.size} (Miamala, Bili, Akiba, Ankara) · Madai: ${FormatUtils.formatCompactMoney(totalOwed, currency)}",
+                            "${parties.size} names (Transactions, Bills, Savings, Invoices) · Receivables: ${FormatUtils.formatCompactMoney(totalOwed, currency)}"
                         ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -430,11 +600,18 @@ fun PartyDirectorySheet(
                     .testTag("crm_search_input")
             )
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 listOf(
                     "all" to tr(language, "Wote", "All"),
+                    "household" to tr(language, "Nyumbani na Bili", "Household & Bills"),
                     "customers" to tr(language, "Wateja", "Customers"),
                     "vendors" to tr(language, "Wadau", "Vendors"),
+                    "savings" to tr(language, "Akiba", "Savings"),
                     "owing" to tr(language, "Wenye Madai", "Owing")
                 ).forEach { (key, label) ->
                     FilterChip(
@@ -449,11 +626,11 @@ fun PartyDirectorySheet(
             if (filtered.isEmpty()) {
                 EmptyStateCard(
                     icon = Icons.Rounded.Groups,
-                    title = tr(language, "Hakuna mteja au mdau", "No contacts found"),
+                    title = tr(language, "Hakuna jina lililopatikana", "No names found"),
                     subtitle = tr(
                         language,
-                        "Rekodi miamala, ankara, au bili na majina ya wateja ili waonekane hapa kiotomatiki.",
-                        "Contacts automatically populate from your transactions, invoices, and bills."
+                        "Andika jina lolote kwenye Miamala, Bili, Akiba au Ankara ili litambuliwe hapa kiotomatiki.",
+                        "Enter any name in Transactions, Bills, Savings, or Invoices to recognize it here automatically."
                     )
                 )
             } else {
@@ -469,22 +646,30 @@ fun PartyDirectorySheet(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
+                                val badgeBg = when {
+                                    party.role == PartyRole.HOUSEHOLD -> colors.incomeSoft
+                                    party.role == PartyRole.SAVINGS -> colors.savingsSoft
+                                    party.unpaidReceivables > 0.0 -> colors.warningSoft
+                                    else -> MaterialTheme.colorScheme.primaryContainer
+                                }
+                                val badgeFg = when {
+                                    party.role == PartyRole.HOUSEHOLD -> colors.income
+                                    party.role == PartyRole.SAVINGS -> colors.savings
+                                    party.unpaidReceivables > 0.0 -> colors.warning
+                                    else -> MaterialTheme.colorScheme.primary
+                                }
                                 Box(
                                     modifier = Modifier
                                         .size(42.dp)
                                         .clip(RoundedCornerShape(14.dp))
-                                        .background(
-                                            if (party.unpaidReceivables > 0.0) colors.warningSoft
-                                            else MaterialTheme.colorScheme.primaryContainer
-                                        ),
+                                        .background(badgeBg),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
                                         text = party.name.take(2).uppercase(Locale.ROOT),
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.Bold,
-                                        color = if (party.unpaidReceivables > 0.0) colors.warning
-                                        else MaterialTheme.colorScheme.primary
+                                        color = badgeFg
                                     )
                                 }
                                 Column(modifier = Modifier.weight(1f)) {
@@ -510,6 +695,16 @@ fun PartyDirectorySheet(
                                                 contentColor = colors.warning
                                             )
                                         }
+                                    }
+                                    val modulesText = party.modulesLabel(language)
+                                    if (modulesText.isNotBlank()) {
+                                        Text(
+                                            text = modulesText,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
                                     }
                                 }
                                 if (party.phone.isNotBlank()) {
@@ -566,11 +761,20 @@ fun PartyDirectorySheet(
                                     color = colors.expense,
                                     fontWeight = FontWeight.Medium
                                 )
-                                Text(
-                                    text = "${party.transactionCount + party.invoiceCount} ${tr(language, "rekodi", "recs")}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                if (party.savingsTotal > 0.005) {
+                                    Text(
+                                        text = "${tr(language, "Akiba", "Savings")}: ${FormatUtils.formatCompactMoney(party.savingsTotal, currency)}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = colors.savings,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                } else {
+                                    Text(
+                                        text = "${party.totalRecordCount} ${tr(language, "rekodi", "records")}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                         }
                     }

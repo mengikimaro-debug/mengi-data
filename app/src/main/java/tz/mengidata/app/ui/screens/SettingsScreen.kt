@@ -1,5 +1,6 @@
 package tz.mengidata.app.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,8 +28,11 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.RestoreFromTrash
 import androidx.compose.material.icons.rounded.Security
+import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.TableChart
@@ -60,9 +64,12 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import tz.mengidata.app.BuildConfig
 import tz.mengidata.app.data.db.BusinessSettingsEntity
+import tz.mengidata.app.data.db.DeletedRecordEntity
+import tz.mengidata.app.data.db.PhoneStorageStatus
 import tz.mengidata.app.i18n.AppLanguage
 import tz.mengidata.app.i18n.ThemeMode
 import tz.mengidata.app.i18n.tr
@@ -72,14 +79,18 @@ import tz.mengidata.app.ui.components.OneUiFieldShape
 import tz.mengidata.app.ui.components.OneUiScreenHeader
 import tz.mengidata.app.ui.components.OneUiSegmentedTabs
 import tz.mengidata.app.ui.components.PinSetupDialog
+import tz.mengidata.app.ui.components.RecoveryVaultSheet
 import tz.mengidata.app.ui.components.ReportColorLegendStrip
 import tz.mengidata.app.ui.components.StatusPill
+import tz.mengidata.app.ui.components.TypedConfirmDangerDialog
 import tz.mengidata.app.ui.components.oneUiTextFieldColors
 import tz.mengidata.app.ui.theme.ContrastAccessibility
 import tz.mengidata.app.ui.theme.LocalMengiColors
 import tz.mengidata.app.ui.theme.LocalMengiThemeState
 import tz.mengidata.app.updater.UpdateInfo
 import tz.mengidata.app.updater.UpdateUiState
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 
 @Composable
@@ -93,6 +104,8 @@ fun SettingsScreen(
     updateState: UpdateUiState,
     statsSummary: String,
     hasSafetySnapshot: Boolean,
+    deletedRecords: List<DeletedRecordEntity>,
+    phoneStorageStatus: PhoneStorageStatus,
     onSetThemeMode: (ThemeMode) -> Unit,
     onSetLanguage: (AppLanguage) -> Unit,
     onSetAutoUpdate: (Boolean) -> Unit,
@@ -113,7 +126,11 @@ fun SettingsScreen(
     onExportJson: () -> Unit,
     onImportJsonRequest: () -> Unit,
     onReconcileLedger: () -> Unit,
+    onSyncPhoneStorage: () -> Unit,
     onRestoreSafetySnapshot: () -> Unit,
+    onRestoreDeletedRecord: (String) -> Unit,
+    onDeleteTrashPermanently: (String) -> Unit,
+    onEmptyTrash: () -> Unit,
     onLoadDemoData: () -> Unit,
     onClearAllData: () -> Unit
 ) {
@@ -132,6 +149,7 @@ fun SettingsScreen(
     var invoiceNote by remember(settings) { mutableStateOf(settings.invoiceNote) }
 
     var showPinSetupDialog by remember { mutableStateOf(false) }
+    var showRecoveryVault by remember { mutableStateOf(false) }
     var showDemoConfirm by remember { mutableStateOf(false) }
     var showClearConfirm by remember { mutableStateOf(false) }
 
@@ -145,7 +163,7 @@ fun SettingsScreen(
         ) {
             item(key = "header") {
                 OneUiScreenHeader(
-                    eyebrow = tr(language, "Sanidi Mfumo & Updates", "System & Updates"),
+                    eyebrow = tr(language, "Sanidi Mfumo na Masasisho", "System & Updates"),
                     title = tr(language, "Mipangilio", "Settings")
                 )
             }
@@ -192,7 +210,7 @@ fun SettingsScreen(
                     )
 
                     Spacer(Modifier.height(14.dp))
-                    HorizontalDivider(color = colors.cardBorder.copy(alpha = 0.5f))
+                    HorizontalDivider(color = colors.cardBorder)
                     Spacer(Modifier.height(12.dp))
 
                     // Android 12+ Material You Dynamic Color toggle
@@ -203,7 +221,7 @@ fun SettingsScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
                             Text(
-                                text = tr(language, "Rangi za Mfumo (Dynamic Color)", "Material You Dynamic Color"),
+                                text = tr(language, "Rangi za Mandhari ya Simu", "Material You Dynamic Color"),
                                 style = MaterialTheme.typography.titleSmall
                             )
                             Text(
@@ -242,7 +260,7 @@ fun SettingsScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
                             Text(
-                                text = tr(language, "Utofauti wa Juu (High Contrast)", "High Contrast Mode"),
+                                text = tr(language, "Utofauti wa Juu wa Rangi", "High Contrast Mode"),
                                 style = MaterialTheme.typography.titleSmall
                             )
                             Text(
@@ -263,7 +281,7 @@ fun SettingsScreen(
                     }
 
                     Spacer(Modifier.height(14.dp))
-                    HorizontalDivider(color = colors.cardBorder.copy(alpha = 0.5f))
+                    HorizontalDivider(color = colors.cardBorder)
                     Spacer(Modifier.height(14.dp))
 
                     Text(tr(language, "Lugha ya Mfumo", "App Language"), style = MaterialTheme.typography.titleSmall)
@@ -285,11 +303,11 @@ fun SettingsScreen(
                         icon = Icons.Rounded.Lock,
                         iconBg = MaterialTheme.colorScheme.primaryContainer,
                         iconTint = MaterialTheme.colorScheme.primary,
-                        title = tr(language, "Usalama & Faragha", "Security & Privacy"),
-                        subtitle = tr(language, "Linda salio na funga app kwa PIN ya tarakimu 4.", "Hide balances in public and lock app with a 4-digit PIN."),
+                        title = tr(language, "Usalama na Faragha", "Security & Privacy"),
+                        subtitle = tr(language, "Linda salio na funga programu kwa namba ya siri ya tarakimu 4.", "Hide balances in public and lock app with a 4-digit PIN."),
                         badge = {
                             StatusPill(
-                                text = if (pinLockEnabled) tr(language, "PIN Imewashwa", "PIN Active")
+                                text = if (pinLockEnabled) tr(language, "Imelindwa", "PIN Active")
                                 else tr(language, "Wazi", "Unlocked"),
                                 containerColor = if (pinLockEnabled) colors.incomeSoft else colors.subtleSurface,
                                 contentColor = if (pinLockEnabled) colors.income else MaterialTheme.colorScheme.onSurfaceVariant
@@ -306,7 +324,7 @@ fun SettingsScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
                             Text(
-                                text = tr(language, "Ficha Salio (Privacy Mode)", "Hide Balances (Privacy Mode)"),
+                                text = tr(language, "Ficha Salio (Hali ya Faragha)", "Hide Balances (Privacy Mode)"),
                                 style = MaterialTheme.typography.titleSmall
                             )
                             Text(
@@ -327,7 +345,7 @@ fun SettingsScreen(
                     }
 
                     Spacer(Modifier.height(12.dp))
-                    HorizontalDivider(color = colors.cardBorder.copy(alpha = 0.5f))
+                    HorizontalDivider(color = colors.cardBorder)
                     Spacer(Modifier.height(12.dp))
 
                     Row(
@@ -337,13 +355,13 @@ fun SettingsScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
                             Text(
-                                text = tr(language, "Kufunga App kwa PIN", "4-Digit App PIN Lock"),
+                                text = tr(language, "Kufunga Programu kwa Namba ya Siri", "4-Digit App PIN Lock"),
                                 style = MaterialTheme.typography.titleSmall
                             )
                             Text(
                                 text = tr(
                                     language,
-                                    "Huhitaji PIN unapofungua Mengidata (usimbaji wa SHA-256).",
+                                    "Huhitaji namba ya siri unapofungua Mengidata (usimbaji wa SHA-256).",
                                     "Requires your 4-digit PIN to open Mengidata (salted SHA-256)."
                                 ),
                                 style = MaterialTheme.typography.bodySmall,
@@ -374,7 +392,11 @@ fun SettingsScreen(
                                 shape = CircleShape,
                                 modifier = Modifier.weight(1f).testTag("change_pin_btn")
                             ) {
-                                Text(tr(language, "Badili PIN", "Change PIN"), maxLines = 1)
+                                Text(
+                                    text = tr(language, "Badili Namba ya Siri", "Change PIN"),
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 2
+                                )
                             }
                             FilledTonalButton(
                                 onClick = onLockNow,
@@ -383,7 +405,11 @@ fun SettingsScreen(
                             ) {
                                 Icon(Icons.Rounded.Lock, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.size(6.dp))
-                                Text(tr(language, "Funga Sasa", "Lock Now"), maxLines = 1)
+                                Text(
+                                    text = tr(language, "Funga Sasa", "Lock Now"),
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 2
+                                )
                             }
                         }
                     }
@@ -397,7 +423,7 @@ fun SettingsScreen(
                         icon = Icons.Rounded.SystemUpdate,
                         iconBg = colors.savingsSoft,
                         iconTint = colors.savings,
-                        title = tr(language, "Mfumo wa Updates", "App Update System"),
+                        title = tr(language, "Mfumo wa Masasisho", "App Update System"),
                         subtitle = "${tr(language, "Toleo la sasa", "Installed")}: v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
                         badge = {
                             StatusPill(
@@ -412,7 +438,7 @@ fun SettingsScreen(
                     Text(
                         text = tr(
                             language,
-                            "Hukagua GitHub Releases, kuthibitisha cheti cha saini (SHA-256) cha APK, na kusakinisha salama kwenye Android 12+.",
+                            "Hukagua matoleo mapya kwenye GitHub, kuthibitisha cheti cha saini (SHA-256) cha APK, na kusakinisha salama kwenye Android 12+.",
                             "Checks GitHub Releases, verifies APK SHA-256 signing certificate against this install, and installs cleanly on Android 12+."
                         ),
                         style = MaterialTheme.typography.bodySmall,
@@ -427,11 +453,11 @@ fun SettingsScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = tr(language, "Kagua updates kiotomatiki", "Auto-check for updates"),
+                                text = tr(language, "Kagua masasisho kiotomatiki", "Auto-check for updates"),
                                 style = MaterialTheme.typography.titleSmall
                             )
                             Text(
-                                text = tr(language, "Kila baada ya saa 12 unapofungua app", "Every 12 hours on app launch"),
+                                text = tr(language, "Kila baada ya saa 12 unapofungua programu", "Every 12 hours on app launch"),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -498,7 +524,7 @@ fun SettingsScreen(
                                         Text(
                                             text = updateState.info.releaseNotes.take(400),
                                             style = MaterialTheme.typography.bodySmall,
-                                            color = colors.limeInk.copy(alpha = 0.9f)
+                                            color = colors.limeInk
                                         )
                                     }
                                     Button(
@@ -508,7 +534,7 @@ fun SettingsScreen(
                                     ) {
                                         Icon(Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(18.dp))
                                         Spacer(Modifier.size(6.dp))
-                                        Text(tr(language, "Pakua, Thibitisha & Sakinisha", "Download, Verify & Install"))
+                                        Text(tr(language, "Pakua, Thibitisha na Sakinisha", "Download, Verify & Install"))
                                     }
                                 }
                             }
@@ -527,7 +553,7 @@ fun SettingsScreen(
                                     Text(
                                         text = tr(
                                             language,
-                                            "Ruhusu 'Install unknown apps' kwa Mengidata ili kuendelea na usakinishaji wa v${updateState.info.version}.",
+                                            "Ruhusu usakinishaji wa programu kwa Mengidata ili kuendelea na usakinishaji wa v${updateState.info.version}.",
                                             "Allow 'Install unknown apps' for Mengidata to install v${updateState.info.version}."
                                         ),
                                         style = MaterialTheme.typography.bodySmall,
@@ -647,7 +673,7 @@ fun SettingsScreen(
                         ) {
                             Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.size(6.dp))
-                            Text(tr(language, "Kagua Update", "Check Now"), maxLines = 1)
+                            Text(tr(language, "Kagua Sasisho", "Check Now"), maxLines = 1)
                         }
                         OutlinedButton(
                             onClick = onOpenReleasesBrowser,
@@ -706,7 +732,7 @@ fun SettingsScreen(
                         OutlinedTextField(
                             value = tagline,
                             onValueChange = { tagline = it },
-                            label = { Text(tr(language, "Maelezo mafupi (Tagline)", "Tagline")) },
+                            label = { Text(tr(language, "Maelezo Mafupi ya Biashara", "Tagline")) },
                             singleLine = true,
                             shape = OneUiFieldShape,
                             colors = oneUiTextFieldColors(),
@@ -745,7 +771,7 @@ fun SettingsScreen(
                             OutlinedTextField(
                                 value = invoicePrefix,
                                 onValueChange = { invoicePrefix = it.take(6).uppercase() },
-                                label = { Text(tr(language, "Prefix ya Ankara", "Invoice Prefix")) },
+                                label = { Text(tr(language, "Kiambishi cha Ankara", "Invoice Prefix")) },
                                 singleLine = true,
                                 shape = OneUiFieldShape,
                                 colors = oneUiTextFieldColors(),
@@ -807,7 +833,152 @@ fun SettingsScreen(
                 }
             }
 
-            // 4. Reports & Zero-Loss Backups
+            // 4A. In-App SQLite Database & Phone Storage Protection Card
+            item(key = "database_phone_storage_card") {
+                val lastSyncedLabel = remember(phoneStorageStatus.lastSyncedMillis, language) {
+                    if (phoneStorageStatus.lastSyncedMillis > 0L) {
+                        val fmt = SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault())
+                        fmt.format(Date(phoneStorageStatus.lastSyncedMillis))
+                    } else {
+                        tr(language, "Haijasawazishwa bado", "Not synced yet")
+                    }
+                }
+                MengiCard {
+                    OneUiSettingsSectionHeader(
+                        icon = Icons.Rounded.PhoneAndroid,
+                        iconBg = colors.incomeSoft,
+                        iconTint = colors.income,
+                        title = tr(language, "Hifadhidata ya Ndani na Hifadhi ya Simu", "In-App Database & Phone Storage"),
+                        subtitle = tr(
+                            language,
+                            "SQLite ya ndani (WAL) + nakala salama kwenye hifadhi ya simu.",
+                            "Local SQLite Room (WAL) + automatic phone storage mirror."
+                        ),
+                        badge = {
+                            StatusPill(
+                                text = tr(language, "Imelindwa", "Protected"),
+                                containerColor = colors.incomeSoft,
+                                contentColor = colors.income
+                            )
+                        }
+                    )
+                    Spacer(Modifier.height(12.dp))
+
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = colors.subtleSurface,
+                        border = BorderStroke(1.dp, colors.cardBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Shield,
+                                    contentDescription = null,
+                                    tint = colors.income,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Text(
+                                    text = tr(
+                                        language,
+                                        "Ulinzi wa Data Kutofutika kwa Bahati Mbaya",
+                                        "Accidental Deletion & Storage Protection"
+                                    ),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Text(
+                                text = tr(
+                                    language,
+                                    "Kila badiliko huhifadhiwa kwenye hifadhidata ya ndani ya programu na kunakiliwa kwenye folda ya simu: ${phoneStorageStatus.phoneBackupPathLabel}",
+                                    "Every change is saved to the in-app database and mirrored to phone storage: ${phoneStorageStatus.phoneBackupPathLabel}"
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "${tr(language, "Nakala ya mwisho", "Last phone sync")}: $lastSyncedLabel · ${tr(language, "Kikapu cha urejeshaji", "Recovery vault")}: ${deletedRecords.size}",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = onSyncPhoneStorage,
+                            shape = CircleShape,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .testTag("sync_phone_storage_btn")
+                        ) {
+                            Icon(Icons.Rounded.PhoneAndroid, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.size(8.dp))
+                            Text(
+                                text = tr(
+                                    language,
+                                    "Hifadhi kwenye Simu Sasa",
+                                    "Sync Database to Phone Storage"
+                                ),
+                                maxLines = 1
+                            )
+                        }
+
+                        FilledTonalButton(
+                            onClick = { showRecoveryVault = true },
+                            shape = CircleShape,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .testTag("open_recovery_vault_btn")
+                        ) {
+                            Icon(Icons.Rounded.RestoreFromTrash, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.size(8.dp))
+                            Text(
+                                text = tr(
+                                    language,
+                                    "Kikapu cha Urejeshaji (${deletedRecords.size})",
+                                    "Recovery Vault (${deletedRecords.size})"
+                                ),
+                                maxLines = 1
+                            )
+                        }
+
+                        if (hasSafetySnapshot || phoneStorageStatus.hasAnyBackup) {
+                            OutlinedButton(
+                                onClick = onRestoreSafetySnapshot,
+                                shape = CircleShape,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(46.dp)
+                                    .testTag("restore_phone_storage_btn")
+                            ) {
+                                Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.size(8.dp))
+                                Text(
+                                    text = tr(
+                                        language,
+                                        "Rejesha kutoka Hifadhi ya Simu",
+                                        "Restore from Phone Storage"
+                                    ),
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 4B. Reports & Zero-Loss Backups
             item(key = "backup_card") {
                 MengiCard {
                     OneUiSettingsSectionHeader(
@@ -834,19 +1005,20 @@ fun SettingsScreen(
                             Icon(Icons.Rounded.TableChart, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.size(8.dp))
                             Text(
-                                tr(
+                                text = tr(
                                     language,
-                                    "Pakua Ripoti yenye Rangi (.xls — Tab 4)",
-                                    "Export Color-Coded Excel (.xls — 4 Tabs)"
+                                    "Pakua Ripoti ya Excel (.xls — Kurasa 5)",
+                                    "Export Excel Report (.xls — 5 Tabs)"
                                 ),
-                                maxLines = 1
+                                textAlign = TextAlign.Center,
+                                maxLines = 2
                             )
                         }
 
                         Text(
                             text = tr(
                                 language,
-                                "CSV Zilizotenganishwa (Miamala, Bili & Akiba Kila Kimoja Peke Yake):",
+                                "Faili za CSV Zilizotenganishwa (Miamala, Bili na Akiba Kila Kimoja Peke Yake):",
                                 "Separated CSV Exports (Transactions, Bills & Savings Separate):"
                             ),
                             style = MaterialTheme.typography.labelMedium,
@@ -864,7 +1036,11 @@ fun SettingsScreen(
                                     .weight(1f)
                                     .testTag("export_txns_only_csv_btn")
                             ) {
-                                Text(tr(language, "Miamala (.csv)", "Txns (.csv)"), maxLines = 1)
+                                Text(
+                                    text = tr(language, "Miamala (.csv)", "Transactions (.csv)"),
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 2
+                                )
                             }
                             FilledTonalButton(
                                 onClick = onExportBillsCsv,
@@ -873,7 +1049,11 @@ fun SettingsScreen(
                                     .weight(1f)
                                     .testTag("export_bills_only_csv_btn")
                             ) {
-                                Text(tr(language, "Bili Pekee (.csv)", "Bills (.csv)"), maxLines = 1)
+                                Text(
+                                    text = tr(language, "Bili (.csv)", "Bills (.csv)"),
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 2
+                                )
                             }
                         }
 
@@ -888,7 +1068,11 @@ fun SettingsScreen(
                                     .weight(1f)
                                     .testTag("export_savings_only_csv_btn")
                             ) {
-                                Text(tr(language, "Akiba (.csv)", "Savings (.csv)"), maxLines = 1)
+                                Text(
+                                    text = tr(language, "Akiba (.csv)", "Savings (.csv)"),
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 2
+                                )
                             }
                             OutlinedButton(
                                 onClick = onExportMasterCsv,
@@ -897,11 +1081,15 @@ fun SettingsScreen(
                                     .weight(1f)
                                     .testTag("export_master_csv_btn")
                             ) {
-                                Text(tr(language, "CSV Kamili", "Master CSV"), maxLines = 1)
+                                Text(
+                                    text = tr(language, "CSV Kamili", "Full CSV"),
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 2
+                                )
                             }
                         }
 
-                        HorizontalDivider(color = colors.cardBorder.copy(alpha = 0.5f), modifier = Modifier.padding(vertical = 4.dp))
+                        HorizontalDivider(color = colors.cardBorder, modifier = Modifier.padding(vertical = 4.dp))
 
                         FilledTonalButton(
                             onClick = onReconcileLedger,
@@ -912,7 +1100,7 @@ fun SettingsScreen(
                         ) {
                             Icon(Icons.Rounded.VerifiedUser, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.size(8.dp))
-                            Text(tr(language, "Kagua & Sawazisha Hesabu (0% Upotevu)", "Verify & Reconcile Zero-Loss Ledger"))
+                            Text(tr(language, "Kagua na Sawazisha Hesabu (0% Upotevu)", "Verify & Reconcile Zero-Loss Ledger"))
                         }
 
                         if (hasSafetySnapshot) {
@@ -925,7 +1113,7 @@ fun SettingsScreen(
                             ) {
                                 Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.size(8.dp))
-                                Text(tr(language, "Rejesha Auto-Snapshot ya Usalama", "Restore Local Auto-Snapshot"))
+                                Text(tr(language, "Rejesha Hifadhi ya Usalama", "Restore Local Auto-Snapshot"))
                             }
                         }
 
@@ -942,7 +1130,11 @@ fun SettingsScreen(
                             ) {
                                 Icon(Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.size(4.dp))
-                                Text(tr(language, "Backup .json", "Backup .json"), maxLines = 1)
+                                Text(
+                                    text = tr(language, "Nakala (.json)", "Backup (.json)"),
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 2
+                                )
                             }
                             OutlinedButton(
                                 onClick = onImportJsonRequest,
@@ -953,13 +1145,17 @@ fun SettingsScreen(
                             ) {
                                 Icon(Icons.Rounded.Upload, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.size(4.dp))
-                                Text(tr(language, "Rejesha .json", "Restore .json"), maxLines = 1)
+                                Text(
+                                    text = tr(language, "Rejesha (.json)", "Restore (.json)"),
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 2
+                                )
                             }
                         }
                     }
 
                     Spacer(Modifier.height(14.dp))
-                    HorizontalDivider(color = colors.cardBorder.copy(alpha = 0.5f))
+                    HorizontalDivider(color = colors.cardBorder)
                     Spacer(Modifier.height(14.dp))
 
                     Row(
@@ -973,7 +1169,11 @@ fun SettingsScreen(
                         ) {
                             Icon(Icons.Rounded.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.size(6.dp))
-                            Text(tr(language, "Data ya Mfano", "Sample Data"), maxLines = 1)
+                            Text(
+                                text = tr(language, "Data ya Mfano", "Sample Data"),
+                                textAlign = TextAlign.Center,
+                                maxLines = 2
+                            )
                         }
                         Button(
                             onClick = { showClearConfirm = true },
@@ -986,7 +1186,11 @@ fun SettingsScreen(
                         ) {
                             Icon(Icons.Rounded.DeleteForever, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.size(6.dp))
-                            Text(tr(language, "Futa Data", "Clear Data"), maxLines = 1)
+                            Text(
+                                text = tr(language, "Futa Data", "Clear Data"),
+                                textAlign = TextAlign.Center,
+                                maxLines = 2
+                            )
                         }
                     }
                 }
@@ -1017,14 +1221,34 @@ fun SettingsScreen(
         )
     }
 
+    if (showRecoveryVault) {
+        RecoveryVaultSheet(
+            deletedRecords = deletedRecords,
+            currency = settings.currency.ifBlank { "TZS" },
+            language = language,
+            onRestore = onRestoreDeletedRecord,
+            onDeletePermanently = onDeleteTrashPermanently,
+            onEmptyVault = onEmptyTrash,
+            onDismiss = { showRecoveryVault = false }
+        )
+    }
+
     if (showClearConfirm) {
-        ConfirmActionDialog(
+        TypedConfirmDangerDialog(
             title = tr(language, "Futa data zote?", "Clear all financial data?"),
-            message = tr(language, "Miamala, ankara, bili na akiba vitafutwa kabisa. Pakua backup (.json) kwanza.", "All transactions, invoices, bills, and savings will be permanently cleared."),
+            message = tr(
+                language,
+                "Miamala, ankara, bili na akiba zote za sasa zitaondolewa. Nakala ya dharura itahifadhiwa kwenye hifadhi ya simu kabla ya kufuta.",
+                "All current transactions, invoices, bills, and savings will be cleared. An emergency backup will be saved to phone storage first."
+            ),
+            requiredKeyword = tr(language, "FUTA", "DELETE"),
             confirmLabel = tr(language, "Futa Yote", "Clear All"),
             cancelLabel = tr(language, "Ghairi", "Cancel"),
-            isDanger = true,
-            onConfirm = { onClearAllData(); showClearConfirm = false },
+            language = language,
+            onConfirm = {
+                onClearAllData()
+                showClearConfirm = false
+            },
             onDismiss = { showClearConfirm = false }
         )
     }

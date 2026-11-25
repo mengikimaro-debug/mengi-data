@@ -1,6 +1,7 @@
 package tz.mengidata.app.ui.components
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -43,16 +45,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import tz.mengidata.app.BuildConfig
+import tz.mengidata.app.R
 import tz.mengidata.app.data.accounting.ZeroLossLedgerSummary
 import tz.mengidata.app.data.db.BusinessSettingsEntity
 import tz.mengidata.app.i18n.AppLanguage
@@ -120,11 +123,11 @@ fun MengiSidebarSheet(
                 .padding(horizontal = 14.dp, vertical = 14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Samsung One UI 8.5 Galaxy Frost Header Squircle
+            // Solid Deep Cobalt Header Card (No Transparency)
             Surface(
                 shape = RoundedCornerShape(28.dp),
                 color = colors.heroStart,
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)),
+                border = BorderStroke(1.dp, Color(0xFF284F96)),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Box(
@@ -135,26 +138,6 @@ fun MengiSidebarSheet(
                                 colors = listOf(colors.heroStart, colors.heroMid, colors.heroEnd)
                             )
                         )
-                        .drawBehind {
-                            drawCircle(
-                                brush = Brush.radialGradient(
-                                    colors = listOf(colors.heroAccentGlow.copy(alpha = 0.28f), Color.Transparent),
-                                    center = Offset(size.width * 0.88f, size.height * 0.14f),
-                                    radius = size.width * 0.65f
-                                ),
-                                center = Offset(size.width * 0.88f, size.height * 0.14f),
-                                radius = size.width * 0.65f
-                            )
-                            drawCircle(
-                                brush = Brush.radialGradient(
-                                    colors = listOf(colors.heroGoldGlow.copy(alpha = 0.16f), Color.Transparent),
-                                    center = Offset(size.width * 0.12f, size.height * 0.92f),
-                                    radius = size.width * 0.5f
-                                ),
-                                center = Offset(size.width * 0.12f, size.height * 0.92f),
-                                radius = size.width * 0.5f
-                            )
-                        }
                         .padding(18.dp)
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -163,26 +146,45 @@ fun MengiSidebarSheet(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.Top
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = settings.businessName.ifBlank { "Mengidata" },
-                                    style = MaterialTheme.typography.headlineSmall,
-                                    color = Color.White,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                val subtitle = settings.tagline.ifBlank {
-                                    settings.ownerName.ifBlank {
-                                        tr(language, "Mfumo wa Fedha za Biashara", "Business Finance Suite")
-                                    }
+                            Row(
+                                modifier = Modifier.weight(1f),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = Color(0xFF005CBF),
+                                    border = BorderStroke(1.5.dp, Color(0xFF5CC8FF)),
+                                    modifier = Modifier.size(44.dp)
+                                ) {
+                                    Image(
+                                        painter = painterResource(id = R.drawable.mengidata_oneui_icon_1795525888393),
+                                        contentDescription = "Mengidata",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
                                 }
-                                Text(
-                                    text = subtitle,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = Color.White.copy(alpha = 0.78f),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = settings.businessName.ifBlank { "Mengidata" },
+                                        style = MaterialTheme.typography.titleLarge,
+                                        color = Color.White,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    val subtitle = settings.tagline.ifBlank {
+                                        settings.ownerName.ifBlank {
+                                            tr(language, "Mfumo wa Fedha za Biashara", "Business Finance Suite")
+                                        }
+                                    }
+                                    Text(
+                                        text = subtitle,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Color(0xFFDCEBFF),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
                             }
                             Row(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -194,7 +196,7 @@ fun MengiSidebarSheet(
                                         themeState.onSetThemeMode(next)
                                     },
                                     shape = CircleShape,
-                                    color = Color.White.copy(alpha = 0.14f),
+                                    color = Color(0xFF1A438A),
                                     modifier = Modifier
                                         .size(40.dp)
                                         .testTag("sidebar_theme_toggle_btn")
@@ -215,7 +217,7 @@ fun MengiSidebarSheet(
                                 Surface(
                                     onClick = onCloseDrawer,
                                     shape = CircleShape,
-                                    color = Color.White.copy(alpha = 0.14f),
+                                    color = Color(0xFF2D3846),
                                     modifier = Modifier
                                         .size(40.dp)
                                         .testTag("close_sidebar_btn")
@@ -224,7 +226,7 @@ fun MengiSidebarSheet(
                                         Icon(
                                             imageVector = Icons.Rounded.Close,
                                             contentDescription = tr(language, "Funga menyu", "Close menu"),
-                                            tint = Color.White,
+                                            tint = Color(0xFFE6EAF0),
                                             modifier = Modifier.size(18.dp)
                                         )
                                     }
@@ -232,10 +234,10 @@ fun MengiSidebarSheet(
                             }
                         }
 
-                        // Frosted Glass Balance Pill
+                        // Calm Matte Slate Balance Pill
                         Surface(
-                            color = Color.White.copy(alpha = 0.13f),
-                            border = BorderStroke(0.75.dp, Color.White.copy(alpha = 0.16f)),
+                            color = Color(0xFF26303B),
+                            border = BorderStroke(1.dp, Color(0xFF394654)),
                             shape = RoundedCornerShape(20.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
@@ -254,19 +256,19 @@ fun MengiSidebarSheet(
                                         text = if (privacyMaskEnabled) "••••••" else FormatUtils.formatMoney(zeroLossLedger.verifiedCashBalance, currency),
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.Bold,
-                                        color = Color.White,
+                                        color = Color(0xFFEFF2F6),
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
                                 }
                                 Surface(
-                                    color = Color.White.copy(alpha = 0.18f),
+                                    color = Color(0xFF364454),
                                     shape = CircleShape
                                 ) {
                                     Text(
                                         text = "v${BuildConfig.VERSION_NAME}",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = Color.White,
+                                        color = Color(0xFFE6EAF0),
                                         modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
                                     )
                                 }
@@ -280,7 +282,7 @@ fun MengiSidebarSheet(
                 selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
                 selectedIconColor = MaterialTheme.colorScheme.primary,
                 selectedTextColor = MaterialTheme.colorScheme.primary,
-                unselectedContainerColor = Color.Transparent,
+                unselectedContainerColor = MaterialTheme.colorScheme.surface,
                 unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
                 unselectedTextColor = MaterialTheme.colorScheme.onSurface
             )
@@ -349,7 +351,7 @@ fun MengiSidebarSheet(
                 NavigationDrawerItem(
                     label = {
                         Text(
-                            text = tr(language, "Wateja & Wadau", "Customers & Vendors"),
+                            text = tr(language, "Daftari la Majina", "Names & Contacts"),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Medium
                         )
@@ -359,7 +361,7 @@ fun MengiSidebarSheet(
                     icon = {
                         Icon(
                             imageVector = Icons.Rounded.Groups,
-                            contentDescription = tr(language, "Wateja & Wadau", "Customers & Vendors")
+                            contentDescription = tr(language, "Daftari la Majina", "Names & Contacts")
                         )
                     },
                     badge = if (partyCount > 0) {
@@ -424,7 +426,7 @@ fun MengiSidebarSheet(
             Surface(
                 color = MaterialTheme.colorScheme.surface,
                 shape = CircleShape,
-                border = BorderStroke(0.75.dp, if (colors.isDark) Color.White.copy(alpha = 0.06f) else colors.cardBorder.copy(alpha = 0.5f)),
+                border = BorderStroke(1.dp, colors.cardBorder),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -441,7 +443,7 @@ fun MengiSidebarSheet(
                     Text(
                         text = tr(
                             language,
-                            "Hesabu salama · Offline 100%",
+                            "Hesabu salama · Bila Intaneti 100%",
                             "Zero-Loss Ledger · 100% Offline"
                         ),
                         style = MaterialTheme.typography.bodySmall,

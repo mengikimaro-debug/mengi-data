@@ -3,6 +3,7 @@ package tz.mengidata.app.data.accounting
 import tz.mengidata.app.data.db.BillEntity
 import tz.mengidata.app.data.db.InvoiceWithItems
 import tz.mengidata.app.data.db.SavingsGoalEntity
+import tz.mengidata.app.data.db.SavingsLogEntity
 import tz.mengidata.app.data.db.TransactionEntity
 import tz.mengidata.app.i18n.AppLanguage
 import tz.mengidata.app.i18n.FormatUtils
@@ -61,14 +62,20 @@ data class BusinessHealthReport(
 )
 
 enum class PartyRole {
+    HOUSEHOLD,
+    OWNER_BILLS,
+    SAVINGS,
     CUSTOMER,
     VENDOR,
     BOTH;
 
     fun label(language: AppLanguage): String = when (this) {
+        HOUSEHOLD -> tr(language, "Bili ya Nyumbani", "Household Bill")
+        OWNER_BILLS -> tr(language, "Bili Zangu", "My Bills")
+        SAVINGS -> tr(language, "Akiba", "Savings")
         CUSTOMER -> tr(language, "Mteja", "Customer")
         VENDOR -> tr(language, "Msambazaji", "Vendor")
-        BOTH -> tr(language, "Mteja & Mdau", "Customer & Vendor")
+        BOTH -> tr(language, "Mteja na Mdau", "Customer & Vendor")
     }
 }
 
@@ -80,13 +87,31 @@ data class PartySummary(
     val address: String = "",
     val totalReceived: Double = 0.0,
     val totalPaidOut: Double = 0.0,
+    val savingsTotal: Double = 0.0,
     val unpaidReceivables: Double = 0.0,
     val unpaidBills: Double = 0.0,
     val invoiceCount: Int = 0,
+    val billCount: Int = 0,
+    val savingsCount: Int = 0,
     val transactionCount: Int = 0,
+    val modules: Set<String> = emptySet(),
     val lastActivityDate: String = ""
 ) {
     val netFlow: Double get() = totalReceived - totalPaidOut
+    val totalRecordCount: Int get() = transactionCount + invoiceCount + billCount + savingsCount
+
+    fun modulesLabel(language: AppLanguage): String {
+        val ordered = listOf("transaction", "bill", "savings", "invoice").filter { it in modules }
+        return ordered.joinToString(" · ") { mod ->
+            when (mod) {
+                "transaction" -> tr(language, "Miamala", "Transactions")
+                "bill" -> tr(language, "Bili", "Bills")
+                "savings" -> tr(language, "Akiba", "Savings")
+                "invoice" -> tr(language, "Ankara", "Invoices")
+                else -> mod
+            }
+        }
+    }
 }
 
 object BusinessHealthEngine {
@@ -103,7 +128,8 @@ object BusinessHealthEngine {
         val currentMonthKey = FormatUtils.monthKey(todayIso)
         val prevMonthKey = FormatUtils.monthKey(FormatUtils.addMonthsIso(todayIso, -1))
 
-        val operationalTxns = transactions.filter { it.source != "savings" }
+        // Personal expenses, Household Bills, and Savings deposits are ALL deducted normally from system cashflow
+        val operationalTxns = transactions
         val totalIncome = operationalTxns.filter { it.isIncome }.sumOf { it.amount }
         val totalExpense = operationalTxns.filter { !it.isIncome }.sumOf { it.amount }
         val netCash = totalIncome - totalExpense
@@ -228,10 +254,12 @@ object BusinessHealthEngine {
 
         if (overBudgetCategories.isNotEmpty()) {
             val topOver = overBudgetCategories.first()
+            val catSw = FormatUtils.localizedCategory(topOver.categoryName, AppLanguage.SW)
+            val catEn = FormatUtils.localizedCategory(topOver.categoryName, AppLanguage.EN)
             insights += BusinessInsight(
                 id = "budget_overage",
-                titleSw = "Bajeti ya \"${topOver.categoryName}\" imevuka",
-                titleEn = "\"${topOver.categoryName}\" exceeded budget",
+                titleSw = "Bajeti ya \"$catSw\" imevuka",
+                titleEn = "\"$catEn\" exceeded budget",
                 detailSw = "Matumizi ${FormatUtils.formatCompactMoney(topOver.totalAmount, currency)} dhidi ya bajeti ${FormatUtils.formatCompactMoney(topOver.monthlyBudget, currency)}.",
                 detailEn = "Spent ${FormatUtils.formatCompactMoney(topOver.totalAmount, currency)} vs ${FormatUtils.formatCompactMoney(topOver.monthlyBudget, currency)} budget.",
                 severity = InsightSeverity.WARNING
@@ -263,10 +291,12 @@ object BusinessHealthEngine {
 
         val topIncomeCat = categoryAnalytics.incomeBreakdown.firstOrNull()
         if (topIncomeCat != null && insights.size < 4) {
+            val catSw = FormatUtils.localizedCategory(topIncomeCat.categoryName, AppLanguage.SW)
+            val catEn = FormatUtils.localizedCategory(topIncomeCat.categoryName, AppLanguage.EN)
             insights += BusinessInsight(
                 id = "top_revenue_driver",
-                titleSw = "Chanzo kikuu: ${topIncomeCat.categoryName}",
-                titleEn = "Top revenue driver: ${topIncomeCat.categoryName}",
+                titleSw = "Chanzo kikuu: $catSw",
+                titleEn = "Top revenue driver: $catEn",
                 detailSw = "Kinachangia ${topIncomeCat.sharePercent}% (${FormatUtils.formatCompactMoney(topIncomeCat.totalAmount, currency)}) ya mapato.",
                 detailEn = "Generates ${topIncomeCat.sharePercent}% (${FormatUtils.formatCompactMoney(topIncomeCat.totalAmount, currency)}) of total income.",
                 severity = InsightSeverity.POSITIVE
@@ -296,21 +326,46 @@ object PartyDirectoryEngine {
         var phone: String = "",
         var email: String = "",
         var address: String = "",
+        var isHousehold: Boolean = false,
         var isCustomer: Boolean = false,
         var isVendor: Boolean = false,
+        var isSavings: Boolean = false,
         var totalReceived: Double = 0.0,
         var totalPaidOut: Double = 0.0,
+        var savingsTotal: Double = 0.0,
         var unpaidReceivables: Double = 0.0,
         var unpaidBills: Double = 0.0,
         var invoiceCount: Int = 0,
+        var billCount: Int = 0,
+        var savingsCount: Int = 0,
         var transactionCount: Int = 0,
+        val modules: MutableSet<String> = mutableSetOf(),
         var lastActivityDate: String = ""
     )
 
+    /**
+     * Extracts a recognized person/party name from a savings log note formatted as "Name · Note".
+     */
+    fun extractPartyFromSavingsNote(note: String): String {
+        val clean = note.trim()
+        if (clean.isEmpty()) return ""
+        val sepIndex = clean.indexOf("·")
+        if (sepIndex > 0) {
+            return clean.substring(0, sepIndex).trim()
+        }
+        return ""
+    }
+
+    /**
+     * Indexes EVERY name entered anywhere across Transactions, Bills, Savings, and Invoices
+     * so the entire app recognizes and remembers every person or entity automatically.
+     */
     fun buildDirectory(
         transactions: List<TransactionEntity>,
         invoices: List<InvoiceWithItems>,
-        bills: List<BillEntity>
+        bills: List<BillEntity>,
+        savingsGoals: List<SavingsGoalEntity> = emptyList(),
+        savingsLogs: List<SavingsLogEntity> = emptyList()
     ): List<PartySummary> {
         val map = LinkedHashMap<String, MutableParty>()
 
@@ -321,23 +376,39 @@ object PartyDirectoryEngine {
             return map.getOrPut(key) { MutableParty(displayName = clean) }
         }
 
-        transactions.filter { it.source != "savings" }.forEach { txn ->
+        // 1. Transactions (including manual, invoice, bill, household, and savings-linked entries)
+        val savingsLogIdsSeen = mutableSetOf<String>()
+        transactions.forEach { txn ->
             val p = getOrCreate(txn.party) ?: return@forEach
-            p.transactionCount++
-            if (txn.isIncome) {
-                p.isCustomer = true
-                p.totalReceived += txn.amount
+            if (AutoAccountingEngine.isHouseholdTransaction(txn)) {
+                p.isHousehold = true
+            }
+            if (txn.source == "savings") {
+                p.isSavings = true
+                p.savingsCount++
+                p.savingsTotal += txn.amount
+                p.modules += "savings"
+                txn.linkedId?.let { savingsLogIdsSeen += it }
             } else {
-                p.isVendor = true
-                p.totalPaidOut += txn.amount
+                p.transactionCount++
+                p.modules += "transaction"
+                if (txn.isIncome) {
+                    p.isCustomer = true
+                    p.totalReceived += txn.amount
+                } else {
+                    p.isVendor = true
+                    p.totalPaidOut += txn.amount
+                }
             }
             if (txn.date > p.lastActivityDate) p.lastActivityDate = txn.date
         }
 
+        // 2. Invoices (Customer names + contact details)
         invoices.forEach { inv ->
             val p = getOrCreate(inv.invoice.customerName) ?: return@forEach
             p.isCustomer = true
             p.invoiceCount++
+            p.modules += "invoice"
             if (p.phone.isBlank() && inv.invoice.customerPhone.isNotBlank()) p.phone = inv.invoice.customerPhone
             if (p.email.isBlank() && inv.invoice.customerEmail.isNotBlank()) p.email = inv.invoice.customerEmail
             if (p.address.isBlank() && inv.invoice.customerAddress.isNotBlank()) p.address = inv.invoice.customerAddress
@@ -347,19 +418,53 @@ object PartyDirectoryEngine {
             if (inv.invoice.issueDate > p.lastActivityDate) p.lastActivityDate = inv.invoice.issueDate
         }
 
+        // 3. Bills (Payee names)
         bills.forEach { bill ->
             val p = getOrCreate(bill.payee) ?: return@forEach
+            if (AutoAccountingEngine.isHouseholdBill(bill)) {
+                p.isHousehold = true
+            }
             p.isVendor = true
+            p.billCount++
+            p.modules += "bill"
             if (!bill.paid) {
                 p.unpaidBills += bill.amount
             }
             if (bill.dueDate > p.lastActivityDate) p.lastActivityDate = bill.dueDate
         }
 
+        // 4. Savings Goals & Logs (Contributor names and goal titles not already covered by linked txns)
+        val goalsById = savingsGoals.associateBy { it.id }
+        savingsLogs.forEach { log ->
+            if (log.id in savingsLogIdsSeen) return@forEach
+            val parsedParty = extractPartyFromSavingsNote(log.note)
+            val name = parsedParty.ifBlank { goalsById[log.savingsId]?.title.orEmpty() }
+            val p = getOrCreate(name) ?: return@forEach
+            p.isSavings = true
+            p.savingsCount++
+            p.savingsTotal += log.amount
+            p.modules += "savings"
+            if (log.date > p.lastActivityDate) p.lastActivityDate = log.date
+        }
+
+        savingsGoals.forEach { goal ->
+            val key = goal.title.trim().lowercase(Locale.ROOT)
+            if (key.isNotBlank() && key !in map) {
+                val p = getOrCreate(goal.title) ?: return@forEach
+                p.isSavings = true
+                p.savingsTotal += goal.currentAmount
+                p.modules += "savings"
+                if (goal.updatedAt > p.lastActivityDate) p.lastActivityDate = goal.updatedAt
+            }
+        }
+
         return map.values.map { p ->
             val role = when {
+                p.isHousehold -> PartyRole.HOUSEHOLD
                 p.isCustomer && p.isVendor -> PartyRole.BOTH
                 p.isCustomer -> PartyRole.CUSTOMER
+                p.isVendor -> PartyRole.VENDOR
+                p.isSavings -> PartyRole.SAVINGS
                 else -> PartyRole.VENDOR
             }
             PartySummary(
@@ -370,15 +475,69 @@ object PartyDirectoryEngine {
                 address = p.address,
                 totalReceived = p.totalReceived,
                 totalPaidOut = p.totalPaidOut,
+                savingsTotal = p.savingsTotal,
                 unpaidReceivables = p.unpaidReceivables,
                 unpaidBills = p.unpaidBills,
                 invoiceCount = p.invoiceCount,
+                billCount = p.billCount,
+                savingsCount = p.savingsCount,
                 transactionCount = p.transactionCount,
+                modules = p.modules.toSet(),
                 lastActivityDate = p.lastActivityDate
             )
         }.sortedWith(
             compareByDescending<PartySummary> { it.unpaidReceivables > 0.0 }
-                .thenByDescending { it.unpaidReceivables + it.totalReceived + it.totalPaidOut }
+                .thenByDescending { it.unpaidReceivables + it.totalReceived + it.totalPaidOut + it.savingsTotal }
+                .thenBy { it.name.lowercase(Locale.ROOT) }
         )
+    }
+
+    /**
+     * Finds an exact case-insensitive match for any typed name in the directory.
+     */
+    fun matchParty(query: String, directory: List<PartySummary>): PartySummary? {
+        val clean = query.trim().lowercase(Locale.ROOT)
+        if (clean.isEmpty()) return null
+        return directory.firstOrNull { it.name.trim().lowercase(Locale.ROOT) == clean }
+    }
+
+    /**
+     * Returns all names the user has saved under Household Bills so the system
+     * automatically recognizes them in future entries.
+     */
+    fun householdNames(directory: List<PartySummary>): Set<String> =
+        directory
+            .filter { it.role == PartyRole.HOUSEHOLD }
+            .map { it.name.trim() }
+            .filter { it.isNotBlank() }
+            .toSet()
+
+    /**
+     * Suggests matching names across all modules using real user-saved records only.
+     */
+    fun suggestParties(
+        query: String,
+        directory: List<PartySummary>,
+        limit: Int = 8
+    ): List<PartySummary> {
+        val q = query.trim().lowercase(Locale.ROOT)
+        val combined = LinkedHashMap<String, PartySummary>()
+
+        directory.forEach { p ->
+            val key = p.name.trim().lowercase(Locale.ROOT)
+            if (key.isNotBlank()) {
+                combined[key] = p
+            }
+        }
+
+        val all = combined.values.toList()
+        if (q.isEmpty()) return all.take(limit)
+
+        val startsWith = all.filter { it.name.lowercase(Locale.ROOT).startsWith(q) }
+        val contains = all.filter {
+            val low = it.name.lowercase(Locale.ROOT)
+            !low.startsWith(q) && low.contains(q)
+        }
+        return (startsWith + contains).take(limit)
     }
 }

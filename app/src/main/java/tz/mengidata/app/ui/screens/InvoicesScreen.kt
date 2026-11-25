@@ -1,11 +1,15 @@
 package tz.mengidata.app.ui.screens
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -16,6 +20,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -27,6 +32,7 @@ import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Payments
+import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.Print
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Share
@@ -42,6 +48,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -54,14 +61,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import tz.mengidata.app.data.accounting.AutoAccountingEngine
 import tz.mengidata.app.data.db.BusinessSettingsEntity
 import tz.mengidata.app.data.db.InvoiceEntity
 import tz.mengidata.app.data.db.InvoiceItemEntity
+import tz.mengidata.app.data.accounting.PartySummary
 import tz.mengidata.app.data.db.InvoiceWithItems
 import tz.mengidata.app.i18n.AppLanguage
 import tz.mengidata.app.i18n.FormatUtils
@@ -75,6 +85,7 @@ import tz.mengidata.app.ui.components.OneUiFloatingFab
 import tz.mengidata.app.ui.components.OneUiScreenHeader
 import tz.mengidata.app.ui.components.OneUiSegmentedTabs
 import tz.mengidata.app.ui.components.OneUiSheetShape
+import tz.mengidata.app.ui.components.RecognizedNameSuggestionsBar
 import tz.mengidata.app.ui.components.StatusPill
 import tz.mengidata.app.ui.components.oneUiTextFieldColors
 import tz.mengidata.app.ui.theme.LocalMengiColors
@@ -84,6 +95,7 @@ import java.util.Locale
 @Composable
 fun InvoicesScreen(
     invoices: List<InvoiceWithItems>,
+    knownParties: List<PartySummary> = emptyList(),
     settings: BusinessSettingsEntity,
     language: AppLanguage,
     generateNextNumber: suspend () -> String,
@@ -92,6 +104,7 @@ fun InvoicesScreen(
     onRecordPayment: (String, Double) -> Unit,
     onDuplicateInvoice: (String) -> Unit,
     onShareInvoice: (InvoiceWithItems) -> Unit,
+    onShareInvoicePdf: (InvoiceWithItems) -> Unit = {},
     onMarkUnpaid: (String) -> Unit,
     onDeleteInvoice: (String) -> Unit,
     onExportPdf: (InvoiceWithItems) -> Unit,
@@ -108,11 +121,17 @@ fun InvoicesScreen(
     var showBuilder by remember { mutableStateOf(false) }
     var pendingDeleteId by remember { mutableStateOf<String?>(null) }
 
+    val overdueCount = remember(invoices) { invoices.count { it.isOverdue } }
+    val dueCount = remember(invoices) { invoices.count { !it.isDraft && !it.isPaid } }
+    val paidCount = remember(invoices) { invoices.count { it.isPaid } }
+    val draftCount = remember(invoices) { invoices.count { it.isDraft } }
+
     val filtered = remember(invoices, filter, search) {
         val q = search.trim().lowercase(Locale.ROOT)
         invoices.filter { inv ->
             val filterOk = when (filter) {
                 "due" -> !inv.isDraft && !inv.isPaid
+                "overdue" -> inv.isOverdue
                 "paid" -> inv.isPaid
                 "draft" -> inv.isDraft
                 else -> true
@@ -127,6 +146,9 @@ fun InvoicesScreen(
 
     val totalReceived = remember(invoices) { invoices.filter { !it.isDraft }.sumOf { it.invoice.amountPaid } }
     val totalReceivables = remember(invoices) { invoices.filter { !it.isDraft }.sumOf { it.balance } }
+    val totalBilled = totalReceived + totalReceivables
+    val collectionRatio = if (totalBilled > 0.0) (totalReceived / totalBilled).toFloat().coerceIn(0f, 1f) else 0f
+    val collectionPct = (collectionRatio * 100f).toInt()
 
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         LazyColumn(
@@ -144,17 +166,78 @@ fun InvoicesScreen(
             }
 
             item(key = "summary") {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    MengiCard(modifier = Modifier.weight(1f), containerColor = colors.incomeSoft, contentPadding = 16.dp) {
-                        Text(tr(language, "Zilizopokelewa", "Collected"), style = MaterialTheme.typography.labelMedium, color = colors.income)
-                        Text(FormatUtils.formatCompactMoney(totalReceived, currency), style = MaterialTheme.typography.titleLarge, color = colors.income)
+                MengiCard(contentPadding = 18.dp) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = tr(language, "Kiwango cha Ukusanyaji", "Collection Rate"),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "$collectionPct% · ${FormatUtils.formatCompactMoney(totalReceived, currency)}",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        StatusPill(
+                            text = if (overdueCount > 0) {
+                                tr(language, "$overdueCount zimechelewa", "$overdueCount overdue")
+                            } else {
+                                tr(language, "$paidCount zimelipwa", "$paidCount paid")
+                            },
+                            containerColor = if (overdueCount > 0) colors.expenseSoft else colors.incomeSoft,
+                            contentColor = if (overdueCount > 0) colors.expense else colors.income
+                        )
                     }
-                    MengiCard(modifier = Modifier.weight(1f), containerColor = colors.warningSoft, contentPadding = 16.dp) {
-                        Text(tr(language, "Salio Linalodaiwa", "Balance Due"), style = MaterialTheme.typography.labelMedium, color = colors.warning)
-                        Text(FormatUtils.formatCompactMoney(totalReceivables, currency), style = MaterialTheme.typography.titleLarge, color = colors.warning)
+                    Spacer(Modifier.height(10.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(7.dp)
+                            .clip(CircleShape)
+                            .background(colors.subtleSurface)
+                    ) {
+                        if (collectionRatio > 0f) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(collectionRatio)
+                                    .fillMaxHeight()
+                                    .clip(CircleShape)
+                                    .background(colors.income)
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = colors.incomeSoft,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text(tr(language, "Zilizopokelewa", "Collected"), style = MaterialTheme.typography.labelSmall, color = colors.income)
+                                Text(FormatUtils.formatCompactMoney(totalReceived, currency), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = colors.income)
+                            }
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = colors.warningSoft,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text(tr(language, "Salio Linalodaiwa", "Balance Due"), style = MaterialTheme.typography.labelSmall, color = colors.warning)
+                                Text(FormatUtils.formatCompactMoney(totalReceivables, currency), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = colors.warning)
+                            }
+                        }
                     }
                 }
             }
@@ -171,20 +254,33 @@ fun InvoicesScreen(
                         colors = oneUiTextFieldColors(),
                         modifier = Modifier.fillMaxWidth().testTag("invoices_search_input")
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         listOf(
-                            "all" to tr(language, "Zote", "All"),
-                            "due" to tr(language, "Zinadaiwa", "Due"),
-                            "paid" to tr(language, "Zimelipwa", "Paid"),
-                            "draft" to tr(language, "Rasimu", "Draft")
+                            "all" to "${tr(language, "Zote", "All")} (${invoices.size})",
+                            "due" to "${tr(language, "Zinadaiwa", "Due")} ($dueCount)",
+                            "overdue" to "${tr(language, "Zimechelewa", "Overdue")} ($overdueCount)",
+                            "paid" to "${tr(language, "Zimelipwa", "Paid")} ($paidCount)",
+                            "draft" to "${tr(language, "Rasimu", "Draft")} ($draftCount)"
                         ).forEach { (key, label) ->
-                            FilterChip(
-                                selected = filter == key,
+                            val selected = filter == key
+                            Surface(
                                 onClick = { filter = key },
                                 shape = CircleShape,
-                                label = { Text(label) },
+                                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
+                                border = if (selected) null else BorderStroke(1.dp, colors.cardBorder),
                                 modifier = Modifier.testTag("inv_filter_$key")
-                            )
+                            ) {
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -210,6 +306,7 @@ fun InvoicesScreen(
                         currency = currency,
                         language = language,
                         onClick = { viewingInvoice = item },
+                        onSharePdf = { onShareInvoicePdf(item) },
                         onMarkPaid = { onMarkPaid(item.invoice.id) }
                     )
                 }
@@ -249,6 +346,7 @@ fun InvoicesScreen(
                 viewingInvoice = null
             },
             onShare = { onShareInvoice(fresh) },
+            onSharePdf = { onShareInvoicePdf(fresh) },
             onMarkUnpaid = { onMarkUnpaid(fresh.invoice.id) },
             onExportPdf = { onExportPdf(fresh) },
             onPrintPdf = { onPrintPdf(fresh) },
@@ -275,6 +373,7 @@ fun InvoicesScreen(
     if (showBuilder) {
         InvoiceBuilderSheet(
             initial = editingInvoice,
+            knownParties = knownParties,
             settings = settings,
             language = language,
             generateNextNumber = generateNextNumber,
@@ -316,6 +415,7 @@ private fun InvoiceRowCard(
     currency: String,
     language: AppLanguage,
     onClick: () -> Unit,
+    onSharePdf: () -> Unit,
     onMarkPaid: () -> Unit
 ) {
     val colors = LocalMengiColors.current
@@ -326,6 +426,7 @@ private fun InvoiceRowCard(
         item.isPartial -> Triple(tr(language, "Sehemu", "Partial"), colors.warningSoft, colors.warning)
         else -> Triple(tr(language, "Inadaiwa", "Due"), colors.warningSoft, colors.warning)
     }
+    val paidRatio = if (item.total > 0.0) (item.invoice.amountPaid / item.total).toFloat().coerceIn(0f, 1f) else 0f
 
     MengiCard(onClick = onClick) {
         Row(
@@ -342,6 +443,7 @@ private fun InvoiceRowCard(
                 Text(
                     text = item.invoice.customerName.ifBlank { "—" },
                     style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -360,16 +462,45 @@ private fun InvoiceRowCard(
                 )
                 if (!item.isPaid && !item.isDraft && item.balance > 0) {
                     Text(
-                        text = "${tr(language, "Salio", "Bal")}: ${FormatUtils.formatCompactMoney(item.balance, currency)}",
+                        text = "${tr(language, "Salio", "Balance")}: ${FormatUtils.formatCompactMoney(item.balance, currency)}",
                         style = MaterialTheme.typography.bodySmall,
                         color = colors.expense
                     )
                 }
             }
         }
-        if (!item.isPaid) {
-            Spacer(Modifier.height(10.dp))
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        if (item.isPartial) {
+            Spacer(Modifier.height(8.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(5.dp)
+                    .clip(CircleShape)
+                    .background(colors.subtleSurface)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(paidRatio)
+                        .fillMaxHeight()
+                        .clip(CircleShape)
+                        .background(colors.income)
+                )
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        HorizontalDivider(color = colors.cardBorder, thickness = 0.8.dp)
+        Spacer(Modifier.height(6.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextButton(onClick = onSharePdf, shape = CircleShape) {
+                Icon(Icons.Rounded.PictureAsPdf, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.size(6.dp))
+                Text(tr(language, "Tuma PDF", "Share PDF"))
+            }
+            if (!item.isPaid) {
                 TextButton(onClick = onMarkPaid, shape = CircleShape) {
                     Icon(Icons.Rounded.CheckCircle, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.size(6.dp))
@@ -392,6 +523,7 @@ private fun InvoiceDetailSheet(
     onOpenPartialPayment: () -> Unit,
     onDuplicate: () -> Unit,
     onShare: () -> Unit,
+    onSharePdf: () -> Unit,
     onMarkUnpaid: () -> Unit,
     onExportPdf: () -> Unit,
     onPrintPdf: () -> Unit,
@@ -445,7 +577,7 @@ private fun InvoiceDetailSheet(
                 )
             }
 
-            HorizontalDivider(color = LocalMengiColors.current.cardBorder.copy(alpha = 0.5f))
+            HorizontalDivider(color = LocalMengiColors.current.cardBorder)
 
             item.orderedItems.forEach { line ->
                 Row(
@@ -464,7 +596,7 @@ private fun InvoiceDetailSheet(
                 }
             }
 
-            HorizontalDivider(color = LocalMengiColors.current.cardBorder.copy(alpha = 0.5f))
+            HorizontalDivider(color = LocalMengiColors.current.cardBorder)
 
             SummaryLine(tr(language, "Jumla ndogo", "Subtotal"), FormatUtils.formatMoney(item.subtotal, currency))
             if (item.effectiveDiscount > 0) {
@@ -477,25 +609,34 @@ private fun InvoiceDetailSheet(
             SummaryLine(tr(language, "Imelipwa", "Paid"), FormatUtils.formatMoney(item.invoice.amountPaid, currency))
             SummaryLine(tr(language, "Salio", "Balance Due"), FormatUtils.formatMoney(item.balance, currency), bold = true)
 
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilledTonalButton(
                     onClick = onExportPdf,
                     shape = CircleShape,
                     modifier = Modifier.weight(1f).height(48.dp).testTag("export_invoice_pdf_btn")
                 ) {
-                    Icon(Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.size(6.dp))
-                    Text(tr(language, "Pakua PDF", "Save PDF"))
+                    Icon(Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(17.dp))
+                    Spacer(Modifier.size(5.dp))
+                    Text(tr(language, "Hifadhi PDF", "Save PDF"), maxLines = 1)
                 }
-                OutlinedButton(
-                    onClick = onPrintPdf,
+                FilledTonalButton(
+                    onClick = onSharePdf,
                     shape = CircleShape,
-                    modifier = Modifier.weight(1f).height(48.dp).testTag("print_invoice_pdf_btn")
+                    modifier = Modifier.weight(1f).height(48.dp).testTag("share_invoice_pdf_btn")
                 ) {
-                    Icon(Icons.Rounded.Print, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.size(6.dp))
-                    Text(tr(language, "Chapisha", "Print"))
+                    Icon(Icons.Rounded.PictureAsPdf, contentDescription = null, modifier = Modifier.size(17.dp))
+                    Spacer(Modifier.size(5.dp))
+                    Text(tr(language, "Tuma PDF", "Share PDF"), maxLines = 1)
                 }
+            }
+            OutlinedButton(
+                onClick = onPrintPdf,
+                shape = CircleShape,
+                modifier = Modifier.fillMaxWidth().height(46.dp).testTag("print_invoice_pdf_btn")
+            ) {
+                Icon(Icons.Rounded.Print, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.size(6.dp))
+                Text(tr(language, "Chapisha Ankara", "Print Invoice"))
             }
 
             if (!item.isPaid) {
@@ -608,6 +749,7 @@ private data class DraftLineItem(
 @Composable
 private fun InvoiceBuilderSheet(
     initial: InvoiceWithItems?,
+    knownParties: List<PartySummary>,
     settings: BusinessSettingsEntity,
     language: AppLanguage,
     generateNextNumber: suspend () -> String,
@@ -682,7 +824,7 @@ private fun InvoiceBuilderSheet(
 
             OneUiSegmentedTabs(
                 options = listOf(
-                    tr(language, "Rasmi (Imetolewa)", "Issued"),
+                    tr(language, "Imetolewa", "Issued"),
                     tr(language, "Rasimu", "Draft")
                 ),
                 selectedIndex = if (state == "issued") 0 else 1,
@@ -713,11 +855,25 @@ private fun InvoiceBuilderSheet(
             OutlinedTextField(
                 value = customerName,
                 onValueChange = { customerName = it; errorText = null },
-                label = { Text(tr(language, "Jina la Mteja *", "Customer Name *")) },
+                label = { Text(tr(language, "Jina Lolote la Mteja *", "Any Customer Name *")) },
+                placeholder = { Text(tr(language, "Jina la mteja au Jina/invoice", "Customer name or Name/invoice")) },
                 singleLine = true,
                 shape = OneUiFieldShape,
                 colors = oneUiTextFieldColors(),
                 modifier = Modifier.fillMaxWidth().testTag("invoice_customer_input")
+            )
+
+            // Universal Name Recognition Bar (selecting a contact also auto-fills phone, email & address)
+            RecognizedNameSuggestionsBar(
+                query = customerName,
+                knownParties = knownParties,
+                language = language,
+                onSelectParty = { selected ->
+                    customerName = selected.name
+                    if (selected.phone.isNotBlank()) customerPhone = selected.phone
+                    if (selected.email.isNotBlank()) customerEmail = selected.email
+                    if (selected.address.isNotBlank()) customerAddress = selected.address
+                }
             )
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -751,7 +907,7 @@ private fun InvoiceBuilderSheet(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            HorizontalDivider(color = LocalMengiColors.current.cardBorder.copy(alpha = 0.5f))
+            HorizontalDivider(color = LocalMengiColors.current.cardBorder)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -765,7 +921,7 @@ private fun InvoiceBuilderSheet(
             }
 
             lineItems.forEachIndexed { idx, row ->
-                MengiCard(containerColor = LocalMengiColors.current.subtleSurface.copy(alpha = 0.45f), contentPadding = 14.dp) {
+                MengiCard(containerColor = LocalMengiColors.current.subtleSurface, contentPadding = 14.dp) {
                     OutlinedTextField(
                         value = row.description,
                         onValueChange = { lineItems[idx] = row.copy(description = it) },
@@ -878,12 +1034,13 @@ private fun InvoiceBuilderSheet(
                         )
                         return@Button
                     }
+                    val cleanCustomer = AutoAccountingEngine.stripSlashTag(customerName).ifBlank { customerName.trim() }
                     val paidAmount = (paidText.toDoubleOrNull() ?: 0.0).coerceAtLeast(0.0)
-                    val base = initial?.invoice ?: InvoiceEntity(id = "", number = number, customerName = customerName)
+                    val base = initial?.invoice ?: InvoiceEntity(id = "", number = number, customerName = cleanCustomer)
                     onSave(
                         base.copy(
                             number = number.trim(),
-                            customerName = customerName.trim(),
+                            customerName = cleanCustomer,
                             customerPhone = customerPhone.trim(),
                             customerEmail = customerEmail.trim(),
                             customerAddress = customerAddress.trim(),

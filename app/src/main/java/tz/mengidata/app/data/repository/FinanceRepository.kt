@@ -13,10 +13,13 @@ import tz.mengidata.app.data.accounting.AutoBucket
 import tz.mengidata.app.data.accounting.CategoryAnalyticsEngine
 import tz.mengidata.app.data.db.BillEntity
 import tz.mengidata.app.data.db.BusinessSettingsEntity
+import tz.mengidata.app.data.db.DeletedRecordEntity
 import tz.mengidata.app.data.db.InvoiceEntity
 import tz.mengidata.app.data.db.InvoiceItemEntity
 import tz.mengidata.app.data.db.InvoiceWithItems
 import tz.mengidata.app.data.db.MengiDatabase
+import tz.mengidata.app.data.db.PhoneStorageStatus
+import tz.mengidata.app.data.db.PhoneStorageVault
 import tz.mengidata.app.data.db.SavingsGoalEntity
 import tz.mengidata.app.data.db.SavingsLogEntity
 import tz.mengidata.app.data.db.TransactionCategoryEntity
@@ -26,7 +29,6 @@ import tz.mengidata.app.data.prefs.AppPreferences
 import tz.mengidata.app.i18n.AppLanguage
 import tz.mengidata.app.i18n.FormatUtils
 import tz.mengidata.app.i18n.PeriodFilter
-import java.io.File
 import java.util.Calendar
 import java.util.Locale
 import java.util.UUID
@@ -43,6 +45,8 @@ class FinanceRepository(
     private val billDao = db.billDao()
     private val savingsDao = db.savingsDao()
     private val categoryDao = db.categoryDao()
+    private val deletedRecordDao = db.deletedRecordDao()
+    private val storageVault = PhoneStorageVault(appContext)
 
     val settingsFlow: Flow<BusinessSettingsEntity> =
         settingsDao.observeSettings().map { it ?: BusinessSettingsEntity() }
@@ -53,6 +57,9 @@ class FinanceRepository(
     val savingsGoalsFlow: Flow<List<SavingsGoalEntity>> = savingsDao.observeGoals()
     val savingsLogsFlow: Flow<List<SavingsLogEntity>> = savingsDao.observeAllLogs()
     val categoriesFlow: Flow<List<TransactionCategoryEntity>> = categoryDao.observeAll()
+    val deletedRecordsFlow: Flow<List<DeletedRecordEntity>> = deletedRecordDao.observeAll()
+
+    fun getPhoneStorageStatus(): PhoneStorageStatus = storageVault.getStatus()
 
     suspend fun ensureInitialized() {
         withContext(Dispatchers.IO) {
@@ -162,75 +169,168 @@ class FinanceRepository(
         overrideBucket: AutoBucket? = null,
         markBillPaid: Boolean = true
     ): AutoBucket {
-        val cleanDesc = description.trim()
+        val rawDesc = description.trim()
+        val rawParty = party.trim()
         val cleanDate = date.ifBlank { FormatUtils.todayIso() }
-        val classification = AutoAccountingEngine.classifyText(cleanDesc)
+        val learnedHouseholdNames = buildSet {
+            txnDao.getAll()
+                .filter { AutoAccountingEngine.isHouseholdTransaction(it) && it.party.isNotBlank() }
+                .forEach { add(it.party.trim()) }
+            billDao.getAll()
+                .filter { AutoAccountingEngine.isHouseholdBill(it) && it.payee.isNotBlank() }
+                .forEach { add(it.payee.trim()) }
+        }
+        val classification = AutoAccountingEngine.classifyText(
+            description = rawDesc,
+            party = rawParty,
+            learnedHouseholdNames = learnedHouseholdNames
+        )
         val bucket = overrideBucket ?: classification.bucket
+
+        // Clean any slash-tag suffix (e.g. "Juma/household", "Asha/rentsaving", "Neema my/mybilll")
+        val parsedParty = AutoAccountingEngine.parseSlashTag(rawParty)
+        val parsedDesc = AutoAccountingEngine.parseSlashTag(rawDesc)
+        val cleanParty = when {
+            parsedParty.hasSlashTag -> parsedParty.cleanName
+            rawParty.isNotBlank() -> rawParty
+            parsedDesc.hasSlashTag && parsedDesc.cleanName.isNotBlank() -> parsedDesc.cleanName
+            else -> ""
+        }
+        val cleanDesc = when {
+            parsedDesc.hasSlashTag -> parsedDesc.cleanName
+            else -> rawDesc
+        }
 
         when (bucket) {
             AutoBucket.SAVINGS -> {
                 db.withTransaction {
                     val goals = savingsDao.getGoals()
-                    val targetGoal = goals.firstOrNull { g ->
-                        cleanDesc.lowercase().contains(g.title.lowercase().take(6))
-                    } ?: goals.firstOrNull() ?: SavingsGoalEntity(
-                        id = "svg_${UUID.randomUUID()}",
-                        title = "Akiba Kuu",
-                        targetAmount = max(amount * 5, 1_000_000.0),
-                        currentAmount = 0.0,
-                        targetDate = FormatUtils.addMonthsIso(cleanDate, 6),
-                        notes = "Imeundwa kiotomatiki kwa Akiba.",
-                        createdAt = cleanDate,
-                        updatedAt = cleanDate
-                    ).also { savingsDao.upsertGoal(it) }
+                    val requestedGoalTitle = classification.suggestedSavingsGoalTitle
+                    val targetGoal = when {
+                        !requestedGoalTitle.isNullOrBlank() -> {
+                            goals.firstOrNull { g ->
+                                AutoAccountingEngine.matchesSavingsGoal(g.title, requestedGoalTitle)
+                            } ?: SavingsGoalEntity(
+                                id = "svg_${UUID.randomUUID()}",
+                                title = requestedGoalTitle,
+                                targetAmount = max(amount * 5, 1_000_000.0),
+                                currentAmount = 0.0,
+                                targetDate = FormatUtils.addMonthsIso(cleanDate, 6),
+                                notes = "Imeundwa kiotomatiki kupitia /${classification.slashTag.rawTag}.",
+                                createdAt = cleanDate,
+                                updatedAt = cleanDate
+                            ).also { savingsDao.upsertGoal(it) }
+                        }
+                        else -> {
+                            goals.firstOrNull { g ->
+                                cleanDesc.isNotBlank() && cleanDesc.lowercase().contains(g.title.lowercase().take(6))
+                            } ?: goals.firstOrNull() ?: SavingsGoalEntity(
+                                id = "svg_${UUID.randomUUID()}",
+                                title = "Akiba Kuu",
+                                targetAmount = max(amount * 5, 1_000_000.0),
+                                currentAmount = 0.0,
+                                targetDate = FormatUtils.addMonthsIso(cleanDate, 6),
+                                notes = "Imeundwa kiotomatiki kwa Akiba.",
+                                createdAt = cleanDate,
+                                updatedAt = cleanDate
+                            ).also { savingsDao.upsertGoal(it) }
+                        }
+                    }
 
                     recordSavingsTransactionLocked(
                         goal = targetGoal,
                         type = "deposit",
                         amount = amount,
-                        note = cleanDesc,
+                        note = cleanDesc.ifBlank { requestedGoalTitle ?: "Akiba" },
                         date = cleanDate,
-                        method = method
+                        method = method,
+                        partyName = cleanParty
                     )
                 }
+            }
+
+            AutoBucket.HOUSEHOLD_BILL -> {
+                saveTransaction(
+                    TransactionEntity(
+                        id = "",
+                        type = "expense",
+                        date = cleanDate,
+                        description = cleanDesc.ifBlank { "Bili ya Nyumbani" },
+                        party = cleanParty,
+                        category = AutoAccountingEngine.HOUSEHOLD_CATEGORY,
+                        amount = amount,
+                        method = method.ifBlank { "Cash" },
+                        reference = "",
+                        notes = "Bili ya Nyumbani — imetambuliwa na kuhifadhiwa kwenye mfumo.",
+                        source = AutoAccountingEngine.HOUSEHOLD_SOURCE,
+                        createdAt = cleanDate
+                    )
+                )
             }
 
             AutoBucket.BILL, AutoBucket.HIGH_BILL_TODAY -> {
                 saveBill(
                     BillEntity(
                         id = "",
-                        name = cleanDesc,
+                        name = cleanDesc.ifBlank { if (cleanParty.isNotBlank()) "Bili: $cleanParty" else "Bili" },
                         category = classification.suggestedCategory,
-                        payee = party.trim(),
+                        payee = cleanParty,
                         amount = amount,
                         dueDate = cleanDate,
                         paid = markBillPaid,
                         paidDate = if (markBillPaid) cleanDate else "",
                         method = method.ifBlank { "M-Pesa" },
                         recurring = false,
-                        notes = "Imetambuliwa kiotomatiki kama Bili.",
+                        notes = "Imetambuliwa kiotomatiki kama Bili Zangu.",
                         createdAt = cleanDate
                     )
                 )
             }
 
             AutoBucket.MONEY_IN -> {
-                saveTransaction(
-                    TransactionEntity(
-                        id = "",
-                        type = "income",
-                        date = cleanDate,
-                        description = cleanDesc,
-                        party = party.trim(),
-                        category = classification.suggestedCategory,
-                        amount = amount,
-                        method = method.ifBlank { "M-Pesa" },
-                        reference = "",
-                        notes = "Imetambuliwa kiotomatiki: Pesa Kuingia.",
-                        source = "manual",
-                        createdAt = cleanDate
+                if (classification.isInvoiceTagged && overrideBucket == null) {
+                    val invCustomer = cleanParty.ifBlank { cleanDesc.ifBlank { "Mteja" } }
+                    val itemDesc = cleanDesc.ifBlank { "Huduma / Malipo ya Ankara" }
+                    saveInvoice(
+                        invoice = InvoiceEntity(
+                            id = "",
+                            number = "",
+                            customerName = invCustomer,
+                            issueDate = cleanDate,
+                            dueDate = FormatUtils.addDaysIso(cleanDate, 14),
+                            amountPaid = amount,
+                            state = "issued",
+                            paidDate = cleanDate,
+                            notes = "Imeundwa kiotomatiki kupitia /${classification.slashTag.rawTag}."
+                        ),
+                        items = listOf(
+                            InvoiceItemEntity(
+                                invoiceId = "",
+                                description = itemDesc,
+                                qty = 1.0,
+                                price = amount,
+                                position = 0
+                            )
+                        )
                     )
-                )
+                } else {
+                    saveTransaction(
+                        TransactionEntity(
+                            id = "",
+                            type = "income",
+                            date = cleanDate,
+                            description = cleanDesc.ifBlank { "Mapato" },
+                            party = cleanParty,
+                            category = classification.suggestedCategory,
+                            amount = amount,
+                            method = method.ifBlank { "M-Pesa" },
+                            reference = "",
+                            notes = "Imetambuliwa kiotomatiki: Pesa Kuingia.",
+                            source = "manual",
+                            createdAt = cleanDate
+                        )
+                    )
+                }
             }
 
             AutoBucket.EXPENSE -> {
@@ -239,13 +339,13 @@ class FinanceRepository(
                         id = "",
                         type = "expense",
                         date = cleanDate,
-                        description = cleanDesc,
-                        party = party.trim(),
+                        description = cleanDesc.ifBlank { "Matumizi binafsi" },
+                        party = cleanParty,
                         category = classification.suggestedCategory,
                         amount = amount,
                         method = method.ifBlank { "Cash" },
                         reference = "",
-                        notes = "Imetambuliwa kiotomatiki: Matumizi.",
+                        notes = "Imetambuliwa kiotomatiki: Matumizi Yangu.",
                         source = "manual",
                         createdAt = cleanDate
                     )
@@ -259,18 +359,41 @@ class FinanceRepository(
     // --- Transactions ---
 
     suspend fun saveTransaction(txn: TransactionEntity) {
-        val clean = if (txn.id.isBlank()) {
+        val withId = if (txn.id.isBlank()) {
             txn.copy(id = "txn_${UUID.randomUUID()}")
         } else {
             txn
+        }
+        val clean = when {
+            !withId.isIncome && AutoAccountingEngine.isHouseholdTransaction(withId) -> {
+                withId.copy(
+                    source = AutoAccountingEngine.HOUSEHOLD_SOURCE,
+                    category = AutoAccountingEngine.HOUSEHOLD_CATEGORY,
+                    party = withId.party.trim()
+                )
+            }
+            !withId.isIncome && AutoAccountingEngine.isSavingsTransaction(withId) -> {
+                withId.copy(
+                    source = "savings",
+                    category = "Akiba"
+                )
+            }
+            withId.isIncome && withId.source == AutoAccountingEngine.HOUSEHOLD_SOURCE -> {
+                withId.copy(source = "manual")
+            }
+            else -> withId
         }
         txnDao.upsert(clean)
         persistSafetySnapshot()
     }
 
     suspend fun deleteTransaction(id: String): TransactionEntity? {
-        val existing = txnDao.getById(id) ?: return null
-        txnDao.deleteById(id)
+        val existing = db.withTransaction {
+            val found = txnDao.getById(id) ?: return@withTransaction null
+            archiveTransactionLocked(found)
+            txnDao.deleteById(id)
+            found
+        } ?: return null
         persistSafetySnapshot()
         return existing
     }
@@ -407,6 +530,7 @@ class FinanceRepository(
     suspend fun deleteInvoice(invoiceId: String) {
         db.withTransaction {
             val current = invoiceDao.getByIdWithItems(invoiceId) ?: return@withTransaction
+            archiveInvoiceLocked(current)
             current.invoice.linkedTxnId?.let { txnDao.deleteById(it) }
             invoiceDao.deleteItemsForInvoice(invoiceId)
             invoiceDao.deleteInvoiceById(invoiceId)
@@ -499,6 +623,7 @@ class FinanceRepository(
     suspend fun deleteBill(billId: String) {
         db.withTransaction {
             val existing = billDao.getById(billId) ?: return@withTransaction
+            archiveBillLocked(existing)
             existing.linkedTxnId?.let { txnDao.deleteById(it) }
             billDao.deleteById(billId)
         }
@@ -512,19 +637,24 @@ class FinanceRepository(
         }
         val txnId = bill.linkedTxnId?.takeIf { it.isNotBlank() } ?: "txn_${UUID.randomUUID()}"
         val txnDate = bill.paidDate.ifBlank { bill.dueDate.ifBlank { FormatUtils.todayIso() } }
+        val isHousehold = AutoAccountingEngine.isHouseholdBill(bill)
         txnDao.upsert(
             TransactionEntity(
                 id = txnId,
                 type = "expense",
                 date = txnDate,
-                description = "Malipo: ${bill.name}",
-                party = bill.payee,
-                category = bill.category,
+                description = if (isHousehold) bill.name else "Malipo: ${bill.name}",
+                party = bill.payee.trim(),
+                category = if (isHousehold) AutoAccountingEngine.HOUSEHOLD_CATEGORY else bill.category,
                 amount = bill.amount,
                 method = bill.method.ifBlank { "Benki" },
                 reference = "",
-                notes = "Imeundwa kiotomatiki kutoka bili.",
-                source = "bill",
+                notes = if (isHousehold) {
+                    "Bili ya Nyumbani — imetenganishwa na matumizi binafsi."
+                } else {
+                    "Imeundwa kiotomatiki kutoka bili."
+                },
+                source = if (isHousehold) AutoAccountingEngine.HOUSEHOLD_SOURCE else "bill",
                 linkedId = bill.id,
                 createdAt = txnDate
             )
@@ -536,17 +666,38 @@ class FinanceRepository(
 
     suspend fun saveSavingsGoal(goal: SavingsGoalEntity) {
         val today = FormatUtils.todayIso()
+        val isNewGoal = goal.id.isBlank()
+        val initialDeposit = if (isNewGoal && goal.currentAmount > 0.0) goal.currentAmount else 0.0
         val clean = goal.copy(
             id = goal.id.ifBlank { "svg_${UUID.randomUUID()}" },
+            currentAmount = if (initialDeposit > 0.0) 0.0 else goal.currentAmount,
             createdAt = goal.createdAt.ifBlank { today },
             updatedAt = today
         )
-        savingsDao.upsertGoal(clean)
+        db.withTransaction {
+            savingsDao.upsertGoal(clean)
+            if (initialDeposit > 0.0) {
+                recordSavingsTransactionLocked(
+                    goal = clean,
+                    type = "deposit",
+                    amount = initialDeposit,
+                    note = "Akiba ya awali — imekatwa kwenye mfumo",
+                    date = today,
+                    method = "M-Pesa",
+                    partyName = clean.title
+                )
+            }
+        }
         persistSafetySnapshot()
     }
 
     suspend fun deleteSavingsGoal(id: String) {
-        savingsDao.deleteGoalById(id)
+        db.withTransaction {
+            val goal = savingsDao.getGoalById(id) ?: return@withTransaction
+            val logs = savingsDao.getLogsForGoal(id)
+            archiveSavingsGoalLocked(goal, logs)
+            savingsDao.deleteGoalById(id)
+        }
         persistSafetySnapshot()
     }
 
@@ -554,7 +705,8 @@ class FinanceRepository(
         goalId: String,
         type: String,
         amount: Double,
-        note: String
+        note: String,
+        partyName: String = ""
     ) {
         db.withTransaction {
             if (amount <= 0.0) return@withTransaction
@@ -565,7 +717,8 @@ class FinanceRepository(
                 amount = amount,
                 note = note.trim(),
                 date = FormatUtils.todayIso(),
-                method = "M-Pesa"
+                method = "M-Pesa",
+                partyName = partyName.trim()
             )
         }
         persistSafetySnapshot()
@@ -577,12 +730,19 @@ class FinanceRepository(
         amount: Double,
         note: String,
         date: String,
-        method: String
+        method: String,
+        partyName: String = ""
     ) {
         val updatedAmount = if (type == "deposit") {
             goal.currentAmount + amount
         } else {
             max(0.0, goal.currentAmount - amount)
+        }
+        val cleanParty = partyName.trim()
+        val combinedNote = when {
+            cleanParty.isNotBlank() && note.isNotBlank() -> "$cleanParty · $note"
+            cleanParty.isNotBlank() -> cleanParty
+            else -> note
         }
         val logId = "slog_${UUID.randomUUID()}"
         savingsDao.upsertGoal(goal.copy(currentAmount = updatedAmount, updatedAt = date))
@@ -593,7 +753,7 @@ class FinanceRepository(
                 type = type,
                 amount = amount,
                 date = date,
-                note = note,
+                note = combinedNote,
                 createdAt = date
             )
         )
@@ -604,12 +764,12 @@ class FinanceRepository(
                 type = if (type == "deposit") "expense" else "income",
                 date = date,
                 description = if (type == "deposit") "Akiba: ${goal.title}" else "Kutoa Akiba: ${goal.title}",
-                party = goal.title,
+                party = cleanParty.ifBlank { goal.title },
                 category = "Akiba",
                 amount = amount,
                 method = method,
                 reference = logId.takeLast(6).uppercase(Locale.US),
-                notes = note.ifBlank { "Muamala wa Akiba (Zero-Loss Ledger)." },
+                notes = combinedNote.ifBlank { "Muamala wa Akiba." },
                 source = "savings",
                 linkedId = logId,
                 createdAt = date
@@ -617,16 +777,294 @@ class FinanceRepository(
         )
     }
 
+    // --- Recovery Vault (Soft-Delete Protection & 1-Tap Restore) ---
+
+    private suspend fun archiveTransactionLocked(t: TransactionEntity) {
+        val payload = JSONObject().apply {
+            put("id", t.id)
+            put("type", t.type)
+            put("date", t.date)
+            put("description", t.description)
+            put("party", t.party)
+            put("category", t.category)
+            put("amount", t.amount)
+            put("method", t.method)
+            put("reference", t.reference)
+            put("notes", t.notes)
+            put("source", t.source)
+            put("linkedId", t.linkedId)
+            put("createdAt", t.createdAt)
+        }.toString()
+        deletedRecordDao.upsert(
+            DeletedRecordEntity(
+                id = "trash_${UUID.randomUUID()}",
+                entityType = "transaction",
+                originalId = t.id,
+                title = t.description.ifBlank { t.category },
+                subtitle = listOf(t.party, t.date).filter { it.isNotBlank() }.joinToString(" · "),
+                amount = t.amount,
+                payloadJson = payload
+            )
+        )
+    }
+
+    private suspend fun archiveBillLocked(b: BillEntity) {
+        val payload = JSONObject().apply {
+            put("id", b.id)
+            put("name", b.name)
+            put("category", b.category)
+            put("payee", b.payee)
+            put("amount", b.amount)
+            put("dueDate", b.dueDate)
+            put("paid", b.paid)
+            put("paidDate", b.paidDate)
+            put("method", b.method)
+            put("recurring", b.recurring)
+            put("notes", b.notes)
+            put("linkedTxnId", b.linkedTxnId)
+            put("createdAt", b.createdAt)
+        }.toString()
+        deletedRecordDao.upsert(
+            DeletedRecordEntity(
+                id = "trash_${UUID.randomUUID()}",
+                entityType = "bill",
+                originalId = b.id,
+                title = b.name.ifBlank { b.category },
+                subtitle = listOf(b.payee, b.dueDate).filter { it.isNotBlank() }.joinToString(" · "),
+                amount = b.amount,
+                payloadJson = payload
+            )
+        )
+    }
+
+    private suspend fun archiveInvoiceLocked(invWithItems: InvoiceWithItems) {
+        val inv = invWithItems.invoice
+        val itemsJson = JSONArray()
+        invWithItems.orderedItems.forEach { item ->
+            itemsJson.put(JSONObject().apply {
+                put("description", item.description)
+                put("qty", item.qty)
+                put("price", item.price)
+            })
+        }
+        val payload = JSONObject().apply {
+            put("id", inv.id)
+            put("number", inv.number)
+            put("customerName", inv.customerName)
+            put("customerPhone", inv.customerPhone)
+            put("customerEmail", inv.customerEmail)
+            put("customerAddress", inv.customerAddress)
+            put("issueDate", inv.issueDate)
+            put("dueDate", inv.dueDate)
+            put("discount", inv.discount)
+            put("vatRate", inv.vatRate)
+            put("amountPaid", inv.amountPaid)
+            put("state", inv.state)
+            put("paidDate", inv.paidDate)
+            put("notes", inv.notes)
+            put("linkedTxnId", inv.linkedTxnId)
+            put("createdAt", inv.createdAt)
+            put("updatedAt", inv.updatedAt)
+            put("items", itemsJson)
+        }.toString()
+        deletedRecordDao.upsert(
+            DeletedRecordEntity(
+                id = "trash_${UUID.randomUUID()}",
+                entityType = "invoice",
+                originalId = inv.id,
+                title = "${inv.number} · ${inv.customerName}",
+                subtitle = inv.issueDate,
+                amount = invWithItems.total,
+                payloadJson = payload
+            )
+        )
+    }
+
+    private suspend fun archiveSavingsGoalLocked(goal: SavingsGoalEntity, logs: List<SavingsLogEntity>) {
+        val logsJson = JSONArray()
+        logs.forEach { l ->
+            logsJson.put(JSONObject().apply {
+                put("id", l.id)
+                put("savingsId", l.savingsId)
+                put("type", l.type)
+                put("amount", l.amount)
+                put("date", l.date)
+                put("note", l.note)
+                put("createdAt", l.createdAt)
+            })
+        }
+        val payload = JSONObject().apply {
+            put("id", goal.id)
+            put("title", goal.title)
+            put("targetAmount", goal.targetAmount)
+            put("currentAmount", goal.currentAmount)
+            put("targetDate", goal.targetDate)
+            put("notes", goal.notes)
+            put("createdAt", goal.createdAt)
+            put("updatedAt", goal.updatedAt)
+            put("logs", logsJson)
+        }.toString()
+        deletedRecordDao.upsert(
+            DeletedRecordEntity(
+                id = "trash_${UUID.randomUUID()}",
+                entityType = "savings_goal",
+                originalId = goal.id,
+                title = goal.title,
+                subtitle = goal.targetDate,
+                amount = goal.currentAmount,
+                payloadJson = payload
+            )
+        )
+    }
+
+    suspend fun restoreDeletedRecord(trashId: String): Boolean {
+        val restored = db.withTransaction {
+            val record = deletedRecordDao.getById(trashId) ?: return@withTransaction false
+            val o = JSONObject(record.payloadJson)
+            when (record.entityType) {
+                "transaction" -> {
+                    txnDao.upsert(
+                        TransactionEntity(
+                            id = o.optString("id").ifBlank { "txn_${UUID.randomUUID()}" },
+                            type = if (o.optString("type") == "expense") "expense" else "income",
+                            date = o.optString("date", FormatUtils.todayIso()),
+                            description = o.optString("description", ""),
+                            party = o.optString("party", ""),
+                            category = o.optString("category", "Mauzo ya bidhaa"),
+                            amount = o.optDouble("amount", 0.0),
+                            method = o.optString("method", "Cash"),
+                            reference = o.optString("reference", ""),
+                            notes = o.optString("notes", ""),
+                            source = o.optString("source", "manual"),
+                            linkedId = o.optString("linkedId").takeIf { it.isNotBlank() && it != "null" },
+                            createdAt = o.optString("createdAt", FormatUtils.todayIso())
+                        )
+                    )
+                }
+                "bill" -> {
+                    val bill = BillEntity(
+                        id = o.optString("id").ifBlank { "bill_${UUID.randomUUID()}" },
+                        name = o.optString("name", ""),
+                        category = o.optString("category", "Kodi ya pango"),
+                        payee = o.optString("payee", ""),
+                        amount = o.optDouble("amount", 0.0),
+                        dueDate = o.optString("dueDate", FormatUtils.todayIso()),
+                        paid = o.optBoolean("paid", false),
+                        paidDate = o.optString("paidDate", ""),
+                        method = o.optString("method", "Benki"),
+                        recurring = o.optBoolean("recurring", false),
+                        notes = o.optString("notes", ""),
+                        linkedTxnId = null,
+                        createdAt = o.optString("createdAt", FormatUtils.todayIso())
+                    )
+                    val linkedId = syncBillTransactionLocked(bill)
+                    billDao.upsert(bill.copy(linkedTxnId = linkedId))
+                }
+                "invoice" -> {
+                    val invId = o.optString("id").ifBlank { "inv_${UUID.randomUUID()}" }
+                    val inv = InvoiceEntity(
+                        id = invId,
+                        number = o.optString("number", ""),
+                        customerName = o.optString("customerName", ""),
+                        customerPhone = o.optString("customerPhone", ""),
+                        customerEmail = o.optString("customerEmail", ""),
+                        customerAddress = o.optString("customerAddress", ""),
+                        issueDate = o.optString("issueDate", FormatUtils.todayIso()),
+                        dueDate = o.optString("dueDate", FormatUtils.todayIso()),
+                        discount = o.optDouble("discount", 0.0),
+                        vatRate = o.optDouble("vatRate", 0.0),
+                        amountPaid = o.optDouble("amountPaid", 0.0),
+                        state = o.optString("state", "draft"),
+                        paidDate = o.optString("paidDate", ""),
+                        notes = o.optString("notes", ""),
+                        linkedTxnId = null,
+                        createdAt = o.optString("createdAt", FormatUtils.todayIso()),
+                        updatedAt = FormatUtils.todayIso()
+                    )
+                    val linkedId = syncInvoiceTransactionLocked(inv)
+                    invoiceDao.upsertInvoice(inv.copy(linkedTxnId = linkedId))
+                    invoiceDao.deleteItemsForInvoice(invId)
+                    val itemsJson = o.optJSONArray("items")
+                    if (itemsJson != null) {
+                        val items = mutableListOf<InvoiceItemEntity>()
+                        for (j in 0 until itemsJson.length()) {
+                            val io = itemsJson.getJSONObject(j)
+                            items += InvoiceItemEntity(
+                                invoiceId = invId,
+                                description = io.optString("description", ""),
+                                qty = io.optDouble("qty", 1.0),
+                                price = io.optDouble("price", 0.0),
+                                position = j
+                            )
+                        }
+                        if (items.isNotEmpty()) invoiceDao.insertItems(items)
+                    }
+                }
+                "savings_goal" -> {
+                    val gId = o.optString("id").ifBlank { "svg_${UUID.randomUUID()}" }
+                    savingsDao.upsertGoal(
+                        SavingsGoalEntity(
+                            id = gId,
+                            title = o.optString("title", "Akiba"),
+                            targetAmount = o.optDouble("targetAmount", 0.0),
+                            currentAmount = o.optDouble("currentAmount", 0.0),
+                            targetDate = o.optString("targetDate", ""),
+                            notes = o.optString("notes", ""),
+                            createdAt = o.optString("createdAt", FormatUtils.todayIso()),
+                            updatedAt = FormatUtils.todayIso()
+                        )
+                    )
+                    val logsJson = o.optJSONArray("logs")
+                    if (logsJson != null) {
+                        val logs = mutableListOf<SavingsLogEntity>()
+                        for (j in 0 until logsJson.length()) {
+                            val lo = logsJson.getJSONObject(j)
+                            logs += SavingsLogEntity(
+                                id = lo.optString("id").ifBlank { "slog_${UUID.randomUUID()}" },
+                                savingsId = gId,
+                                type = if (lo.optString("type") == "withdraw") "withdraw" else "deposit",
+                                amount = lo.optDouble("amount", 0.0),
+                                date = lo.optString("date", FormatUtils.todayIso()),
+                                note = lo.optString("note", ""),
+                                createdAt = lo.optString("createdAt", FormatUtils.todayIso())
+                            )
+                        }
+                        if (logs.isNotEmpty()) savingsDao.upsertLogs(logs)
+                    }
+                }
+                else -> return@withTransaction false
+            }
+            deletedRecordDao.deleteById(trashId)
+            true
+        }
+        if (restored) {
+            persistSafetySnapshot()
+        }
+        return restored
+    }
+
+    suspend fun permanentlyDeleteTrashRecord(trashId: String) {
+        deletedRecordDao.deleteById(trashId)
+    }
+
+    suspend fun emptyTrash() {
+        deletedRecordDao.deleteAll()
+    }
+
     // --- Data Management, Demo Seed & Backup ---
 
-    suspend fun clearFinancialData() = db.withTransaction {
-        txnDao.deleteAll()
-        invoiceDao.deleteAll()
-        billDao.deleteAll()
-        savingsDao.deleteAllLogs()
-        savingsDao.deleteAllGoals()
-        val currentSettings = settingsDao.getSettings() ?: BusinessSettingsEntity()
-        settingsDao.upsert(currentSettings.copy(demo = false))
+    suspend fun clearFinancialData() {
+        // Always write an emergency pre-clear backup to phone storage before wiping live tables
+        runCatching { storageVault.savePreClearSnapshot(exportBackupJson()) }
+        db.withTransaction {
+            txnDao.deleteAll()
+            invoiceDao.deleteAll()
+            billDao.deleteAll()
+            savingsDao.deleteAllLogs()
+            savingsDao.deleteAllGoals()
+            val currentSettings = settingsDao.getSettings() ?: BusinessSettingsEntity()
+            settingsDao.upsert(currentSettings.copy(demo = false))
+        }
     }
 
     suspend fun loadDemoData() = db.withTransaction {
@@ -646,7 +1084,7 @@ class FinanceRepository(
             BusinessSettingsEntity(
                 id = 1,
                 businessName = "Mengidata",
-                ownerName = "Mengi",
+                ownerName = "",
                 tagline = "Ushauri, mauzo & huduma za kidijitali",
                 address = "Kimara Mwisho, Ubungo, Dar es Salaam",
                 phone = "+255 754 000 000",
@@ -736,8 +1174,8 @@ class FinanceRepository(
             )
         )
 
-        saveBill(BillEntity("demo_bill_1", "Kodi ya pango ya ofisi", "Kodi ya pango", "Mengi Plaza Ltd", 700_000.0, FormatUtils.addDaysIso(today, -5), true, FormatUtils.addDaysIso(today, -6), "Benki", true, "Pango la ofisi ya Ubungo"))
-        saveBill(BillEntity("demo_bill_2", "Mishahara ya timu", "Mishahara", "Timu ya Mengidata", 1_200_000.0, FormatUtils.addDaysIso(today, 6), false, "", "Benki", true, "Malipo ya mwisho wa mwezi"))
+        saveBill(BillEntity("demo_bill_1", "Kodi ya pango ya ofisi", "Kodi ya pango", "Ubungo Plaza Ltd", 700_000.0, FormatUtils.addDaysIso(today, -5), true, FormatUtils.addDaysIso(today, -6), "Benki", true, "Pango la ofisi ya Ubungo"))
+        saveBill(BillEntity("demo_bill_2", "Mishahara ya timu", "Mishahara", "Timu ya Ofisi", 1_200_000.0, FormatUtils.addDaysIso(today, 6), false, "", "Benki", true, "Malipo ya mwisho wa mwezi"))
         saveBill(BillEntity("demo_bill_3", "Bili ya Umeme — LUKU", "Umeme & maji", "TANESCO", 85_000.0, FormatUtils.addDaysIso(today, 3), false, "", "M-Pesa", true, ""))
         saveBill(BillEntity("demo_bill_4", "Internet ya kasi (Fiber 50Mbps)", "Internet & simu", "Vodacom Business", 120_000.0, FormatUtils.addDaysIso(today, -1), false, "", "M-Pesa", true, "Muda umepita — lipa leo"))
         saveBill(BillEntity("demo_bill_5", "Kodi ya Mapato (TRA)", "Kodi & vibali", "TRA", 450_000.0, FormatUtils.addDaysIso(today, 10), false, "", "Benki", false, "Makadirio ya robo mwaka"))
@@ -1090,29 +1528,24 @@ class FinanceRepository(
         }
     }
 
-    // --- Automatic Local Safety Snapshot (Zero-Loss Recovery) ---
+    // --- Automatic Local & Phone Storage Safety Vault (Zero-Loss Recovery) ---
 
-    private fun safetySnapshotFile(): File = File(appContext.filesDir, AUTO_SNAPSHOT_FILE)
+    fun hasSafetySnapshot(): Boolean = storageVault.getStatus().hasAnyBackup
 
-    fun hasSafetySnapshot(): Boolean = safetySnapshotFile().let { it.exists() && it.length() > 10L }
-
-    suspend fun persistSafetySnapshot() = withContext(Dispatchers.IO) {
+    suspend fun persistSafetySnapshot(): Boolean = withContext(Dispatchers.IO) {
         runCatching {
             val json = exportBackupJson()
-            val target = safetySnapshotFile()
-            val temp = File(appContext.filesDir, "$AUTO_SNAPSHOT_FILE.tmp")
-            temp.writeText(json, Charsets.UTF_8)
-            if (target.exists()) target.delete()
-            temp.renameTo(target)
-        }
+            storageVault.saveAutoSnapshot(json)
+        }.getOrDefault(false)
     }
 
+    suspend fun syncToPhoneStorageNow(): Boolean = persistSafetySnapshot()
+
     suspend fun restoreLatestSafetySnapshot(): Boolean = withContext(Dispatchers.IO) {
-        val file = safetySnapshotFile()
-        if (!file.exists()) return@withContext false
+        val json = storageVault.readBestAvailableSnapshot() ?: return@withContext false
         runCatching {
-            val json = file.readText(Charsets.UTF_8)
             importBackupJson(json)
+            reconcileLedgerIntegrity()
             true
         }.getOrDefault(false)
     }

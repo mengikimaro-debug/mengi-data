@@ -2,6 +2,7 @@ package tz.mengidata.app.viewmodel
 
 import android.app.Application
 import android.content.Intent
+import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -25,15 +26,19 @@ import tz.mengidata.app.data.accounting.PartySummary
 import tz.mengidata.app.data.accounting.ZeroLossLedgerSummary
 import tz.mengidata.app.data.db.BillEntity
 import tz.mengidata.app.data.db.BusinessSettingsEntity
+import tz.mengidata.app.data.db.DeletedRecordEntity
 import tz.mengidata.app.data.db.InvoiceEntity
 import tz.mengidata.app.data.db.InvoiceItemEntity
 import tz.mengidata.app.data.db.InvoiceWithItems
 import tz.mengidata.app.data.db.MengiDatabase
+import tz.mengidata.app.data.db.PhoneStorageStatus
 import tz.mengidata.app.data.db.SavingsGoalEntity
 import tz.mengidata.app.data.db.SavingsLogEntity
 import tz.mengidata.app.data.db.TransactionCategoryEntity
 import tz.mengidata.app.data.db.TransactionEntity
+import tz.mengidata.app.data.pdf.FinancialStatementPdfGenerator
 import tz.mengidata.app.data.pdf.InvoicePdfGenerator
+import java.io.File
 import tz.mengidata.app.data.prefs.AppPreferences
 import tz.mengidata.app.data.repository.FinanceRepository
 import tz.mengidata.app.i18n.AppLanguage
@@ -42,6 +47,7 @@ import tz.mengidata.app.i18n.PeriodFilter
 import tz.mengidata.app.i18n.ThemeMode
 import tz.mengidata.app.i18n.tr
 import tz.mengidata.app.ui.components.MonthlyChartPoint
+import tz.mengidata.app.ui.components.MonthlyTrendPoint
 import tz.mengidata.app.updater.AppUpdateManager
 import tz.mengidata.app.updater.InstallResultEvent
 import tz.mengidata.app.updater.UpdateInfo
@@ -63,6 +69,10 @@ data class PendingFileExport(
 data class DashboardMetrics(
     val periodIncome: Double = 0.0,
     val periodExpense: Double = 0.0,
+    val periodHouseholdBills: Double = 0.0,
+    val periodSavingsOutflow: Double = 0.0,
+    val periodTotalOutflow: Double = 0.0,
+    val todayHouseholdBills: Double = 0.0,
     val netProfit: Double = 0.0,
     val receivablesBalance: Double = 0.0,
     val unpaidBillsTotal: Double = 0.0,
@@ -70,6 +80,7 @@ data class DashboardMetrics(
     val totalSavings: Double = 0.0,
     val totalSavingsTarget: Double = 0.0,
     val chartPoints: List<MonthlyChartPoint> = emptyList(),
+    val spendingTrendPoints: List<MonthlyTrendPoint> = emptyList(),
     val recentTransactions: List<TransactionEntity> = emptyList()
 )
 
@@ -131,6 +142,12 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
         CategoryAnalyticsEngine.defaultCategories()
     )
 
+    val deletedRecords: StateFlow<List<DeletedRecordEntity>> = repository.deletedRecordsFlow.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5_000),
+        emptyList()
+    )
+
     private val _selectedPeriod = MutableStateFlow(PeriodFilter.MONTH)
     val selectedPeriod: StateFlow<PeriodFilter> = _selectedPeriod.asStateFlow()
 
@@ -172,31 +189,97 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
 
         val periodTxns = txns.filter { FormatUtils.isDateInPeriod(it.date, period) }
         val income = periodTxns.filter { it.isIncome }.sumOf { it.amount }
-        val expense = periodTxns.filter { !it.isIncome }.sumOf { it.amount }
+        // Personal/system expenses, Household Bills, and Savings (Akiba)
+        // are ALL deducted normally from system balance, while each stays clearly identified!
+        val personalExpense = periodTxns
+            .filter {
+                !it.isIncome &&
+                    !AutoAccountingEngine.isHouseholdTransaction(it) &&
+                    !AutoAccountingEngine.isSavingsTransaction(it)
+            }
+            .sumOf { it.amount }
+        val periodHousehold = periodTxns
+            .filter { AutoAccountingEngine.isHouseholdTransaction(it) }
+            .sumOf { it.amount }
+        val periodSavingsOutflow = periodTxns
+            .filter { !it.isIncome && AutoAccountingEngine.isSavingsTransaction(it) }
+            .sumOf { it.amount }
+        val totalOutflow = personalExpense + periodHousehold + periodSavingsOutflow
 
         val receivables = invs.filter { !it.isDraft }.sumOf { it.balance }
         val unpaidBills = bls.filter { !it.paid }
         val today = FormatUtils.todayIso()
+        val todayHousehold = txns
+            .filter { it.date == today && AutoAccountingEngine.isHouseholdTransaction(it) }
+            .sumOf { it.amount }
         val chart = (-5..0).map { offset ->
             val key = FormatUtils.monthKey(FormatUtils.addMonthsIso(today, offset))
             val mTxns = txns.filter { FormatUtils.monthKey(it.date) == key }
             MonthlyChartPoint(
                 label = FormatUtils.shortMonthLabel(key, lang),
                 income = mTxns.filter { it.isIncome }.sumOf { it.amount },
-                expense = mTxns.filter { !it.isIncome }.sumOf { it.amount }
+                expense = mTxns
+                    .filter { !it.isIncome }
+                    .sumOf { it.amount }
+            )
+        }
+
+        // Monthly spending trends comparing Household Bills, Personal Expenses, and Savings Progress
+        val totalVaultSavings = goals.sumOf { it.currentAmount }
+        val monthOffsets = (-5..0).toList()
+        val rawMonthlyTrends = monthOffsets.map { offset ->
+            val key = FormatUtils.monthKey(FormatUtils.addMonthsIso(today, offset))
+            val mTxns = txns.filter { FormatUtils.monthKey(it.date) == key }
+            val mHousehold = mTxns
+                .filter { AutoAccountingEngine.isHouseholdTransaction(it) }
+                .sumOf { it.amount }
+            val mPersonal = mTxns
+                .filter {
+                    !it.isIncome &&
+                        !AutoAccountingEngine.isHouseholdTransaction(it) &&
+                        !AutoAccountingEngine.isSavingsTransaction(it)
+                }
+                .sumOf { it.amount }
+            val mSavingsDeposit = mTxns
+                .filter { !it.isIncome && AutoAccountingEngine.isSavingsTransaction(it) }
+                .sumOf { it.amount }
+            val mSavingsWithdraw = mTxns
+                .filter { it.isIncome && AutoAccountingEngine.isSavingsTransaction(it) }
+                .sumOf { it.amount }
+            Triple(key, Triple(mHousehold, mPersonal, mSavingsDeposit), mSavingsDeposit - mSavingsWithdraw)
+        }
+        val runningCumulative = DoubleArray(rawMonthlyTrends.size)
+        var cursorSavings = totalVaultSavings
+        for (i in rawMonthlyTrends.indices.reversed()) {
+            runningCumulative[i] = cursorSavings.coerceAtLeast(0.0)
+            cursorSavings = (cursorSavings - rawMonthlyTrends[i].third).coerceAtLeast(0.0)
+        }
+        val spendingTrends = rawMonthlyTrends.mapIndexed { idx, (key, buckets, _) ->
+            MonthlyTrendPoint(
+                monthKey = key,
+                label = FormatUtils.shortMonthLabel(key, lang),
+                householdBills = buckets.first,
+                personalExpenses = buckets.second,
+                savingsDeposited = buckets.third,
+                cumulativeSavings = runningCumulative[idx]
             )
         }
 
         DashboardMetrics(
             periodIncome = income,
-            periodExpense = expense,
-            netProfit = income - expense,
+            periodExpense = personalExpense,
+            periodHouseholdBills = periodHousehold,
+            periodSavingsOutflow = periodSavingsOutflow,
+            periodTotalOutflow = totalOutflow,
+            todayHouseholdBills = todayHousehold,
+            netProfit = income - totalOutflow,
             receivablesBalance = receivables,
             unpaidBillsTotal = unpaidBills.sumOf { it.amount },
             overdueBillsCount = unpaidBills.count { it.isOverdue },
-            totalSavings = goals.sumOf { it.currentAmount },
+            totalSavings = totalVaultSavings,
             totalSavingsTarget = goals.sumOf { it.targetAmount },
             chartPoints = chart,
+            spendingTrendPoints = spendingTrends,
             recentTransactions = txns.take(5)
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardMetrics())
@@ -261,20 +344,31 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
     val partyDirectory: StateFlow<List<PartySummary>> = combine(
         transactions,
         invoices,
-        bills
-    ) { txns, invs, bls ->
-        PartyDirectoryEngine.buildDirectory(txns, invs, bls)
+        bills,
+        savingsGoals,
+        savingsLogs
+    ) { txns, invs, bls, goals, logs ->
+        PartyDirectoryEngine.buildDirectory(txns, invs, bls, goals, logs)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _hasSafetySnapshot = MutableStateFlow(repository.hasSafetySnapshot())
     val hasSafetySnapshot: StateFlow<Boolean> = _hasSafetySnapshot.asStateFlow()
+
+    private val _phoneStorageStatus = MutableStateFlow(repository.getPhoneStorageStatus())
+    val phoneStorageStatus: StateFlow<PhoneStorageStatus> = _phoneStorageStatus.asStateFlow()
+
+    private fun refreshStorageStatus() {
+        val status = repository.getPhoneStorageStatus()
+        _phoneStorageStatus.value = status
+        _hasSafetySnapshot.value = status.hasAnyBackup
+    }
 
     private var lastUpdateInfo: UpdateInfo? = null
 
     init {
         viewModelScope.launch {
             repository.ensureInitialized()
-            _hasSafetySnapshot.value = repository.hasSafetySnapshot()
+            refreshStorageStatus()
             if (prefs.shouldAutoCheckUpdates()) {
                 checkForUpdates(silentIfUpToDate = true)
             }
@@ -291,7 +385,7 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
                     is InstallResultEvent.Success -> {
                         val version = lastUpdateInfo?.version ?: updateManager.currentVersionName
                         _updateState.value = UpdateUiState.Success(version)
-                        emitNotice(tr(language.value, "Update imesakinishwa kikamilifu.", "Update installed successfully."))
+                        emitNotice(tr(language.value, "Sasisho limesakinishwa kikamilifu.", "Update installed successfully."))
                     }
                     is InstallResultEvent.Failure -> {
                         _updateState.value = UpdateUiState.Error(event.reason, lastUpdateInfo)
@@ -337,7 +431,7 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
         val saved = prefs.saveAppPin(pin)
         if (saved) {
             _isAppUnlocked.value = true
-            emitNotice(tr(language.value, "PIN ya ulinzi imewekwa salama.", "Security PIN enabled."))
+            emitNotice(tr(language.value, "Namba ya siri ya ulinzi imewekwa salama.", "Security PIN enabled."))
         }
         return saved
     }
@@ -345,7 +439,7 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
     fun disableAppPin() {
         prefs.clearAppPin()
         _isAppUnlocked.value = true
-        emitNotice(tr(language.value, "Kufunga kwa PIN kumezimwa.", "PIN lock disabled."))
+        emitNotice(tr(language.value, "Kufunga kwa namba ya siri kumezimwa.", "PIN lock disabled."))
     }
 
     // --- Smart Auto-Entry & Transactions ---
@@ -528,17 +622,26 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
     fun deleteInvoice(invoiceId: String) {
         viewModelScope.launch {
             repository.deleteInvoice(invoiceId)
-            emitNotice(tr(language.value, "Ankara imefutwa.", "Invoice deleted."))
+            refreshStorageStatus()
+            emitNotice(
+                tr(
+                    language.value,
+                    "Ankara imehamishwa kwenye Kikapu cha Urejeshaji (unaweza kuirejesha).",
+                    "Invoice moved to Recovery Vault (can be restored anytime)."
+                )
+            )
         }
     }
 
     fun exportInvoicePdf(invoiceWithItems: InvoiceWithItems) {
         viewModelScope.launch {
-            val bytes = InvoicePdfGenerator.generatePdfBytes(invoiceWithItems, settings.value)
+            val lang = language.value
+            val bytes = InvoicePdfGenerator.generatePdfBytes(invoiceWithItems, settings.value, lang)
             val safeNumber = invoiceWithItems.invoice.number.replace(Regex("[^A-Za-z0-9_-]"), "_")
+            val prefix = if (lang == AppLanguage.EN) "Invoice" else "Ankara"
             _exportRequests.emit(
                 PendingFileExport(
-                    filename = "Ankara_$safeNumber.pdf",
+                    filename = "${prefix}_$safeNumber.pdf",
                     mimeType = "application/pdf",
                     bytes = bytes
                 )
@@ -548,14 +651,16 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
 
     fun printInvoicePdf(invoiceWithItems: InvoiceWithItems) {
         viewModelScope.launch {
-            val bytes = InvoicePdfGenerator.generatePdfBytes(invoiceWithItems, settings.value)
+            val lang = language.value
+            val bytes = InvoicePdfGenerator.generatePdfBytes(invoiceWithItems, settings.value, lang)
+            val titlePrefix = if (lang == AppLanguage.EN) "Invoice" else "Ankara"
             val ok = InvoicePdfGenerator.printInvoicePdf(
                 getApplication(),
-                "Ankara ${invoiceWithItems.invoice.number}",
+                "$titlePrefix ${invoiceWithItems.invoice.number}",
                 bytes
             )
             if (!ok) {
-                emitNotice(tr(language.value, "Chapishaji haupatikani.", "Print service unavailable."))
+                emitNotice(tr(lang, "Chapishaji haupatikani.", "Print service unavailable."))
             }
         }
     }
@@ -605,15 +710,215 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
     fun deleteBill(billId: String) {
         viewModelScope.launch {
             repository.deleteBill(billId)
-            emitNotice(tr(language.value, "Bili imefutwa.", "Bill deleted."))
+            refreshStorageStatus()
+            emitNotice(
+                tr(
+                    language.value,
+                    "Bili imehamishwa kwenye Kikapu cha Urejeshaji.",
+                    "Bill moved to Recovery Vault."
+                )
+            )
         }
     }
+
+    fun duplicateBill(bill: BillEntity) {
+        viewModelScope.launch {
+            val nextDate = FormatUtils.addMonthsIso(bill.dueDate.ifBlank { FormatUtils.todayIso() }, 1)
+            repository.saveBill(
+                bill.copy(
+                    id = "",
+                    paid = false,
+                    paidDate = "",
+                    linkedTxnId = "",
+                    dueDate = nextDate
+                )
+            )
+            refreshStorageStatus()
+            emitNotice(
+                tr(
+                    language.value,
+                    "Nakala ya bili (${bill.name}) imeongezwa kwa $nextDate.",
+                    "Bill duplicated (${bill.name}) for $nextDate."
+                )
+            )
+        }
+    }
+
+    fun payAllDueBills() {
+        viewModelScope.launch {
+            val today = FormatUtils.todayIso()
+            val targets = bills.value.filter { !it.paid && (it.isOverdue || it.dueDate <= today) }
+            if (targets.isEmpty()) {
+                emitNotice(
+                    tr(
+                        language.value,
+                        "Hakuna bili zilizochelewa au zinazodaiwa leo.",
+                        "No overdue or due-today bills to pay."
+                    )
+                )
+                return@launch
+            }
+            targets.forEach { bill ->
+                repository.toggleBillPaid(bill.id)
+            }
+            refreshStorageStatus()
+            emitNotice(
+                tr(
+                    language.value,
+                    "Bili ${targets.size} zimelipwa na kukatwa kwenye mfumo.",
+                    "${targets.size} due bills marked paid and deducted."
+                )
+            )
+        }
+    }
+
+    fun duplicateTransaction(txn: TransactionEntity) {
+        viewModelScope.launch {
+            repository.saveTransaction(
+                txn.copy(
+                    id = "",
+                    date = FormatUtils.todayIso(),
+                    linkedId = "",
+                    source = if (txn.source == "bill" || txn.source == "invoice") "manual" else txn.source
+                )
+            )
+            refreshStorageStatus()
+            emitNotice(
+                tr(
+                    language.value,
+                    "Nakala ya muamala imehifadhiwa kwa leo.",
+                    "Transaction duplicated for today."
+                )
+            )
+        }
+    }
+
+    fun buildShareTransactionReceiptIntent(txn: TransactionEntity): Intent {
+        val s = settings.value
+        val lang = language.value
+        val currency = s.currency.ifBlank { "TZS" }
+        val bucket = AutoAccountingEngine.classifyTransaction(txn)
+        val business = s.businessName.ifBlank { "Mengidata" }
+        val text = buildString {
+            appendLine("$business — ${tr(lang, "RISITI YA MUAMALA", "TRANSACTION RECEIPT")}")
+            appendLine("────────────────────────")
+            appendLine("${tr(lang, "Aina", "Category")}: ${bucket.label(lang)}")
+            appendLine("${tr(lang, "Maelezo", "Description")}: ${txn.description}")
+            if (txn.party.isNotBlank()) {
+                appendLine("${tr(lang, "Mhusika", "Contact")}: ${txn.party}")
+            }
+            appendLine("${tr(lang, "Kiasi", "Amount")}: ${FormatUtils.formatMoney(txn.amount, currency)}")
+            appendLine("${tr(lang, "Njia ya Malipo", "Payment Method")}: ${FormatUtils.localizedMethod(txn.method, lang)}")
+            appendLine("${tr(lang, "Tarehe", "Date")}: ${txn.date}")
+            if (txn.reference.isNotBlank()) {
+                appendLine("${tr(lang, "Kumbukumbu", "Reference")}: ${txn.reference}")
+            }
+            if (txn.notes.isNotBlank()) {
+                appendLine("${tr(lang, "Maelezo ya ziada", "Notes")}: ${txn.notes}")
+            }
+        }
+        return Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, "$business · ${txn.description}")
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+    }
+
+    fun buildShareInvoicePdfIntent(invoiceWithItems: InvoiceWithItems): Intent? {
+        val app = getApplication<Application>()
+        val lang = language.value
+        val pdfBytes = InvoicePdfGenerator.generatePdfBytes(invoiceWithItems, settings.value, lang)
+        val filePrefix = tr(lang, "Ankara", "Invoice")
+        val filename = "${filePrefix}_${invoiceWithItems.invoice.number.replace(" ", "_")}.pdf"
+        return buildSharePdfFileIntent(
+            app = app,
+            filename = filename,
+            pdfBytes = pdfBytes,
+            subject = "${settings.value.businessName.ifBlank { "Mengidata" }} · $filePrefix ${invoiceWithItems.invoice.number}",
+            bodyText = tr(
+                lang,
+                "Tafadhali pokea ankara ya PDF namba ${invoiceWithItems.invoice.number} kwa ${invoiceWithItems.invoice.customerName}.",
+                "Please find attached invoice PDF ${invoiceWithItems.invoice.number} for ${invoiceWithItems.invoice.customerName}."
+            )
+        )
+    }
+
+    fun exportFinancialStatementPdf(period: PeriodFilter = selectedPeriod.value) {
+        viewModelScope.launch {
+            val lang = language.value
+            val pdfBytes = FinancialStatementPdfGenerator.generateStatementPdfBytes(
+                settings = settings.value,
+                transactions = transactions.value,
+                bills = bills.value,
+                invoices = invoices.value,
+                savingsGoals = savingsGoals.value,
+                period = period,
+                language = lang
+            )
+            val prefix = tr(lang, "Mengidata_Taarifa_Fedha", "Mengidata_Financial_Statement")
+            _exportRequests.emit(
+                PendingFileExport(
+                    filename = "${prefix}_${period.name.lowercase()}_${FormatUtils.todayIso()}.pdf",
+                    mimeType = "application/pdf",
+                    bytes = pdfBytes
+                )
+            )
+        }
+    }
+
+    fun buildShareStatementPdfIntent(period: PeriodFilter = selectedPeriod.value): Intent? {
+        val app = getApplication<Application>()
+        val lang = language.value
+        val pdfBytes = FinancialStatementPdfGenerator.generateStatementPdfBytes(
+            settings = settings.value,
+            transactions = transactions.value,
+            bills = bills.value,
+            invoices = invoices.value,
+            savingsGoals = savingsGoals.value,
+            period = period,
+            language = lang
+        )
+        val prefix = tr(lang, "Mengidata_Taarifa_Fedha", "Mengidata_Financial_Statement")
+        val filename = "${prefix}_${period.name.lowercase()}_${FormatUtils.todayIso()}.pdf"
+        return buildSharePdfFileIntent(
+            app = app,
+            filename = filename,
+            pdfBytes = pdfBytes,
+            subject = "${settings.value.businessName.ifBlank { "Mengidata" }} · ${tr(lang, "Taarifa ya Fedha", "Financial Statement")}",
+            bodyText = tr(
+                lang,
+                "Taarifa ya fedha ya PDF (${period.labelSw}) kutoka ${settings.value.businessName.ifBlank { "Mengidata" }}.",
+                "Financial statement PDF (${period.labelEn}) from ${settings.value.businessName.ifBlank { "Mengidata" }}."
+            )
+        )
+    }
+
+    private fun buildSharePdfFileIntent(
+        app: Application,
+        filename: String,
+        pdfBytes: ByteArray,
+        subject: String,
+        bodyText: String
+    ): Intent? = runCatching {
+        val dir = File(app.cacheDir, "shared_pdfs").apply { if (!exists()) mkdirs() }
+        val file = File(dir, filename)
+        file.writeBytes(pdfBytes)
+        val uri = FileProvider.getUriForFile(app, "${app.packageName}.fileprovider", file)
+        Intent(Intent.ACTION_SEND).apply {
+            type = "application/pdf"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_SUBJECT, subject)
+            putExtra(Intent.EXTRA_TEXT, bodyText)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+    }.getOrNull()
 
     // --- Savings (Akiba) ---
 
     fun saveSavingsGoal(goal: SavingsGoalEntity) {
         viewModelScope.launch {
             repository.saveSavingsGoal(goal)
+            refreshStorageStatus()
             emitNotice(tr(language.value, "Lengo la akiba limehifadhiwa.", "Savings goal saved."))
         }
     }
@@ -621,13 +926,26 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
     fun deleteSavingsGoal(goalId: String) {
         viewModelScope.launch {
             repository.deleteSavingsGoal(goalId)
-            emitNotice(tr(language.value, "Lengo la akiba limefutwa.", "Savings goal deleted."))
+            refreshStorageStatus()
+            emitNotice(
+                tr(
+                    language.value,
+                    "Lengo la akiba limehamishwa kwenye Kikapu cha Urejeshaji.",
+                    "Savings goal moved to Recovery Vault."
+                )
+            )
         }
     }
 
-    fun recordSavingsTransaction(goalId: String, type: String, amount: Double, note: String) {
+    fun recordSavingsTransaction(
+        goalId: String,
+        type: String,
+        amount: Double,
+        note: String,
+        partyName: String = ""
+    ) {
         viewModelScope.launch {
-            repository.recordSavingsTransaction(goalId, type, amount, note)
+            repository.recordSavingsTransaction(goalId, type, amount, note, partyName)
             val msg = if (type == "deposit") {
                 tr(language.value, "Fedha zimeongezwa kwenye akiba.", "Deposit recorded.")
             } else {
@@ -776,13 +1094,68 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun syncDatabaseToPhoneStorage() {
+        viewModelScope.launch {
+            val ok = repository.syncToPhoneStorageNow()
+            refreshStorageStatus()
+            if (ok) {
+                emitNotice(
+                    tr(
+                        language.value,
+                        "Hifadhidata imesawazishwa salama kwenye hifadhi ya simu!",
+                        "Database safely synced to phone storage!"
+                    )
+                )
+            } else {
+                emitNotice(
+                    tr(
+                        language.value,
+                        "Imeshindwa kuhifadhi nakala kwenye hifadhi ya simu.",
+                        "Failed to sync backup to phone storage."
+                    )
+                )
+            }
+        }
+    }
+
+    fun restoreDeletedRecord(trashId: String) {
+        viewModelScope.launch {
+            val ok = repository.restoreDeletedRecord(trashId)
+            refreshStorageStatus()
+            if (ok) {
+                emitNotice(
+                    tr(
+                        language.value,
+                        "Rekodi imerejeshwa kikamilifu kwenye mfumo!",
+                        "Record restored to the database!"
+                    )
+                )
+            }
+        }
+    }
+
+    fun permanentlyDeleteTrashRecord(trashId: String) {
+        viewModelScope.launch {
+            repository.permanentlyDeleteTrashRecord(trashId)
+            emitNotice(tr(language.value, "Rekodi imeondolewa kabisa.", "Record permanently removed."))
+        }
+    }
+
+    fun emptyTrash() {
+        viewModelScope.launch {
+            repository.emptyTrash()
+            emitNotice(tr(language.value, "Kikapu cha urejeshaji kimesafishwa.", "Recovery Vault emptied."))
+        }
+    }
+
     fun restoreLatestSafetySnapshot() {
         viewModelScope.launch {
             val ok = repository.restoreLatestSafetySnapshot()
+            refreshStorageStatus()
             if (ok) {
-                emitNotice(tr(language.value, "Hesabu zote zimerejeshwa kutoka Auto-Snapshot!", "All records restored from Auto-Snapshot!"))
+                emitNotice(tr(language.value, "Hesabu zote zimerejeshwa kutoka hifadhi ya simu!", "All records restored from phone storage backup!"))
             } else {
-                emitNotice(tr(language.value, "Hakuna Auto-Snapshot ya kurejesha bado.", "No Auto-Snapshot available yet."))
+                emitNotice(tr(language.value, "Hakuna hifadhi ya usalama ya kurejesha bado.", "No safety snapshot available yet."))
             }
         }
     }
@@ -793,11 +1166,11 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
                 .onSuccess {
                     repository.reconcileLedgerIntegrity()
                     repository.persistSafetySnapshot()
-                    _hasSafetySnapshot.value = repository.hasSafetySnapshot()
+                    refreshStorageStatus()
                     emitNotice(tr(language.value, "Nakala rudufu imerejeshwa kikamilifu.", "Backup restored successfully."))
                 }
                 .onFailure {
-                    emitNotice(tr(language.value, "Faili la backup si sahihi.", "Invalid Mengidata backup JSON file."))
+                    emitNotice(tr(language.value, "Faili la nakala rudufu si sahihi.", "Invalid Mengidata backup JSON file."))
                 }
         }
     }
@@ -805,6 +1178,8 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
     fun loadDemoData() {
         viewModelScope.launch {
             repository.loadDemoData()
+            repository.persistSafetySnapshot()
+            refreshStorageStatus()
             emitNotice(tr(language.value, "Data ya mfano imepakiwa.", "Sample business data loaded."))
         }
     }
@@ -812,7 +1187,14 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
     fun clearAllFinancialData() {
         viewModelScope.launch {
             repository.clearFinancialData()
-            emitNotice(tr(language.value, "Data zote za kifedha zimefutwa.", "All financial records cleared."))
+            refreshStorageStatus()
+            emitNotice(
+                tr(
+                    language.value,
+                    "Data zimefutwa — nakala ya dharura imehifadhiwa kwenye hifadhi ya simu.",
+                    "Financial data cleared — an emergency backup was saved to phone storage."
+                )
+            )
         }
     }
 
@@ -847,7 +1229,7 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
                         _updateState.value = UpdateUiState.Idle
                     } else {
                         _updateState.value = UpdateUiState.Error(
-                            err.message ?: tr(language.value, "Imeshindwa kuangalia update.", "Failed to check for updates.")
+                            err.message ?: tr(language.value, "Imeshindwa kukagua sasisho.", "Failed to check for updates.")
                         )
                     }
                 }

@@ -51,52 +51,52 @@ val PlusJakartaSansFamily = FontFamily(
     Font(R.font.plus_jakarta_sans, FontWeight.Bold)
 )
 
-// Samsung One UI 8.5 Accessible Palette (WCAG AA/AAA Verified in Both Light & Dark States)
-// Light: Signature One UI Cool Frost Canvas (#F2F4F8), Pure White 26dp Squircles, One UI Cobalt Blue (#0064D2)
-// Dark: True One UI AMOLED Pitch Black (#000000), Elevated Charcoal Cards (#17171A), Luminous Galaxy Sky (#54A8FF)
+// Calm Matte Solid Palette (Zero Glare, Zero Neon, Zero Transparency — WCAG AA/AAA Verified)
+// Light: Warm Matte Stone Canvas (#EDEFF2), Soft Matte Paper Cards (#F8F9FA), Muted Slate Navy (#334B63)
+// Dark: Matte Charcoal Canvas (#111418), Sculpted Matte Graphite Cards (#191E24), Muted Steel Blue (#8BA2B8)
 
-private val OneUiDarkCanvas = Color(0xFF000000)
-private val OneUiDarkCard = Color(0xFF17171A)
-private val OneUiDarkElevated = Color(0xFF232329)
-private val OneUiDarkBorder = Color(0xFF2D2E36)
+private val OneUiDarkCanvas = Color(0xFF111418)
+private val OneUiDarkCard = Color(0xFF191E24)
+private val OneUiDarkElevated = Color(0xFF232931)
+private val OneUiDarkBorder = Color(0xFF313944)
 
-private val OneUiLightCanvas = Color(0xFFF2F4F8)
-private val OneUiPureWhite = Color(0xFFFFFFFF)
-private val OneUiLightPill = Color(0xFFE7ECF4)
-private val OneUiLightBorder = Color(0xFFDCE3EE)
+private val OneUiLightCanvas = Color(0xFFEDEFF2)
+private val OneUiPureWhite = Color(0xFFF8F9FA)
+private val OneUiLightPill = Color(0xFFE2E6EC)
+private val OneUiLightBorder = Color(0xFFD1D7E0)
 
-private val DeepInk = Color(0xFF0A101F)
-private val SlateInk = Color(0xFF111827)
-private val SlateMutedAccessible = Color(0xFF475467) // >= 6.8:1 on Light Canvas & Pill
-private val SnowInk = Color(0xFFF9FAFB)
-private val SilverMutedAccessible = Color(0xFFAAB4C4) // >= 7.8:1 on Dark Card & Elevated
+private val DeepInk = Color(0xFF12161C)
+private val SlateInk = Color(0xFF1C232C)
+private val SlateMutedAccessible = Color(0xFF4F5A68) // >= 6.4:1 on Light Canvas & Pill
+private val SnowInk = Color(0xFFE6EAF0)
+private val SilverMutedAccessible = Color(0xFFA6B0BD) // >= 7.6:1 on Dark Card & Elevated
 
-private val OneUiBlueLight = Color(0xFF0064D2) // Signature One UI Cobalt Blue (>= 5.6:1 on White)
-private val OneUiBlueDark = Color(0xFF54A8FF) // Luminous One UI Sky Blue (>= 7.9:1 on #17171A)
-private val OneUiBlueSoftLight = Color(0xFFE3F0FF)
-private val OneUiBlueInkLight = Color(0xFF003B82)
-private val OneUiBlueSoftDark = Color(0xFF142A48)
-private val OneUiBlueInkDark = Color(0xFFD8EBFF)
+private val OneUiBlueLight = Color(0xFF334B63) // Calm Matte Slate Navy (>= 8.2:1 on Soft Paper)
+private val OneUiBlueDark = Color(0xFF8BA2B8) // Calm Matte Steel Blue (>= 6.8:1 on Graphite)
+private val OneUiBlueSoftLight = Color(0xFFDEE5ED)
+private val OneUiBlueInkLight = Color(0xFF24384B)
+private val OneUiBlueSoftDark = Color(0xFF212D3A)
+private val OneUiBlueInkDark = Color(0xFFD2DCE6)
 
-private val GalaxyIndigoLight = Color(0xFF3E4CC6)
-private val GalaxyIndigoDark = Color(0xFF93A8FF)
-private val GalaxyIndigoSoft = Color(0xFFE5E9FF)
-private val GalaxyIndigoInk = Color(0xFF262F82)
+private val GalaxyIndigoLight = Color(0xFF4E5975) // Calm Matte Slate Indigo
+private val GalaxyIndigoDark = Color(0xFF9BA5BD)
+private val GalaxyIndigoSoft = Color(0xFFE4E7F0)
+private val GalaxyIndigoInk = Color(0xFF343D54)
 
-private val Amber700 = Color(0xFFB45309)
-private val AmberSoft = Color(0xFFFFF8E6)
-private val Amber400 = Color(0xFFFBBF24)
-private val AmberDarkSoft = Color(0xFF2B2009)
+private val Amber700 = Color(0xFF7D5D3B) // Calm Matte Warm Ochre
+private val AmberSoft = Color(0xFFF0EAE1)
+private val Amber400 = Color(0xFFC2A684)
+private val AmberDarkSoft = Color(0xFF2B241C)
 
-private val EmeraldIncomeLight = Color(0xFF047857) // >= 5.1:1 on White & EmeraldSoftLight
-private val EmeraldIncomeSoftLight = Color(0xFFE9FBF3)
-private val EmeraldIncomeDark = Color(0xFF34D399) // >= 8.2:1 on Dark Card & EmeraldSoftDark
-private val EmeraldIncomeSoftDark = Color(0xFF09281F)
+private val EmeraldIncomeLight = Color(0xFF346352) // Calm Matte Forest Sage
+private val EmeraldIncomeSoftLight = Color(0xFFE2ECE8)
+private val EmeraldIncomeDark = Color(0xFF82B09D) // Calm Matte Sage on Dark
+private val EmeraldIncomeSoftDark = Color(0xFF1A2A24)
 
-private val SoftPlumLight = Color(0xFF5E4D82) // Soft non-red muted lavender, >= 6.5:1 contrast
-private val SoftPlumBgLight = Color(0xFFF3EFFA)
-private val SoftPlumDark = Color(0xFFC4B5E6) // Soft pastel lavender on AMOLED dark, >= 8.5:1 contrast
-private val SoftPlumBgDark = Color(0xFF1E1A2B)
+private val SoftPlumLight = Color(0xFF5D526E) // Calm Matte Dusty Mauve
+private val SoftPlumBgLight = Color(0xFFEBE8F0)
+private val SoftPlumDark = Color(0xFFA99EB9) // Calm Matte Lavender-Gray on Dark
+private val SoftPlumBgDark = Color(0xFF24202C)
 
 @Stable
 data class MengiThemeState(
@@ -140,12 +140,12 @@ data class MengiExtendedColors(
 
 private val LightExtendedColors = MengiExtendedColors(
     isDark = false,
-    heroStart = Color(0xFF0A1733),
-    heroMid = Color(0xFF0D2E6E),
-    heroEnd = Color(0xFF0366D6),
-    heroAccentGlow = Color(0xFF5CC8FF),
-    heroGoldGlow = Color(0xFFA5B4FC),
-    lime = Color(0xFF93D5FF),
+    heroStart = Color(0xFF1D242C),
+    heroMid = Color(0xFF252F3A),
+    heroEnd = Color(0xFF2F3C4B),
+    heroAccentGlow = Color(0xFF8BA2B8),
+    heroGoldGlow = Color(0xFFA6AFC2),
+    lime = Color(0xFFB8C7D6),
     limeSoft = OneUiBlueSoftLight,
     limeInk = OneUiBlueInkLight,
     income = EmeraldIncomeLight,
@@ -158,19 +158,19 @@ private val LightExtendedColors = MengiExtendedColors(
     savingsSoft = GalaxyIndigoSoft,
     cardBorder = OneUiLightBorder,
     subtleSurface = OneUiLightPill,
-    glassHighlight = Color.White.copy(alpha = 0.90f),
-    dockSurface = Color(0xF5FFFFFF),
-    dockBorder = Color(0xFFD5DFEE)
+    glassHighlight = Color(0xFFE6EAEF),
+    dockSurface = Color(0xFFF5F6F8),
+    dockBorder = Color(0xFFCFD6DF)
 )
 
 private val DarkExtendedColors = MengiExtendedColors(
     isDark = true,
-    heroStart = Color(0xFF0A1326),
-    heroMid = Color(0xFF10244A),
-    heroEnd = Color(0xFF163D80),
-    heroAccentGlow = Color(0xFF54A8FF),
-    heroGoldGlow = Color(0xFF8DA4FF),
-    lime = Color(0xFF8CC6FF),
+    heroStart = Color(0xFF151A20),
+    heroMid = Color(0xFF1C232B),
+    heroEnd = Color(0xFF242D38),
+    heroAccentGlow = Color(0xFF8BA2B8),
+    heroGoldGlow = Color(0xFF9BA5BD),
+    lime = Color(0xFFB8C7D6),
     limeSoft = OneUiBlueSoftDark,
     limeInk = OneUiBlueInkDark,
     income = EmeraldIncomeDark,
@@ -180,29 +180,29 @@ private val DarkExtendedColors = MengiExtendedColors(
     warning = Amber400,
     warningSoft = AmberDarkSoft,
     savings = GalaxyIndigoDark,
-    savingsSoft = Color(0xFF1C1F3E),
+    savingsSoft = Color(0xFF212636),
     cardBorder = OneUiDarkBorder,
     subtleSurface = OneUiDarkElevated,
-    glassHighlight = Color.White.copy(alpha = 0.08f),
-    dockSurface = Color(0xEB1B1C22),
-    dockBorder = Color(0x30FFFFFF)
+    glassHighlight = Color(0xFF222831),
+    dockSurface = Color(0xFF191E24),
+    dockBorder = Color(0xFF303844)
 )
 
 val LocalMengiColors = staticCompositionLocalOf { LightExtendedColors }
 
 internal val MengiLightColorScheme = lightColorScheme(
     primary = OneUiBlueLight,
-    onPrimary = Color.White,
+    onPrimary = Color(0xFFF5F7FA),
     primaryContainer = OneUiBlueSoftLight,
     onPrimaryContainer = OneUiBlueInkLight,
     secondary = GalaxyIndigoLight,
-    onSecondary = Color.White,
+    onSecondary = Color(0xFFF5F7FA),
     secondaryContainer = GalaxyIndigoSoft,
     onSecondaryContainer = GalaxyIndigoInk,
     tertiary = Amber700,
-    onTertiary = Color.White,
+    onTertiary = Color(0xFFF5F7FA),
     tertiaryContainer = AmberSoft,
-    onTertiaryContainer = Color(0xFF78350F),
+    onTertiaryContainer = Color(0xFF5A4229),
     background = OneUiLightCanvas,
     onBackground = SlateInk,
     surface = OneUiPureWhite,
@@ -210,11 +210,11 @@ internal val MengiLightColorScheme = lightColorScheme(
     surfaceVariant = OneUiLightPill,
     onSurfaceVariant = SlateMutedAccessible,
     outline = OneUiLightBorder,
-    outlineVariant = Color(0xFFE3E9F2),
+    outlineVariant = Color(0xFFDFE3EA),
     error = SoftPlumLight,
-    onError = Color.White,
+    onError = Color(0xFFF5F7FA),
     errorContainer = SoftPlumBgLight,
-    onErrorContainer = Color(0xFF423461)
+    onErrorContainer = Color(0xFF423952)
 )
 
 internal val MengiDarkColorScheme = darkColorScheme(
@@ -229,7 +229,7 @@ internal val MengiDarkColorScheme = darkColorScheme(
     tertiary = Amber400,
     onTertiary = DeepInk,
     tertiaryContainer = AmberDarkSoft,
-    onTertiaryContainer = Color(0xFFFDE68A),
+    onTertiaryContainer = Color(0xFFDCC9AE),
     background = OneUiDarkCanvas,
     onBackground = SnowInk,
     surface = OneUiDarkCard,
@@ -237,34 +237,34 @@ internal val MengiDarkColorScheme = darkColorScheme(
     surfaceVariant = OneUiDarkElevated,
     onSurfaceVariant = SilverMutedAccessible,
     outline = OneUiDarkBorder,
-    outlineVariant = Color(0xFF282A33),
+    outlineVariant = Color(0xFF2A313B),
     error = SoftPlumDark,
     onError = DeepInk,
     errorContainer = SoftPlumBgDark,
-    onErrorContainer = Color(0xFFE6DFFA)
+    onErrorContainer = Color(0xFFD8D0E4)
 )
 
 val MengiTypography = Typography(
     displayLarge = TextStyle(
         fontFamily = OneUiDisplayFamily,
-        fontWeight = FontWeight.Bold,
-        fontSize = 36.sp,
-        lineHeight = 42.sp,
-        letterSpacing = (-0.8).sp
+        fontWeight = FontWeight.ExtraBold,
+        fontSize = 38.sp,
+        lineHeight = 44.sp,
+        letterSpacing = (-1.1).sp
     ),
     displaySmall = TextStyle(
         fontFamily = OneUiDisplayFamily,
         fontWeight = FontWeight.Bold,
-        fontSize = 30.sp,
-        lineHeight = 36.sp,
-        letterSpacing = (-0.6).sp
+        fontSize = 31.sp,
+        lineHeight = 37.sp,
+        letterSpacing = (-0.75).sp
     ),
     headlineMedium = TextStyle(
         fontFamily = OneUiDisplayFamily,
-        fontWeight = FontWeight.SemiBold,
+        fontWeight = FontWeight.Bold,
         fontSize = 24.sp,
         lineHeight = 30.sp,
-        letterSpacing = (-0.3).sp
+        letterSpacing = (-0.4).sp
     ),
     headlineSmall = TextStyle(
         fontFamily = OneUiDisplayFamily,
@@ -332,12 +332,12 @@ val MengiTypography = Typography(
     )
 )
 
-// Samsung One UI 8.5 Signature Squircle Radius System
+// 2026 Current-Generation Expressive Squircle Radius System
 val MengiShapes = Shapes(
-    small = RoundedCornerShape(14.dp),
-    medium = RoundedCornerShape(20.dp),
-    large = RoundedCornerShape(26.dp),
-    extraLarge = RoundedCornerShape(32.dp)
+    small = RoundedCornerShape(16.dp),
+    medium = RoundedCornerShape(22.dp),
+    large = RoundedCornerShape(28.dp),
+    extraLarge = RoundedCornerShape(34.dp)
 )
 
 private fun deriveExtendedColors(

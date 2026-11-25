@@ -221,3 +221,20 @@ data class TransactionCategoryEntity(
     val isIncome: Boolean get() = type == "income"
 }
 
+@Entity(
+    tableName = "deleted_records",
+    indices = [Index(value = ["deletedAtMillis"])]
+)
+data class DeletedRecordEntity(
+    @PrimaryKey val id: String,
+    val entityType: String, // "transaction" | "bill" | "invoice" | "savings_goal"
+    val originalId: String,
+    val title: String,
+    val subtitle: String = "",
+    val amount: Double = 0.0,
+    val payloadJson: String,
+    val deletedAt: String = FormatUtils.todayIso(),
+    val deletedAtMillis: Long = System.currentTimeMillis()
+)
+
+

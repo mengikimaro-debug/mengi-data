@@ -72,6 +72,24 @@ object FormatUtils {
         return list.getOrElse(monthNum - 1) { monthKey }
     }
 
+    fun friendlyDateLabel(isoDate: String, lang: AppLanguage): String {
+        val clean = isoDate.trim()
+        if (clean.length < 10) return clean
+        val today = todayIso()
+        val yesterday = addDaysIso(today, -1)
+        val tomorrow = addDaysIso(today, 1)
+        val day = clean.substring(8, 10).toIntOrNull()
+        val monthShort = shortMonthLabel(clean.substring(0, 7), lang)
+        val year = clean.substring(0, 4)
+        val compact = if (day != null) "$day $monthShort" else clean
+        return when (clean.substring(0, 10)) {
+            today -> "${tr(lang, "Leo", "Today")} · $compact"
+            yesterday -> "${tr(lang, "Jana", "Yesterday")} · $compact"
+            tomorrow -> "${tr(lang, "Kesho", "Tomorrow")} · $compact"
+            else -> if (year == today.substring(0, 4)) compact else "$compact $year"
+        }
+    }
+
     fun formatMoney(amount: Double, currency: String = "TZS"): String {
         val rounded = amount.roundToLong()
         val prefix = if (rounded < 0) "-" else ""
@@ -155,4 +173,44 @@ object FormatUtils {
         "Airtel Money",
         "HaloPesa"
     )
+
+    fun localizedCategory(raw: String, lang: AppLanguage): String {
+        val clean = raw.trim()
+        if (clean.isEmpty()) return clean
+        return when (clean.lowercase(Locale.ROOT)) {
+            "mauzo ya bidhaa", "product sales" -> tr(lang, "Mauzo ya Bidhaa", "Product Sales")
+            "huduma", "services" -> tr(lang, "Huduma", "Services")
+            "ushauri", "consulting" -> tr(lang, "Ushauri", "Consulting")
+            "malipo ya ankara", "invoice payments" -> tr(lang, "Malipo ya Ankara", "Invoice Payments")
+            "kamisheni", "commission" -> tr(lang, "Kamisheni", "Commission")
+            "mapato mengine", "other income" -> tr(lang, "Mapato Mengine", "Other Income")
+            "manunuzi / stock", "manunuzi ya stock", "manunuzi ya bidhaa", "stock & purchases" -> tr(lang, "Manunuzi ya Bidhaa", "Stock & Purchases")
+            "kodi ya pango", "rent" -> tr(lang, "Kodi ya Pango", "Rent")
+            "mishahara", "payroll", "salaries" -> tr(lang, "Mishahara", "Payroll")
+            "umeme & maji", "umeme na maji", "electricity & water", "utilities" -> tr(lang, "Umeme na Maji", "Electricity & Water")
+            "internet & simu", "intaneti na simu", "internet & phone" -> tr(lang, "Intaneti na Simu", "Internet & Phone")
+            "usafiri", "transport" -> tr(lang, "Usafiri", "Transport")
+            "chakula", "food" -> tr(lang, "Chakula", "Food")
+            "matengenezo", "maintenance" -> tr(lang, "Matengenezo", "Maintenance")
+            "masoko & matangazo", "masoko na matangazo", "marketing & ads" -> tr(lang, "Masoko na Matangazo", "Marketing & Ads")
+            "kodi & vibali", "kodi na vibali", "taxes & permits" -> tr(lang, "Kodi na Vibali", "Taxes & Permits")
+            "afya & bima", "afya na bima", "health & insurance" -> tr(lang, "Afya na Bima", "Health & Insurance")
+            "bili", "bills", "bill" -> tr(lang, "Bili", "Bills")
+            "akiba", "savings" -> tr(lang, "Akiba", "Savings")
+            "household bill", "bili ya nyumbani" -> tr(lang, "Bili ya Nyumbani", "Household Bill")
+            "matumizi mengine", "other expenses" -> tr(lang, "Matumizi Mengine", "Other Expenses")
+            "mengineyo", "other" -> tr(lang, "Mengineyo", "Other")
+            else -> clean
+        }
+    }
+
+    fun localizedMethod(raw: String, lang: AppLanguage): String {
+        val clean = raw.trim()
+        if (clean.isEmpty()) return clean
+        return when (clean.lowercase(Locale.ROOT)) {
+            "benki", "bank", "bank transfer", "uhamisho wa benki" -> tr(lang, "Benki", "Bank")
+            "cash", "taslimu" -> tr(lang, "Taslimu", "Cash")
+            else -> clean
+        }
+    }
 }

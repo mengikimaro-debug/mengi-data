@@ -68,6 +68,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -103,7 +104,7 @@ fun categoryIconForKey(key: String): ImageVector = when (key.lowercase()) {
     else -> Icons.AutoMirrored.Rounded.Label
 }
 
-fun parseHexColorSafe(hex: String, fallback: Color = Color(0xFF0064D2)): Color {
+fun parseHexColorSafe(hex: String, fallback: Color = Color(0xFF334B63)): Color {
     return runCatching {
         val clean = hex.trim().removePrefix("#")
         val parsed = clean.toLong(16)
@@ -342,23 +343,25 @@ private fun CategoryBreakdownRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            val solidIconTileBg = lerp(MaterialTheme.colorScheme.surface, accent, if (colors.isDark) 0.24f else 0.14f)
+            val displayCategory = FormatUtils.localizedCategory(item.categoryName, language)
             Box(
                 modifier = Modifier
                     .size(38.dp)
                     .clip(RoundedCornerShape(14.dp))
-                    .background(accent.copy(alpha = if (colors.isDark) 0.18f else 0.12f)),
+                    .background(solidIconTileBg),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = categoryIconForKey(item.iconKey),
-                    contentDescription = item.categoryName,
+                    contentDescription = displayCategory,
                     tint = accent,
                     modifier = Modifier.size(19.dp)
                 )
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = item.categoryName,
+                    text = displayCategory,
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
@@ -481,8 +484,8 @@ fun CategoryManagerSheet(
             // Create / Edit Form Card
             Surface(
                 shape = RoundedCornerShape(24.dp),
-                color = colors.subtleSurface.copy(alpha = 0.65f),
-                border = BorderStroke(0.75.dp, if (colors.isDark) Color.White.copy(alpha = 0.06f) else colors.cardBorder.copy(alpha = 0.5f)),
+                color = colors.subtleSurface,
+                border = BorderStroke(1.dp, colors.cardBorder),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -493,7 +496,8 @@ fun CategoryManagerSheet(
                         text = if (editing == null) {
                             tr(language, "Ongeza Kundi Jipya", "Create New Category")
                         } else {
-                            tr(language, "Hariri Kundi: ${editing!!.name}", "Edit Category: ${editing!!.name}")
+                            val editedDisplay = FormatUtils.localizedCategory(editing!!.name, language)
+                            tr(language, "Hariri Kundi: $editedDisplay", "Edit Category: $editedDisplay")
                         },
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold
@@ -581,7 +585,7 @@ fun CategoryManagerSheet(
                                     .background(swatch)
                                     .border(
                                         width = if (selected) 2.5.dp else 1.dp,
-                                        color = if (selected) MaterialTheme.colorScheme.onSurface else Color.White.copy(alpha = 0.4f),
+                                        color = if (selected) MaterialTheme.colorScheme.onSurface else colors.cardBorder,
                                         shape = CircleShape
                                     )
                                     .clickable { colorHex = hex },
@@ -660,7 +664,7 @@ fun CategoryManagerSheet(
                 }
             }
 
-            HorizontalDivider(color = colors.cardBorder.copy(alpha = 0.55f))
+            HorizontalDivider(color = colors.cardBorder)
 
             Text(
                 text = tr(
@@ -674,13 +678,15 @@ fun CategoryManagerSheet(
 
             Surface(
                 shape = RoundedCornerShape(24.dp),
-                color = colors.subtleSurface.copy(alpha = 0.45f),
-                border = BorderStroke(0.75.dp, if (colors.isDark) Color.White.copy(alpha = 0.06f) else colors.cardBorder.copy(alpha = 0.5f)),
+                color = colors.subtleSurface,
+                border = BorderStroke(1.dp, colors.cardBorder),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     visibleCats.forEachIndexed { idx, cat ->
                         val accent = accessibleCategoryAccent(cat.colorHex)
+                        val solidTileBg = lerp(MaterialTheme.colorScheme.surface, accent, if (colors.isDark) 0.24f else 0.14f)
+                        val displayName = FormatUtils.localizedCategory(cat.name, language)
                         val isFallback = cat.name == "Mapato mengine" || cat.name == "Matumizi mengine"
                         Row(
                             modifier = Modifier
@@ -693,19 +699,19 @@ fun CategoryManagerSheet(
                                 modifier = Modifier
                                     .size(38.dp)
                                     .clip(RoundedCornerShape(14.dp))
-                                    .background(accent.copy(alpha = if (colors.isDark) 0.2f else 0.12f)),
+                                    .background(solidTileBg),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     imageVector = categoryIconForKey(cat.iconKey),
-                                    contentDescription = cat.name,
+                                    contentDescription = displayName,
                                     tint = accent,
                                     modifier = Modifier.size(18.dp)
                                 )
                             }
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = cat.name,
+                                    text = displayName,
                                     style = MaterialTheme.typography.titleSmall,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
@@ -751,7 +757,7 @@ fun CategoryManagerSheet(
                         }
                         if (idx < visibleCats.lastIndex) {
                             HorizontalDivider(
-                                color = colors.cardBorder.copy(alpha = 0.45f),
+                                color = colors.cardBorder,
                                 modifier = Modifier.padding(start = 62.dp, end = 14.dp)
                             )
                         }

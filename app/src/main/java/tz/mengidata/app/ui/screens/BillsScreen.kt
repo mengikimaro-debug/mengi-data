@@ -1,5 +1,9 @@
 package tz.mengidata.app.ui.screens
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -7,41 +11,55 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Autorenew
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.DoneAll
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.EventRepeat
-import androidx.compose.material.icons.rounded.RadioButtonUnchecked
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Payments
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.TableChart
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -50,12 +68,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import tz.mengidata.app.data.accounting.AutoAccountingEngine
 import tz.mengidata.app.data.accounting.AutoBucket
+import tz.mengidata.app.data.accounting.PartyDirectoryEngine
+import tz.mengidata.app.data.accounting.PartyRole
+import tz.mengidata.app.data.accounting.PartySummary
 import tz.mengidata.app.data.accounting.ZeroLossLedgerSummary
 import tz.mengidata.app.data.db.BillEntity
 import tz.mengidata.app.i18n.AppLanguage
@@ -64,10 +87,12 @@ import tz.mengidata.app.i18n.tr
 import tz.mengidata.app.ui.components.ConfirmActionDialog
 import tz.mengidata.app.ui.components.EmptyStateCard
 import tz.mengidata.app.ui.components.MengiCard
+import tz.mengidata.app.ui.components.OneUiSegmentedTabs
 import tz.mengidata.app.ui.components.OneUiFieldShape
 import tz.mengidata.app.ui.components.OneUiFloatingFab
 import tz.mengidata.app.ui.components.OneUiScreenHeader
 import tz.mengidata.app.ui.components.OneUiSheetShape
+import tz.mengidata.app.ui.components.RecognizedNameSuggestionsBar
 import tz.mengidata.app.ui.components.StatusPill
 import tz.mengidata.app.ui.components.bucketVisualColors
 import tz.mengidata.app.ui.components.oneUiTextFieldColors
@@ -78,20 +103,40 @@ import java.util.Locale
 fun BillsScreen(
     bills: List<BillEntity>,
     zeroLossLedger: ZeroLossLedgerSummary,
+    knownParties: List<PartySummary> = emptyList(),
     currency: String,
     language: AppLanguage,
     onSaveBill: (BillEntity) -> Unit,
     onTogglePaid: (String) -> Unit,
+    onDuplicateBill: (BillEntity) -> Unit = {},
+    onPayAllDueBills: () -> Unit = {},
     onScheduleNextMonth: (String) -> Unit,
     onDeleteBill: (String) -> Unit,
     onExportBillsCsv: () -> Unit
 ) {
     val colors = LocalMengiColors.current
+    val householdColors = bucketVisualColors(AutoBucket.HOUSEHOLD_BILL)
     var search by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf("all") }
     var editingBill by remember { mutableStateOf<BillEntity?>(null) }
     var showEditor by remember { mutableStateOf(false) }
     var pendingDeleteId by remember { mutableStateOf<String?>(null) }
+
+    val unpaidCount = remember(bills) { bills.count { !it.paid } }
+    val paidCount = remember(bills) { bills.count { it.paid } }
+    val overdueCount = remember(bills) { bills.count { it.isOverdue } }
+    val dueNowCount = remember(bills) {
+        val today = FormatUtils.todayIso()
+        bills.count { !it.paid && (it.isOverdue || it.dueDate <= today) }
+    }
+    val householdCount = remember(bills) { bills.count { AutoAccountingEngine.isHouseholdBill(it) } }
+    val unpaidTotal = remember(bills) { bills.filter { !it.paid }.sumOf { it.amount } }
+    val householdTotal = remember(bills) {
+        bills.filter { AutoAccountingEngine.isHouseholdBill(it) }.sumOf { it.amount }
+    }
+    val paidFraction = remember(bills) {
+        if (bills.isEmpty()) 0f else (paidCount.toFloat() / bills.size.toFloat()).coerceIn(0f, 1f)
+    }
 
     val filtered = remember(bills, filter, search) {
         val q = search.trim().lowercase(Locale.ROOT)
@@ -100,18 +145,28 @@ fun BillsScreen(
                 "unpaid" -> !b.paid
                 "overdue" -> b.isOverdue
                 "paid" -> b.paid
+                "household" -> AutoAccountingEngine.isHouseholdBill(b)
                 else -> true
             }
             val searchOk = q.isEmpty() ||
                 b.name.lowercase(Locale.ROOT).contains(q) ||
                 b.payee.lowercase(Locale.ROOT).contains(q) ||
-                b.category.lowercase(Locale.ROOT).contains(q)
+                b.category.lowercase(Locale.ROOT).contains(q) ||
+                FormatUtils.localizedCategory(b.category, language).lowercase(Locale.ROOT).contains(q)
             filterOk && searchOk
-        }
+        }.sortedWith(
+            compareBy<BillEntity> { it.paid }
+                .thenByDescending { it.isOverdue }
+                .thenBy { it.dueDate }
+        )
     }
 
-    val unpaidTotal = remember(bills) { bills.filter { !it.paid }.sumOf { it.amount } }
-    val overdueCount = remember(bills) { bills.count { it.isOverdue } }
+    val unpaidSection = remember(filtered, filter) {
+        if (filter == "all") filtered.filter { !it.paid } else emptyList()
+    }
+    val paidSection = remember(filtered, filter) {
+        if (filter == "all") filtered.filter { it.paid } else emptyList()
+    }
 
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         LazyColumn(
@@ -123,7 +178,7 @@ fun BillsScreen(
         ) {
             item(key = "header") {
                 OneUiScreenHeader(
-                    eyebrow = tr(language, "Malipo Yanayokuja (Tenganishwa)", "Scheduled Payables (Separated)"),
+                    eyebrow = tr(language, "Malipo Yanayokuja", "Scheduled Payables"),
                     title = tr(language, "Bili", "Bills"),
                     trailing = {
                         FilledTonalButton(
@@ -133,24 +188,189 @@ fun BillsScreen(
                         ) {
                             Icon(Icons.Rounded.TableChart, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.size(6.dp))
-                            Text(tr(language, "Bili CSV", "Bills CSV"), maxLines = 1)
+                            Text(tr(language, "Hamisha CSV", "Export CSV"), maxLines = 1)
                         }
                     }
                 )
             }
 
+            // 2026 Solid Expressive Bills Overview Bento
             item(key = "summary") {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    MengiCard(modifier = Modifier.weight(1f), containerColor = colors.warningSoft, contentPadding = 16.dp) {
-                        Text(tr(language, "Bili Zinazodaiwa", "Unpaid Total"), style = MaterialTheme.typography.labelMedium, color = colors.warning)
-                        Text(FormatUtils.formatCompactMoney(unpaidTotal, currency), style = MaterialTheme.typography.titleLarge, color = colors.warning)
+                MengiCard(contentPadding = 18.dp) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = tr(language, "Bili Zinazodaiwa", "Unpaid Bills Total"),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = FormatUtils.formatMoney(unpaidTotal, currency),
+                                style = MaterialTheme.typography.headlineMedium,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Surface(
+                            shape = CircleShape,
+                            color = colors.incomeSoft
+                        ) {
+                            Text(
+                                text = tr(
+                                    language,
+                                    "$paidCount/${bills.size} zimelipwa",
+                                    "$paidCount/${bills.size} paid"
+                                ),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = colors.income,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                            )
+                        }
                     }
-                    MengiCard(modifier = Modifier.weight(1f), containerColor = colors.expenseSoft, contentPadding = 16.dp) {
-                        Text(tr(language, "Zilizochelewa", "Overdue"), style = MaterialTheme.typography.labelMedium, color = colors.expense)
-                        Text("$overdueCount", style = MaterialTheme.typography.titleLarge, color = colors.expense)
+
+                    Spacer(Modifier.height(12.dp))
+                    // Solid 6dp completion progress bar
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(7.dp)
+                            .clip(CircleShape)
+                            .background(colors.subtleSurface)
+                    ) {
+                        if (paidFraction > 0f) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(paidFraction)
+                                    .fillMaxHeight()
+                                    .clip(CircleShape)
+                                    .background(colors.income)
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(14.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(18.dp),
+                            color = householdColors.softBg,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(34.dp)
+                                        .clip(RoundedCornerShape(11.dp))
+                                        .background(householdColors.dot),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Home,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onPrimary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = tr(language, "Nyumbani", "Household"),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = householdColors.ink,
+                                        maxLines = 1
+                                    )
+                                    Text(
+                                        text = FormatUtils.formatCompactMoney(householdTotal, currency),
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = householdColors.ink,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(18.dp),
+                            color = if (overdueCount > 0) colors.warningSoft else colors.subtleSurface,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(34.dp)
+                                        .clip(RoundedCornerShape(11.dp))
+                                        .background(
+                                            if (overdueCount > 0) colors.warning else MaterialTheme.colorScheme.primary
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Schedule,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onPrimary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = tr(language, "Zilizochelewa", "Overdue"),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (overdueCount > 0) colors.warning else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1
+                                    )
+                                    Text(
+                                        text = tr(language, "$overdueCount bili", "$overdueCount bills"),
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (overdueCount > 0) colors.warning else MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if (dueNowCount > 0) {
+                        Spacer(Modifier.height(12.dp))
+                        FilledTonalButton(
+                            onClick = onPayAllDueBills,
+                            shape = CircleShape,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(46.dp)
+                                .testTag("bills_pay_all_due_btn")
+                        ) {
+                            Icon(Icons.Rounded.DoneAll, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = tr(
+                                    language,
+                                    "Lipa Bili Zote Zinazodaiwa Sasa ($dueNowCount)",
+                                    "Pay All Due Bills Now ($dueNowCount)"
+                                ),
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1
+                            )
+                        }
                     }
                 }
             }
@@ -160,25 +380,43 @@ fun BillsScreen(
                     OutlinedTextField(
                         value = search,
                         onValueChange = { search = it },
-                        placeholder = { Text(tr(language, "Tafuta bili au mlipwaji...", "Search bill or payee...")) },
+                        placeholder = { Text(tr(language, "Tafuta bili au jina...", "Search bill or payee...")) },
                         leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                        trailingIcon = if (search.isNotEmpty()) {
+                            {
+                                IconButton(onClick = { search = "" }) {
+                                    Icon(
+                                        Icons.Rounded.Close,
+                                        contentDescription = tr(language, "Futa utafutaji", "Clear search")
+                                    )
+                                }
+                            }
+                        } else null,
                         singleLine = true,
                         shape = CircleShape,
                         colors = oneUiTextFieldColors(),
-                        modifier = Modifier.fillMaxWidth().testTag("bills_search_input")
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("bills_search_input")
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         listOf(
-                            "all" to tr(language, "Zote", "All"),
-                            "unpaid" to tr(language, "Hazijalipwa", "Unpaid"),
-                            "overdue" to tr(language, "Zimechelewa", "Overdue"),
-                            "paid" to tr(language, "Zimelipwa", "Paid")
+                            "all" to tr(language, "Zote (${bills.size})", "All (${bills.size})"),
+                            "unpaid" to tr(language, "Hazijalipwa ($unpaidCount)", "Unpaid ($unpaidCount)"),
+                            "household" to tr(language, "Bili ya Nyumbani ($householdCount)", "Household ($householdCount)"),
+                            "overdue" to tr(language, "Zimechelewa ($overdueCount)", "Overdue ($overdueCount)"),
+                            "paid" to tr(language, "Zimelipwa ($paidCount)", "Paid ($paidCount)")
                         ).forEach { (key, label) ->
-                            FilterChip(
+                            BillsSolidFilterPill(
+                                label = label,
                                 selected = filter == key,
                                 onClick = { filter = key },
-                                shape = CircleShape,
-                                label = { Text(label) },
                                 modifier = Modifier.testTag("bill_filter_$key")
                             )
                         }
@@ -191,12 +429,67 @@ fun BillsScreen(
                     EmptyStateCard(
                         icon = Icons.AutoMirrored.Rounded.ReceiptLong,
                         title = tr(language, "Hakuna bili", "No bills here"),
-                        subtitle = tr(language, "Fuatilia kodi, umeme, mishahara na gharama za kila mwezi.", "Track rent, utilities, payroll, and recurring expenses."),
+                        subtitle = tr(
+                            language,
+                            "Fuatilia kodi, umeme, bili ya nyumbani na gharama za kila mwezi.",
+                            "Track rent, utilities, household bills, and recurring expenses."
+                        ),
                         actionLabel = tr(language, "Ongeza Bili", "Add Bill"),
                         onAction = {
                             editingBill = null
                             showEditor = true
                         }
+                    )
+                }
+            } else if (filter == "all" && unpaidSection.isNotEmpty() && paidSection.isNotEmpty()) {
+                item(key = "section_unpaid") {
+                    BillsSectionLabel(
+                        title = tr(language, "Bili Zinazodaiwa", "Pending & Due"),
+                        count = unpaidSection.size,
+                        accentColor = colors.warning
+                    )
+                }
+                items(unpaidSection, key = { it.id }) { bill ->
+                    val isHighToday = bill.id in zeroLossLedger.highBillIds
+                    BillCard(
+                        bill = bill,
+                        isHighToday = isHighToday,
+                        currency = currency,
+                        language = language,
+                        modifier = Modifier.animateItem(),
+                        onTogglePaid = { onTogglePaid(bill.id) },
+                        onScheduleNextMonth = { onScheduleNextMonth(bill.id) },
+                        onEdit = {
+                            editingBill = bill
+                            showEditor = true
+                        },
+                        onDelete = { pendingDeleteId = bill.id }
+                    )
+                }
+                item(key = "section_paid") {
+                    Spacer(Modifier.height(4.dp))
+                    BillsSectionLabel(
+                        title = tr(language, "Zilizolipwa", "Completed & Paid"),
+                        count = paidSection.size,
+                        accentColor = colors.income
+                    )
+                }
+                items(paidSection, key = { it.id }) { bill ->
+                    val isHighToday = bill.id in zeroLossLedger.highBillIds
+                    BillCard(
+                        bill = bill,
+                        isHighToday = isHighToday,
+                        currency = currency,
+                        language = language,
+                        modifier = Modifier.animateItem(),
+                        onTogglePaid = { onTogglePaid(bill.id) },
+                        onDuplicate = { onDuplicateBill(bill) },
+                        onScheduleNextMonth = { onScheduleNextMonth(bill.id) },
+                        onEdit = {
+                            editingBill = bill
+                            showEditor = true
+                        },
+                        onDelete = { pendingDeleteId = bill.id }
                     )
                 }
             } else {
@@ -209,6 +502,7 @@ fun BillsScreen(
                         language = language,
                         modifier = Modifier.animateItem(),
                         onTogglePaid = { onTogglePaid(bill.id) },
+                        onDuplicate = { onDuplicateBill(bill) },
                         onScheduleNextMonth = { onScheduleNextMonth(bill.id) },
                         onEdit = {
                             editingBill = bill
@@ -237,6 +531,7 @@ fun BillsScreen(
     if (showEditor) {
         BillEditorSheet(
             initial = editingBill,
+            knownParties = knownParties,
             language = language,
             onDismiss = {
                 showEditor = false
@@ -271,6 +566,90 @@ fun BillsScreen(
 }
 
 @Composable
+private fun BillsSolidFilterPill(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalMengiColors.current
+    val bg by animateColorAsState(
+        targetValue = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
+        animationSpec = tween(180),
+        label = "bill_filter_bg"
+    )
+    val fg by animateColorAsState(
+        targetValue = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+        animationSpec = tween(180),
+        label = "bill_filter_fg"
+    )
+    Surface(
+        onClick = onClick,
+        shape = CircleShape,
+        color = bg,
+        border = if (selected) null else BorderStroke(1.dp, colors.cardBorder),
+        shadowElevation = if (selected && !colors.isDark) 2.dp else 0.dp,
+        modifier = modifier.heightIn(min = 38.dp)
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.padding(horizontal = 15.dp, vertical = 8.dp)
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                color = fg,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+@Composable
+private fun BillsSectionLabel(
+    title: String,
+    count: Int,
+    accentColor: androidx.compose.ui.graphics.Color
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(accentColor)
+            )
+            Text(
+                text = title.uppercase(),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Surface(
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.surfaceVariant
+        ) {
+            Text(
+                text = "$count",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp)
+            )
+        }
+    }
+}
+
+@Composable
 private fun BillCard(
     bill: BillEntity,
     isHighToday: Boolean,
@@ -278,99 +657,297 @@ private fun BillCard(
     language: AppLanguage,
     modifier: Modifier = Modifier,
     onTogglePaid: () -> Unit,
+    onDuplicate: () -> Unit = {},
     onScheduleNextMonth: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
     val colors = LocalMengiColors.current
+    val isHousehold = AutoAccountingEngine.isHouseholdBill(bill)
     val highColors = bucketVisualColors(AutoBucket.HIGH_BILL_TODAY)
-    val (statusText, bg, fg) = when {
-        isHighToday -> Triple(tr(language, "Kubwa Leo!", "High Today!"), highColors.softBg, highColors.ink)
+    val householdColors = bucketVisualColors(AutoBucket.HOUSEHOLD_BILL)
+    val billColors = bucketVisualColors(AutoBucket.BILL)
+
+    var showMenu by remember { mutableStateOf(false) }
+
+    val (statusText, statusBg, statusFg) = when {
+        isHighToday -> Triple(tr(language, "Kubwa Leo", "High Today"), highColors.softBg, highColors.ink)
         bill.paid -> Triple(tr(language, "Imelipwa", "Paid"), colors.incomeSoft, colors.income)
         bill.isOverdue -> Triple(tr(language, "Imechelewa", "Overdue"), highColors.softBg, highColors.ink)
         else -> Triple(tr(language, "Inasubiri", "Upcoming"), colors.warningSoft, colors.warning)
     }
 
+    val badgeBg = when {
+        isHousehold -> householdColors.softBg
+        bill.paid -> colors.incomeSoft
+        isHighToday || bill.isOverdue -> highColors.softBg
+        else -> billColors.softBg
+    }
+    val badgeFg = when {
+        isHousehold -> householdColors.dot
+        bill.paid -> colors.income
+        isHighToday || bill.isOverdue -> highColors.ink
+        else -> billColors.dot
+    }
+
     MengiCard(
         modifier = modifier,
+        onClick = onEdit,
         containerColor = if (isHighToday) highColors.softBg else MaterialTheme.colorScheme.surface,
-        borderColor = if (isHighToday) highColors.border else null,
+        borderColor = when {
+            isHighToday -> highColors.border
+            isHousehold -> householdColors.border
+            else -> null
+        },
         contentPadding = 16.dp
     ) {
+        // Row 1: Spacious Primary Info (Icon + Name/Payee + Amount/Due Date)
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            IconButton(
-                onClick = onTogglePaid,
-                modifier = Modifier.size(48.dp).testTag("toggle_bill_paid_${bill.id}")
+            Box(
+                modifier = Modifier
+                    .size(46.dp)
+                    .clip(RoundedCornerShape(15.dp))
+                    .background(badgeBg),
+                contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = if (bill.paid) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
-                    contentDescription = tr(language, "Badili hali ya malipo", "Toggle paid status"),
-                    tint = if (bill.paid) colors.income else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(26.dp)
+                    imageVector = when {
+                        isHousehold -> Icons.Rounded.Home
+                        bill.paid -> Icons.Rounded.CheckCircle
+                        else -> Icons.AutoMirrored.Rounded.ReceiptLong
+                    },
+                    contentDescription = bill.name,
+                    tint = badgeFg,
+                    modifier = Modifier.size(22.dp)
                 )
             }
-            Column(modifier = Modifier.weight(1f)) {
+
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
                 Text(
                     text = bill.name,
                     style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = listOf(bill.payee, bill.category).filter { it.isNotBlank() }.joinToString(" · "),
+                    text = listOf(bill.payee, FormatUtils.localizedCategory(bill.category, language))
+                        .filter { it.isNotBlank() }
+                        .joinToString(" · ")
+                        .ifBlank { FormatUtils.localizedMethod(bill.method, language) },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Spacer(Modifier.height(5.dp))
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    StatusPill(text = statusText, containerColor = bg, contentColor = fg)
-                    Text(bill.dueDate, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (bill.recurring) {
+            }
+
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = FormatUtils.formatMoney(bill.amount, currency),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = when {
+                        bill.paid -> colors.income
+                        isHousehold -> householdColors.ink
+                        else -> MaterialTheme.colorScheme.onSurface
+                    },
+                    maxLines = 1
+                )
+                Text(
+                    text = FormatUtils.friendlyDateLabel(bill.dueDate, language),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (bill.isOverdue) highColors.ink else MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
+                )
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+        HorizontalDivider(color = colors.cardBorder, thickness = 0.8.dp)
+        Spacer(Modifier.height(10.dp))
+
+        // Row 2: Clean Status Tags on Left + One-Tap Pay Action & Overflow Menu on Right
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                StatusPill(text = statusText, containerColor = statusBg, contentColor = statusFg)
+                if (isHousehold) {
+                    StatusPill(
+                        text = tr(language, "Bili ya Nyumbani", "Household"),
+                        containerColor = householdColors.softBg,
+                        contentColor = householdColors.ink
+                    )
+                }
+                if (bill.recurring) {
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
                         Icon(
                             Icons.Rounded.Autorenew,
                             contentDescription = tr(language, "Inajirudia", "Recurring"),
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(14.dp)
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier
+                                .padding(5.dp)
+                                .size(13.dp)
                         )
                     }
                 }
             }
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    text = FormatUtils.formatMoney(bill.amount, currency),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold
-                )
-                Row {
-                    IconButton(onClick = onEdit, modifier = Modifier.size(40.dp)) {
-                        Icon(Icons.Rounded.Edit, contentDescription = tr(language, "Hariri", "Edit"), modifier = Modifier.size(18.dp))
+
+            Spacer(Modifier.width(8.dp))
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Surface(
+                    onClick = onTogglePaid,
+                    shape = CircleShape,
+                    color = if (bill.paid) colors.incomeSoft else MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .heightIn(min = 38.dp)
+                        .testTag("toggle_bill_paid_${bill.id}")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (bill.paid) Icons.Rounded.Check else Icons.Rounded.Payments,
+                            contentDescription = tr(language, "Badili hali ya malipo", "Toggle paid status"),
+                            tint = if (bill.paid) colors.income else MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Text(
+                            text = if (bill.paid) {
+                                tr(language, "Imelipwa", "Paid")
+                            } else {
+                                tr(language, "Lipa", "Pay")
+                            },
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = if (bill.paid) colors.income else MaterialTheme.colorScheme.onPrimary,
+                            maxLines = 1
+                        )
                     }
-                    IconButton(onClick = onDelete, modifier = Modifier.size(40.dp)) {
-                        Icon(Icons.Rounded.Delete, contentDescription = tr(language, "Futa", "Delete"), tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                }
+
+                Box {
+                    IconButton(
+                        onClick = { showMenu = true },
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.MoreVert,
+                            contentDescription = tr(language, "Chaguo zaidi", "More options"),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false },
+                        containerColor = MaterialTheme.colorScheme.surface
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text(tr(language, "Hariri Bili", "Edit Bill")) },
+                            leadingIcon = { Icon(Icons.Rounded.Edit, contentDescription = null) },
+                            onClick = {
+                                showMenu = false
+                                onEdit()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(tr(language, "Nakili kwa Mwezi Ujao", "Duplicate for Next Month")) },
+                            leadingIcon = { Icon(Icons.Rounded.ContentCopy, contentDescription = null) },
+                            onClick = {
+                                showMenu = false
+                                onDuplicate()
+                            }
+                        )
+                        if (bill.paid && bill.recurring) {
+                            DropdownMenuItem(
+                                text = { Text(tr(language, "Panga Mwezi Ujao", "Schedule Next Month")) },
+                                leadingIcon = { Icon(Icons.Rounded.EventRepeat, contentDescription = null) },
+                                onClick = {
+                                    showMenu = false
+                                    onScheduleNextMonth()
+                                }
+                            )
+                        }
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    tr(language, "Futa Bili", "Delete Bill"),
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Rounded.Delete,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            },
+                            onClick = {
+                                showMenu = false
+                                onDelete()
+                            }
+                        )
                     }
                 }
             }
         }
+
         if (bill.paid && bill.recurring) {
-            Spacer(Modifier.height(6.dp))
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(
-                    onClick = onScheduleNextMonth,
-                    shape = CircleShape,
-                    modifier = Modifier.testTag("schedule_next_bill_${bill.id}")
+            Spacer(Modifier.height(10.dp))
+            Surface(
+                onClick = onScheduleNextMonth,
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.primaryContainer,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("schedule_next_bill_${bill.id}")
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Rounded.EventRepeat, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.size(6.dp))
-                    Text(tr(language, "Panga Mwezi Ujao", "Schedule Next Month"))
+                    Icon(
+                        Icons.Rounded.EventRepeat,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = tr(language, "Panga Bili ya Mwezi Ujao", "Schedule Next Month's Bill"),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
                 }
             }
         }
@@ -381,18 +958,29 @@ private fun BillCard(
 @Composable
 private fun BillEditorSheet(
     initial: BillEntity?,
+    knownParties: List<PartySummary>,
     language: AppLanguage,
     onDismiss: () -> Unit,
     onSave: (BillEntity) -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val learnedHouseholdNames = remember(knownParties) {
+        PartyDirectoryEngine.householdNames(knownParties)
+    }
+    var isHouseholdBill by remember(initial) {
+        mutableStateOf(initial?.let { AutoAccountingEngine.isHouseholdBill(it) } ?: false)
+    }
     var name by remember(initial) { mutableStateOf(initial?.name ?: "") }
     var payee by remember(initial) { mutableStateOf(initial?.payee ?: "") }
     var amountText by remember(initial) {
         mutableStateOf(if (initial != null && initial.amount > 0) initial.amount.toLong().toString() else "")
     }
     var dueDate by remember(initial) { mutableStateOf(initial?.dueDate ?: FormatUtils.todayIso()) }
-    var category by remember(initial) { mutableStateOf(initial?.category ?: FormatUtils.expenseCategories.first()) }
+    var category by remember(initial) {
+        mutableStateOf(
+            initial?.category ?: FormatUtils.expenseCategories.first()
+        )
+    }
     var method by remember(initial) { mutableStateOf(initial?.method ?: "Benki") }
     var recurring by remember(initial) { mutableStateOf(initial?.recurring ?: false) }
     var paid by remember(initial) { mutableStateOf(initial?.paid ?: false) }
@@ -417,10 +1005,58 @@ private fun BillEditorSheet(
                 style = MaterialTheme.typography.headlineMedium
             )
 
+            OneUiSegmentedTabs(
+                options = listOf(
+                    tr(language, "Bili Zangu", "My Bill"),
+                    tr(language, "Bili ya Nyumbani", "Household Bill")
+                ),
+                selectedIndex = if (isHouseholdBill) 1 else 0,
+                onSelect = { idx ->
+                    val homeSelected = idx == 1
+                    isHouseholdBill = homeSelected
+                    if (homeSelected) {
+                        category = AutoAccountingEngine.HOUSEHOLD_CATEGORY
+                        if (name.isBlank()) name = tr(language, "Bili ya Nyumbani", "Household Bill")
+                    } else if (category.equals(AutoAccountingEngine.HOUSEHOLD_CATEGORY, ignoreCase = true)) {
+                        category = FormatUtils.expenseCategories.first()
+                    }
+                },
+                testTags = listOf("bill_type_personal", "bill_type_household")
+            )
+
             OutlinedTextField(
                 value = name,
-                onValueChange = { name = it; errorText = null },
+                onValueChange = { newVal ->
+                    name = newVal
+                    errorText = null
+                    val slash = AutoAccountingEngine.parseSlashTag(newVal)
+                    when {
+                        slash.hasSlashTag && slash.detectedBucket == AutoBucket.HOUSEHOLD_BILL -> {
+                            isHouseholdBill = true
+                            category = AutoAccountingEngine.HOUSEHOLD_CATEGORY
+                        }
+                        slash.hasSlashTag && slash.detectedBucket == AutoBucket.BILL -> {
+                            isHouseholdBill = false
+                            if (category.equals(AutoAccountingEngine.HOUSEHOLD_CATEGORY, ignoreCase = true)) {
+                                category = FormatUtils.expenseCategories.first()
+                            }
+                        }
+                        AutoAccountingEngine.isHouseholdText(newVal) -> {
+                            isHouseholdBill = true
+                            category = AutoAccountingEngine.HOUSEHOLD_CATEGORY
+                        }
+                    }
+                },
                 label = { Text(tr(language, "Jina la Bili *", "Bill Name *")) },
+                placeholder = {
+                    Text(
+                        tr(
+                            language,
+                            "Mfano: Jina my/mybill au Jina/household",
+                            "e.g. Name my/mybill or Name/household"
+                        )
+                    )
+                },
                 singleLine = true,
                 shape = OneUiFieldShape,
                 colors = oneUiTextFieldColors(),
@@ -451,21 +1087,71 @@ private fun BillEditorSheet(
 
             OutlinedTextField(
                 value = payee,
-                onValueChange = { payee = it },
-                label = { Text(tr(language, "Mpokeaji / Kampuni", "Payee / Vendor")) },
+                onValueChange = { newVal ->
+                    payee = newVal
+                    val slash = AutoAccountingEngine.parseSlashTag(newVal)
+                    when {
+                        slash.hasSlashTag && slash.detectedBucket == AutoBucket.HOUSEHOLD_BILL -> {
+                            isHouseholdBill = true
+                            category = AutoAccountingEngine.HOUSEHOLD_CATEGORY
+                        }
+                        slash.hasSlashTag && slash.detectedBucket == AutoBucket.BILL -> {
+                            isHouseholdBill = false
+                            if (category.equals(AutoAccountingEngine.HOUSEHOLD_CATEGORY, ignoreCase = true)) {
+                                category = FormatUtils.expenseCategories.first()
+                            }
+                        }
+                        AutoAccountingEngine.isHouseholdParty(newVal, learnedHouseholdNames) -> {
+                            isHouseholdBill = true
+                            category = AutoAccountingEngine.HOUSEHOLD_CATEGORY
+                        }
+                    }
+                },
+                label = { Text(tr(language, "Jina Lolote la Mpokeaji (hiari)", "Any Payee or Recipient Name (optional)")) },
+                placeholder = {
+                    Text(
+                        tr(
+                            language,
+                            "Jina lolote au Jina/household, Jina my/mybill",
+                            "Any name or Name/household, Name my/mybill"
+                        )
+                    )
+                },
                 singleLine = true,
                 shape = OneUiFieldShape,
                 colors = oneUiTextFieldColors(),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth().testTag("bill_payee_input")
             )
 
-            Text(tr(language, "Kundi", "Category"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                FormatUtils.expenseCategories.forEach { cat ->
-                    FilterChip(selected = category == cat, onClick = { category = cat }, shape = CircleShape, label = { Text(cat) })
+            // Universal Name Recognition Bar across all modules
+            RecognizedNameSuggestionsBar(
+                query = payee,
+                knownParties = knownParties,
+                language = language,
+                onSelectParty = { selected ->
+                    payee = selected.name
+                    if (selected.role == PartyRole.HOUSEHOLD) {
+                        isHouseholdBill = true
+                        category = AutoAccountingEngine.HOUSEHOLD_CATEGORY
+                        if (name.isBlank()) name = tr(language, "Bili ya Nyumbani", "Household Bill")
+                    }
+                }
+            )
+
+            if (!isHouseholdBill) {
+                Text(tr(language, "Kundi", "Category"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FormatUtils.expenseCategories.forEach { cat ->
+                        FilterChip(
+                            selected = category == cat,
+                            onClick = { category = cat },
+                            shape = CircleShape,
+                            label = { Text(FormatUtils.localizedCategory(cat, language)) }
+                        )
+                    }
                 }
             }
 
@@ -475,7 +1161,12 @@ private fun BillEditorSheet(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 FormatUtils.paymentMethods.forEach { m ->
-                    FilterChip(selected = method == m, onClick = { method = m }, shape = CircleShape, label = { Text(m) })
+                    FilterChip(
+                        selected = method == m,
+                        onClick = { method = m },
+                        shape = CircleShape,
+                        label = { Text(FormatUtils.localizedMethod(m, language)) }
+                    )
                 }
             }
 
@@ -484,7 +1175,7 @@ private fun BillEditorSheet(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(tr(language, "Bili ya kila mwezi (Recurring)", "Recurring bill"), style = MaterialTheme.typography.bodyMedium)
+                Text(tr(language, "Bili inayojirudia kila mwezi", "Recurring monthly bill"), style = MaterialTheme.typography.bodyMedium)
                 Switch(checked = recurring, onCheckedChange = { recurring = it })
             }
 
@@ -518,12 +1209,25 @@ private fun BillEditorSheet(
                         errorText = tr(language, "Jaza jina la bili na kiasi sahihi.", "Enter bill name and a valid amount.")
                         return@Button
                     }
-                    val base = initial ?: BillEntity(id = "", name = name)
+                    val nameSlash = AutoAccountingEngine.parseSlashTag(name)
+                    val cleanName = AutoAccountingEngine.stripSlashTag(name).ifBlank {
+                        if (isHouseholdBill) tr(language, "Bili ya Nyumbani", "Household Bill")
+                        else tr(language, "Bili", "Bill")
+                    }
+                    val cleanPayee = AutoAccountingEngine.stripSlashTag(payee).ifBlank {
+                        if (nameSlash.hasSlashTag) nameSlash.cleanName else ""
+                    }
+                    val resolvedCategory = if (isHouseholdBill) {
+                        AutoAccountingEngine.HOUSEHOLD_CATEGORY
+                    } else {
+                        category
+                    }
+                    val base = initial ?: BillEntity(id = "", name = cleanName)
                     onSave(
                         base.copy(
-                            name = name.trim(),
-                            payee = payee.trim(),
-                            category = category,
+                            name = cleanName,
+                            payee = cleanPayee,
+                            category = resolvedCategory,
                             amount = amt,
                             dueDate = dueDate.ifBlank { FormatUtils.todayIso() },
                             method = method,

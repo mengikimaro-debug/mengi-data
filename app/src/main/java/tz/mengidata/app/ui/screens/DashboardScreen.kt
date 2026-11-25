@@ -1,11 +1,5 @@
 package tz.mengidata.app.ui.screens
 
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -15,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -30,9 +25,17 @@ import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.Groups
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.PhoneAndroid
+import androidx.compose.material.icons.rounded.PictureAsPdf
+import androidx.compose.material.icons.rounded.RestoreFromTrash
 import androidx.compose.material.icons.rounded.Savings
 import androidx.compose.material.icons.rounded.SystemUpdate
+import androidx.compose.material.icons.rounded.TableChart
+import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
@@ -50,8 +53,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -59,9 +60,11 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import tz.mengidata.app.data.accounting.AutoAccountingEngine
 import tz.mengidata.app.data.accounting.AutoBucket
 import tz.mengidata.app.data.accounting.BusinessHealthReport
 import tz.mengidata.app.data.accounting.CategoryAnalyticsReport
+import tz.mengidata.app.data.accounting.PartySummary
 import tz.mengidata.app.data.accounting.ZeroLossLedgerSummary
 import tz.mengidata.app.data.db.BusinessSettingsEntity
 import tz.mengidata.app.data.db.TransactionEntity
@@ -79,9 +82,12 @@ import tz.mengidata.app.ui.components.MengiCard
 import tz.mengidata.app.ui.components.OneUiScreenHeader
 import tz.mengidata.app.ui.components.PeriodSelectorRow
 import tz.mengidata.app.ui.components.PremiumReveal
+import tz.mengidata.app.ui.components.PulsingStatusDot
 import tz.mengidata.app.ui.components.SmartAutoEntrySheet
+import tz.mengidata.app.ui.components.SpendingTrendsChartCard
 import tz.mengidata.app.ui.components.StatusPill
 import tz.mengidata.app.ui.components.ZeroLossAutoBreakdownCard
+import tz.mengidata.app.ui.components.bucketVisualColors
 import tz.mengidata.app.ui.theme.LocalMengiColors
 import tz.mengidata.app.updater.UpdateUiState
 import tz.mengidata.app.viewmodel.DashboardMetrics
@@ -93,6 +99,8 @@ fun DashboardScreen(
     categoryAnalytics: CategoryAnalyticsReport,
     businessHealth: BusinessHealthReport,
     partyCount: Int,
+    deletedCount: Int = 0,
+    knownParties: List<PartySummary> = emptyList(),
     privacyMaskEnabled: Boolean,
     settings: BusinessSettingsEntity,
     selectedPeriod: PeriodFilter,
@@ -105,6 +113,9 @@ fun DashboardScreen(
     onOpenHub: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenPartyDirectory: () -> Unit,
+    onOpenRecoveryVault: () -> Unit = {},
+    onSyncPhoneStorage: () -> Unit = {},
+    onExportStatementPdf: () -> Unit = {},
     onQuickAddTransaction: () -> Unit,
     onSaveSmartAutoEntry: (String, Double, String, String, String, AutoBucket?, Boolean) -> Unit,
     onReconcileLedger: () -> Unit,
@@ -144,7 +155,7 @@ fun DashboardScreen(
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.SystemUpdate,
-                                contentDescription = tr(language, "Update inapatikana", "Update available"),
+                                contentDescription = tr(language, "Sasisho linapatikana", "Update available"),
                                 tint = colors.limeInk
                             )
                             Column(modifier = Modifier.weight(1f)) {
@@ -164,7 +175,7 @@ fun DashboardScreen(
                                         "Tap to open Settings and install securely."
                                     ),
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = colors.limeInk.copy(alpha = 0.85f)
+                                    color = colors.limeInk
                                 )
                             }
                         }
@@ -199,34 +210,14 @@ fun DashboardScreen(
                 )
             }
 
-            // Samsung One UI 8.5 Galaxy Frost Hero Balance Card
+            // 2026 Next-Gen Solid Expressive Bento Hero Balance Card (Zero Transparency)
             item(key = "hero_balance") {
-                val heroMotion = rememberInfiniteTransition(label = "hero_aura")
-                val glowShift by heroMotion.animateFloat(
-                    initialValue = 0.78f,
-                    targetValue = 0.94f,
-                    animationSpec = infiniteRepeatable(
-                        animation = tween(durationMillis = 5200, easing = FastOutSlowInEasing),
-                        repeatMode = RepeatMode.Reverse
-                    ),
-                    label = "glow_x"
-                )
-                val goldShift by heroMotion.animateFloat(
-                    initialValue = 0.14f,
-                    targetValue = 0.28f,
-                    animationSpec = infiniteRepeatable(
-                        animation = tween(durationMillis = 6400, easing = FastOutSlowInEasing),
-                        repeatMode = RepeatMode.Reverse
-                    ),
-                    label = "gold_x"
-                )
-
                 PremiumReveal(delayMillis = 0) {
                     Surface(
                         shape = MaterialTheme.shapes.extraLarge,
                         color = colors.heroStart,
-                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)),
-                        shadowElevation = if (colors.isDark) 0.dp else 10.dp,
+                        border = BorderStroke(1.2.dp, Color(0xFF394554)),
+                        shadowElevation = if (colors.isDark) 0.dp else 8.dp,
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("dashboard_hero_card")
@@ -239,63 +230,117 @@ fun DashboardScreen(
                                         colors = listOf(colors.heroStart, colors.heroMid, colors.heroEnd)
                                     )
                                 )
-                                .drawBehind {
-                                    drawCircle(
-                                        brush = Brush.radialGradient(
-                                            colors = listOf(
-                                                colors.heroAccentGlow.copy(alpha = 0.28f),
-                                                Color.Transparent
-                                            ),
-                                            center = Offset(size.width * glowShift, size.height * 0.16f),
-                                            radius = size.width * 0.62f
-                                        )
-                                    )
-                                    drawCircle(
-                                        brush = Brush.radialGradient(
-                                            colors = listOf(
-                                                colors.heroGoldGlow.copy(alpha = 0.18f),
-                                                Color.Transparent
-                                            ),
-                                            center = Offset(size.width * goldShift, size.height * 0.92f),
-                                            radius = size.width * 0.48f
-                                        )
-                                    )
-                                }
-                                .padding(22.dp)
+                                .padding(20.dp)
                         ) {
-                            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                                // Top Hero Status Header
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(
-                                        text = tr(language, "FAIDA HALISI", "NET BALANCE"),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = colors.lime
-                                    )
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        PulsingStatusDot(color = Color(0xFF7FA896), size = 7.dp)
+                                        Text(
+                                            text = tr(language, "SALIO HALISI LA MFUMO", "SYSTEM NET BALANCE"),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = colors.lime
+                                        )
+                                    }
                                     StatusPill(
                                         text = if (language == AppLanguage.EN) selectedPeriod.labelEn else selectedPeriod.labelSw,
-                                        containerColor = Color.White.copy(alpha = 0.15f),
-                                        contentColor = Color.White
+                                        containerColor = Color(0xFF2D3846),
+                                        contentColor = Color(0xFFE6EAF0)
                                     )
                                 }
 
-                                if (privacyMaskEnabled) {
+                                // Bold 2026 Expressive Balance Display
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    if (privacyMaskEnabled) {
+                                        Text(
+                                            text = "••••••",
+                                            style = MaterialTheme.typography.displayLarge,
+                                            color = Color.White
+                                        )
+                                    } else {
+                                        AnimatedMoneyText(
+                                            amount = metrics.netProfit,
+                                            currency = currency,
+                                            style = MaterialTheme.typography.displayLarge,
+                                            color = Color.White
+                                        )
+                                    }
                                     Text(
-                                        text = "••••••",
-                                        style = MaterialTheme.typography.displayLarge,
-                                        color = Color.White
-                                    )
-                                } else {
-                                    AnimatedMoneyText(
-                                        amount = metrics.netProfit,
-                                        currency = currency,
-                                        style = MaterialTheme.typography.displayLarge,
-                                        color = Color.White
+                                        text = tr(
+                                            language,
+                                            "Mapato baada ya kukata Matumizi, Bili ya Nyumbani na Akiba",
+                                            "Income after deducting Expenses, Household Bill & Savings"
+                                        ),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Color(0xFFBDC7D4)
                                     )
                                 }
 
+                                // Calm Matte 4-Segment Cashflow Proportion Bar
+                                val flowBase = (metrics.periodIncome.coerceAtLeast(metrics.periodTotalOutflow)).coerceAtLeast(1.0)
+                                val personalShare = ((metrics.periodExpense / flowBase).toFloat()).coerceIn(0f, 1f)
+                                val householdShare = ((metrics.periodHouseholdBills / flowBase).toFloat()).coerceIn(0f, 1f - personalShare)
+                                val savingsShare = ((metrics.periodSavingsOutflow / flowBase).toFloat()).coerceIn(0f, 1f - personalShare - householdShare)
+                                val keptShare = (1f - personalShare - householdShare - savingsShare).coerceAtLeast(0f)
+                                Surface(
+                                    shape = CircleShape,
+                                    color = Color(0xFF171D24),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(9.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxSize(),
+                                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                    ) {
+                                        if (keptShare > 0.01f) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .weight(keptShare)
+                                                    .fillMaxHeight()
+                                                    .clip(CircleShape)
+                                                    .background(Color(0xFF7FA896))
+                                            )
+                                        }
+                                        if (personalShare > 0.01f) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .weight(personalShare)
+                                                    .fillMaxHeight()
+                                                    .clip(CircleShape)
+                                                    .background(Color(0xFFA99EB9))
+                                            )
+                                        }
+                                        if (householdShare > 0.01f) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .weight(householdShare)
+                                                    .fillMaxHeight()
+                                                    .clip(CircleShape)
+                                                    .background(Color(0xFF7EA2AD))
+                                            )
+                                        }
+                                        if (savingsShare > 0.01f) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .weight(savingsShare)
+                                                    .fillMaxHeight()
+                                                    .clip(CircleShape)
+                                                    .background(Color(0xFF939DB8))
+                                            )
+                                        }
+                                    }
+                                }
+
+                                // Calm Matte 2x2 Bento Stat Grid
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -303,8 +348,11 @@ fun DashboardScreen(
                                     HeroStatChip(
                                         modifier = Modifier.weight(1f),
                                         icon = Icons.Rounded.ArrowDownward,
-                                        iconTint = Color(0xFF34D399),
-                                        label = tr(language, "Mapato", "Income"),
+                                        iconTint = Color(0xFF9EC2B2),
+                                        containerColor = Color(0xFF242E38),
+                                        borderColor = Color(0xFF394754),
+                                        iconBg = Color(0xFF233831),
+                                        label = tr(language, "Mapato Yote", "Total Income"),
                                         amount = metrics.periodIncome,
                                         currency = currency,
                                         masked = privacyMaskEnabled
@@ -312,8 +360,11 @@ fun DashboardScreen(
                                     HeroStatChip(
                                         modifier = Modifier.weight(1f),
                                         icon = Icons.Rounded.ArrowUpward,
-                                        iconTint = Color(0xFFC4B5FD),
-                                        label = tr(language, "Matumizi", "Expenses"),
+                                        iconTint = Color(0xFFC2B8D1),
+                                        containerColor = Color(0xFF282B38),
+                                        borderColor = Color(0xFF3E4254),
+                                        iconBg = Color(0xFF342E42),
+                                        label = tr(language, "Matumizi Yangu", "My Expenses"),
                                         amount = metrics.periodExpense,
                                         currency = currency,
                                         masked = privacyMaskEnabled
@@ -324,39 +375,180 @@ fun DashboardScreen(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
+                                    HeroStatChip(
+                                        modifier = Modifier.weight(1f),
+                                        icon = Icons.Rounded.Home,
+                                        iconTint = Color(0xFFA3C0C9),
+                                        containerColor = Color(0xFF222F36),
+                                        borderColor = Color(0xFF374A54),
+                                        iconBg = Color(0xFF283D47),
+                                        label = tr(language, "Bili ya Nyumbani", "Household Bill"),
+                                        amount = metrics.periodHouseholdBills,
+                                        currency = currency,
+                                        masked = privacyMaskEnabled
+                                    )
+                                    HeroStatChip(
+                                        modifier = Modifier.weight(1f),
+                                        icon = Icons.Rounded.Savings,
+                                        iconTint = Color(0xFFB4BDD4),
+                                        containerColor = Color(0xFF262B38),
+                                        borderColor = Color(0xFF3D4457),
+                                        iconBg = Color(0xFF31384D),
+                                        label = tr(language, "Akiba (Imekatwa)", "Savings (Deducted)"),
+                                        amount = metrics.periodSavingsOutflow,
+                                        currency = currency,
+                                        masked = privacyMaskEnabled
+                                    )
+                                }
+
+                                // Calm Matte Quick-Action Dock inside Hero
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
                                     Button(
                                         onClick = onQuickAddTransaction,
                                         shape = CircleShape,
                                         colors = ButtonDefaults.buttonColors(
-                                            containerColor = Color.White,
-                                            contentColor = Color(0xFF0A1733)
+                                            containerColor = Color(0xFFE6EAF0),
+                                            contentColor = Color(0xFF1A222B)
                                         ),
+                                        contentPadding = PaddingValues(horizontal = 14.dp),
                                         modifier = Modifier
-                                            .weight(1f)
+                                            .weight(1.25f)
                                             .height(48.dp)
                                             .testTag("dashboard_add_txn_btn")
                                     ) {
                                         Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                                        Spacer(Modifier.size(6.dp))
-                                        Text(tr(language, "Rekodi Muamala", "New Entry"), maxLines = 1, fontWeight = FontWeight.Bold)
+                                        Spacer(Modifier.size(4.dp))
+                                        Text(tr(language, "Rekodi", "New Entry"), maxLines = 1, fontWeight = FontWeight.Bold)
+                                    }
+                                    FilledTonalButton(
+                                        onClick = { showSmartEntry = true },
+                                        shape = CircleShape,
+                                        colors = ButtonDefaults.filledTonalButtonColors(
+                                            containerColor = Color(0xFF3D5266),
+                                            contentColor = Color(0xFFEDF1F5)
+                                        ),
+                                        contentPadding = PaddingValues(horizontal = 12.dp),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(48.dp)
+                                            .testTag("dashboard_smart_auto_btn")
+                                    ) {
+                                        Icon(Icons.Rounded.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.size(4.dp))
+                                        Text(tr(language, "Haraka", "Smart"), maxLines = 1, fontWeight = FontWeight.Bold)
                                     }
                                     FilledTonalButton(
                                         onClick = onOpenInvoices,
                                         shape = CircleShape,
                                         colors = ButtonDefaults.filledTonalButtonColors(
-                                            containerColor = Color.White.copy(alpha = 0.16f),
-                                            contentColor = Color.White
+                                            containerColor = Color(0xFF2F3B4A),
+                                            contentColor = Color(0xFFE6EAF0)
                                         ),
+                                        contentPadding = PaddingValues(horizontal = 12.dp),
                                         modifier = Modifier
                                             .weight(1f)
                                             .height(48.dp)
                                             .testTag("dashboard_invoices_btn")
                                     ) {
-                                        Icon(Icons.Rounded.Description, contentDescription = null, modifier = Modifier.size(18.dp))
-                                        Spacer(Modifier.size(6.dp))
+                                        Icon(Icons.Rounded.Description, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.size(4.dp))
                                         Text(tr(language, "Ankara", "Invoices"), maxLines = 1)
                                     }
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // All-Services Command Hub (Huduma Zote) — 1-Tap Access to Every Upgraded Service
+            item(key = "all_services_hub") {
+                PremiumReveal(delayMillis = 30) {
+                    MengiCard(contentPadding = 16.dp) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text(
+                                    text = tr(language, "Huduma Zote za Mfumo", "All System Services"),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = tr(language, "Fikia ripoti za PDF, Excel, hifadhi ya simu na kikapu kwa mguso mmoja.", "One-tap access to PDF statements, Excel, phone backup & recovery."),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                ServiceQuickTile(
+                                    modifier = Modifier.weight(1f).testTag("service_statement_pdf_tile"),
+                                    icon = Icons.Rounded.PictureAsPdf,
+                                    iconBg = colors.incomeSoft,
+                                    iconTint = colors.income,
+                                    label = tr(language, "Taarifa PDF", "Statement PDF"),
+                                    onClick = onExportStatementPdf
+                                )
+                                ServiceQuickTile(
+                                    modifier = Modifier.weight(1f).testTag("service_excel_tile"),
+                                    icon = Icons.Rounded.TableChart,
+                                    iconBg = colors.limeSoft,
+                                    iconTint = colors.limeInk,
+                                    label = tr(language, "Ripoti Excel", "Excel Report"),
+                                    onClick = onExportColorExcel
+                                )
+                                ServiceQuickTile(
+                                    modifier = Modifier.weight(1f).testTag("service_phone_sync_tile"),
+                                    icon = Icons.Rounded.PhoneAndroid,
+                                    iconBg = colors.savingsSoft,
+                                    iconTint = colors.savings,
+                                    label = tr(language, "Hifadhi Simu", "Phone Sync"),
+                                    onClick = onSyncPhoneStorage
+                                )
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                ServiceQuickTile(
+                                    modifier = Modifier.weight(1f).testTag("service_recovery_vault_tile"),
+                                    icon = Icons.Rounded.RestoreFromTrash,
+                                    iconBg = colors.warningSoft,
+                                    iconTint = colors.warning,
+                                    label = if (deletedCount > 0) {
+                                        tr(language, "Kikapu ($deletedCount)", "Vault ($deletedCount)")
+                                    } else {
+                                        tr(language, "Kikapu", "Recovery")
+                                    },
+                                    onClick = onOpenRecoveryVault
+                                )
+                                ServiceQuickTile(
+                                    modifier = Modifier.weight(1f).testTag("service_contacts_tile"),
+                                    icon = Icons.Rounded.Groups,
+                                    iconBg = colors.subtleSurface,
+                                    iconTint = MaterialTheme.colorScheme.primary,
+                                    label = tr(language, "Wahusika ($partyCount)", "Contacts ($partyCount)"),
+                                    onClick = onOpenPartyDirectory
+                                )
+                                ServiceQuickTile(
+                                    modifier = Modifier.weight(1f).testTag("service_reconcile_tile"),
+                                    icon = Icons.Rounded.VerifiedUser,
+                                    iconBg = colors.incomeSoft,
+                                    iconTint = colors.income,
+                                    label = tr(language, "Kagua Salio", "Verify Ledger"),
+                                    onClick = onReconcileLedger
+                                )
                             }
                         }
                     }
@@ -452,7 +644,87 @@ fun DashboardScreen(
                                 onClick = onOpenTransactions
                             )
                         }
+                        // Dedicated Separated Household Bill Card
+                        val householdColors = bucketVisualColors(AutoBucket.HOUSEHOLD_BILL)
+                        MengiCard(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("dashboard_household_bill_card"),
+                            containerColor = householdColors.softBg,
+                            borderColor = householdColors.border,
+                            onClick = onOpenTransactions,
+                            contentPadding = 16.dp
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    modifier = Modifier.weight(1f),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(42.dp)
+                                            .clip(RoundedCornerShape(14.dp))
+                                            .background(householdColors.dot),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Home,
+                                            contentDescription = tr(language, "Bili ya Nyumbani", "Household Bill"),
+                                            tint = Color.White,
+                                            modifier = Modifier.size(22.dp)
+                                        )
+                                    }
+                                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Text(
+                                            text = tr(language, "Bili ya Nyumbani", "Household Bill"),
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = householdColors.ink,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = tr(
+                                                language,
+                                                "Leo: ${if (privacyMaskEnabled) "••••" else FormatUtils.formatCompactMoney(metrics.todayHouseholdBills, currency)} · Imekatwa kwenye mfumo",
+                                                "Today: ${if (privacyMaskEnabled) "••••" else FormatUtils.formatCompactMoney(metrics.todayHouseholdBills, currency)} · Deducted in system"
+                                            ),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = householdColors.ink,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                                Text(
+                                    text = if (privacyMaskEnabled) "••••" else FormatUtils.formatCompactMoney(metrics.periodHouseholdBills, currency),
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = householdColors.ink
+                                )
+                            }
+                        }
                     }
+                }
+            }
+
+            // Interactive Monthly Spending & Savings Trends Chart (Household vs Personal vs Savings)
+            item(key = "spending_trends_chart_card") {
+                PremiumReveal(delayMillis = 150) {
+                    SpendingTrendsChartCard(
+                        points = metrics.spendingTrendPoints,
+                        totalSavings = metrics.totalSavings,
+                        totalSavingsTarget = metrics.totalSavingsTarget,
+                        currency = currency,
+                        language = language,
+                        privacyMaskEnabled = privacyMaskEnabled,
+                        onOpenSavings = onOpenHub
+                    )
                 }
             }
 
@@ -535,11 +807,12 @@ fun DashboardScreen(
                             RecentTransactionRow(
                                 txn = txn,
                                 currency = currency,
+                                language = language,
                                 onClick = onOpenTransactions
                             )
                             if (idx < metrics.recentTransactions.lastIndex) {
                                 HorizontalDivider(
-                                    color = colors.cardBorder.copy(alpha = 0.45f),
+                                    color = colors.cardBorder,
                                     modifier = Modifier.padding(start = 70.dp, end = 18.dp)
                                 )
                             }
@@ -553,6 +826,7 @@ fun DashboardScreen(
     if (showSmartEntry) {
         SmartAutoEntrySheet(
             language = language,
+            knownParties = knownParties,
             onDismiss = { showSmartEntry = false },
             onSave = { desc, amt, party, method, date, overrideBucket, markBillPaid ->
                 onSaveSmartAutoEntry(desc, amt, party, method, date, overrideBucket, markBillPaid)
@@ -570,33 +844,39 @@ private fun HeroStatChip(
     label: String,
     amount: Double,
     currency: String,
-    masked: Boolean = false
+    masked: Boolean = false,
+    compact: Boolean = true,
+    containerColor: Color = Color(0xFF252F3A),
+    borderColor: Color = Color(0xFF394654),
+    iconBg: Color = Color(0xFF303D4B)
 ) {
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(20.dp),
-        color = Color.White.copy(alpha = 0.11f),
-        border = BorderStroke(0.75.dp, Color.White.copy(alpha = 0.12f))
+        color = containerColor,
+        border = BorderStroke(1.dp, borderColor)
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 13.dp, vertical = 11.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(9.dp)
         ) {
             Box(
                 modifier = Modifier
-                    .size(28.dp)
-                    .clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.12f)),
+                    .size(30.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(iconBg),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(16.dp))
             }
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = label,
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color.White.copy(alpha = 0.78f)
+                    color = Color(0xFFC2CCD8),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 if (masked) {
                     Text(
@@ -608,8 +888,8 @@ private fun HeroStatChip(
                     AnimatedMoneyText(
                         amount = amount,
                         currency = currency,
-                        compact = true,
-                        style = MaterialTheme.typography.titleSmall,
+                        compact = compact,
+                        style = if (compact) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium,
                         color = Color.White
                     )
                 }
@@ -670,9 +950,31 @@ private fun DashboardKpiTile(
 private fun RecentTransactionRow(
     txn: TransactionEntity,
     currency: String,
+    language: AppLanguage,
     onClick: () -> Unit
 ) {
     val colors = LocalMengiColors.current
+    val isHousehold = AutoAccountingEngine.isHouseholdTransaction(txn)
+    val householdColors = bucketVisualColors(AutoBucket.HOUSEHOLD_BILL)
+    val iconBg = when {
+        isHousehold -> householdColors.softBg
+        txn.isIncome -> colors.incomeSoft
+        else -> colors.expenseSoft
+    }
+    val iconTint = when {
+        isHousehold -> householdColors.dot
+        txn.isIncome -> colors.income
+        else -> colors.expense
+    }
+    val amountColor = when {
+        isHousehold -> householdColors.ink
+        txn.isIncome -> colors.income
+        else -> colors.expense
+    }
+    val localizedCategory = FormatUtils.localizedCategory(
+        if (isHousehold) AutoAccountingEngine.HOUSEHOLD_CATEGORY else txn.category,
+        language
+    )
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -685,28 +987,36 @@ private fun RecentTransactionRow(
             modifier = Modifier
                 .size(40.dp)
                 .clip(RoundedCornerShape(14.dp))
-                .background(if (txn.isIncome) colors.incomeSoft else colors.expenseSoft),
+                .background(iconBg),
             contentAlignment = Alignment.Center
         ) {
             Icon(
-                imageVector = if (txn.isIncome) Icons.Rounded.ArrowDownward else Icons.Rounded.ArrowUpward,
-                contentDescription = txn.type,
-                tint = if (txn.isIncome) colors.income else colors.expense,
+                imageVector = when {
+                    isHousehold -> Icons.Rounded.Home
+                    txn.isIncome -> Icons.Rounded.ArrowDownward
+                    else -> Icons.Rounded.ArrowUpward
+                },
+                contentDescription = if (isHousehold) tr(language, "Bili ya Nyumbani", "Household Bill") else localizedCategory,
+                tint = iconTint,
                 modifier = Modifier.size(20.dp)
             )
         }
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = txn.description.ifBlank { txn.category },
+                text = txn.description.ifBlank { localizedCategory },
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                text = listOf(txn.party, txn.category, txn.date).filter { it.isNotBlank() }.joinToString(" · "),
+                text = listOf(
+                    txn.party.trim(),
+                    localizedCategory,
+                    txn.date
+                ).filter { it.isNotBlank() }.joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (isHousehold) householdColors.ink else MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -715,7 +1025,58 @@ private fun RecentTransactionRow(
             text = (if (txn.isIncome) "+" else "-") + FormatUtils.formatMoney(txn.amount, currency),
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
-            color = if (txn.isIncome) colors.income else colors.expense
+            color = amountColor
         )
     }
 }
+
+@Composable
+private fun ServiceQuickTile(
+    icon: ImageVector,
+    iconBg: Color,
+    iconTint: Color,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalMengiColors.current
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(18.dp),
+        color = colors.subtleSurface,
+        border = BorderStroke(1.dp, colors.cardBorder),
+        modifier = modifier
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(RoundedCornerShape(13.dp))
+                    .background(iconBg),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = label,
+                    tint = iconTint,
+                    modifier = Modifier.size(19.dp)
+                )
+            }
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+

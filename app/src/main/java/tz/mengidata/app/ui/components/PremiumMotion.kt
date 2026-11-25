@@ -17,6 +17,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -29,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -135,15 +137,16 @@ fun PulsingStatusDot(
         ),
         label = "halo_scale"
     )
-    val haloAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.55f,
-        targetValue = 0f,
+    val haloBlend by infiniteTransition.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 0.08f,
         animationSpec = infiniteRepeatable(
             animation = tween(durationMillis = 1400, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Restart
+            repeatMode = RepeatMode.Reverse
         ),
-        label = "halo_alpha"
+        label = "halo_blend"
     )
+    val haloColor = lerp(MaterialTheme.colorScheme.surface, color, haloBlend)
 
     Box(
         modifier = modifier.size(size * 2.1f),
@@ -154,7 +157,7 @@ fun PulsingStatusDot(
                 .size(size)
                 .scale(haloScale)
                 .clip(CircleShape)
-                .background(color.copy(alpha = haloAlpha))
+                .background(haloColor)
         )
         Box(
             modifier = Modifier

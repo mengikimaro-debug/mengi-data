@@ -5,6 +5,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -63,6 +64,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import tz.mengidata.app.data.accounting.AutoAccountingEngine
+import tz.mengidata.app.data.accounting.PartySummary
 import tz.mengidata.app.data.db.SavingsGoalEntity
 import tz.mengidata.app.data.db.SavingsLogEntity
 import tz.mengidata.app.i18n.AppLanguage
@@ -77,6 +80,7 @@ import tz.mengidata.app.ui.components.OneUiFieldShape
 import tz.mengidata.app.ui.components.OneUiFloatingFab
 import tz.mengidata.app.ui.components.OneUiScreenHeader
 import tz.mengidata.app.ui.components.OneUiSheetShape
+import tz.mengidata.app.ui.components.RecognizedNameSuggestionsBar
 import tz.mengidata.app.ui.components.StatusPill
 import tz.mengidata.app.ui.components.oneUiTextFieldColors
 import tz.mengidata.app.ui.theme.LocalMengiColors
@@ -85,11 +89,12 @@ import tz.mengidata.app.ui.theme.LocalMengiColors
 fun HubScreen(
     savingsGoals: List<SavingsGoalEntity>,
     savingsLogs: List<SavingsLogEntity>,
+    knownParties: List<PartySummary> = emptyList(),
     currency: String,
     language: AppLanguage,
     onSaveGoal: (SavingsGoalEntity) -> Unit,
     onDeleteGoal: (String) -> Unit,
-    onRecordSavingsTxn: (goalId: String, type: String, amount: Double, note: String) -> Unit,
+    onRecordSavingsTxn: (goalId: String, type: String, amount: Double, note: String, partyName: String) -> Unit,
     onExportSavingsCsv: () -> Unit
 ) {
     var editingGoal by remember { mutableStateOf<SavingsGoalEntity?>(null) }
@@ -97,6 +102,22 @@ fun HubScreen(
     var txnTarget by remember { mutableStateOf<Pair<SavingsGoalEntity, String>?>(null) }
     var logsGoal by remember { mutableStateOf<SavingsGoalEntity?>(null) }
     var deleteGoalId by remember { mutableStateOf<String?>(null) }
+    var goalFilter by remember { mutableStateOf("all") }
+
+    val colors = LocalMengiColors.current
+    val activeGoalsCount = remember(savingsGoals) {
+        savingsGoals.count { it.targetAmount <= 0.0 || it.currentAmount < it.targetAmount }
+    }
+    val completedGoalsCount = remember(savingsGoals) {
+        savingsGoals.count { it.targetAmount > 0.0 && it.currentAmount >= it.targetAmount }
+    }
+    val filteredGoals = remember(savingsGoals, goalFilter) {
+        when (goalFilter) {
+            "active" -> savingsGoals.filter { it.targetAmount <= 0.0 || it.currentAmount < it.targetAmount }
+            "done" -> savingsGoals.filter { it.targetAmount > 0.0 && it.currentAmount >= it.targetAmount }
+            else -> savingsGoals
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         LazyColumn(
@@ -132,7 +153,39 @@ fun HubScreen(
                 )
             }
 
-            if (savingsGoals.isEmpty()) {
+            if (savingsGoals.isNotEmpty()) {
+                item(key = "savings_filters") {
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(
+                            "all" to "${tr(language, "Zote", "All")} (${savingsGoals.size})",
+                            "active" to "${tr(language, "Zinaendelea", "In Progress")} ($activeGoalsCount)",
+                            "done" to "${tr(language, "Zimekamilika", "Completed")} ($completedGoalsCount)"
+                        ).forEach { (key, label) ->
+                            val selected = goalFilter == key
+                            Surface(
+                                onClick = { goalFilter = key },
+                                shape = CircleShape,
+                                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
+                                border = if (selected) null else BorderStroke(1.dp, colors.cardBorder),
+                                modifier = Modifier.testTag("savings_filter_$key")
+                            ) {
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (filteredGoals.isEmpty()) {
                 item(key = "empty_savings") {
                     EmptyStateCard(
                         icon = Icons.Rounded.Savings,
@@ -146,7 +199,7 @@ fun HubScreen(
                     )
                 }
             } else {
-                items(savingsGoals, key = { it.id }) { goal ->
+                items(filteredGoals, key = { it.id }) { goal ->
                     OneUiSavingsGoalCard(
                         goal = goal,
                         currency = currency,
@@ -182,6 +235,7 @@ fun HubScreen(
     if (showGoalEditor) {
         SavingsGoalEditorSheet(
             initial = editingGoal,
+            knownParties = knownParties,
             language = language,
             onDismiss = { showGoalEditor = false; editingGoal = null },
             onSave = { goal ->
@@ -196,11 +250,12 @@ fun HubScreen(
         SavingsTransactionDialog(
             goal = goal,
             type = type,
+            knownParties = knownParties,
             currency = currency,
             language = language,
             onDismiss = { txnTarget = null },
-            onSubmit = { amount, note ->
-                onRecordSavingsTxn(goal.id, type, amount, note)
+            onSubmit = { amount, note, partyName ->
+                onRecordSavingsTxn(goal.id, type, amount, note, partyName)
                 txnTarget = null
             }
         )
@@ -250,7 +305,7 @@ private fun OneUiSavingsVaultSummaryCard(
     Surface(
         shape = MaterialTheme.shapes.extraLarge,
         color = colors.heroStart,
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)),
+        border = BorderStroke(1.2.dp, Color(0xFF394554)),
         shadowElevation = if (colors.isDark) 0.dp else 8.dp,
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -277,8 +332,8 @@ private fun OneUiSavingsVaultSummaryCard(
                 )
                 StatusPill(
                     text = "$pct% · ${goals.size} ${tr(language, "malengo", "goals")}",
-                    containerColor = Color.White.copy(alpha = 0.16f),
-                    contentColor = Color.White
+                    containerColor = Color(0xFF2D3846),
+                    contentColor = Color(0xFFE6EAF0)
                 )
             }
 
@@ -294,14 +349,14 @@ private fun OneUiSavingsVaultSummaryCard(
                     .fillMaxWidth()
                     .height(9.dp)
                     .clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.18f))
+                    .background(Color(0xFF171D24))
             ) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth(animatedRatio.coerceAtLeast(if (totalSaved > 0) 0.03f else 0f))
                         .fillMaxHeight()
                         .clip(CircleShape)
-                        .background(colors.lime)
+                        .background(Color(0xFF7FA896))
                 )
             }
 
@@ -312,13 +367,13 @@ private fun OneUiSavingsVaultSummaryCard(
                 Text(
                     text = "${tr(language, "Lengo", "Target")}: ${FormatUtils.formatCompactMoney(totalTarget, currency)}",
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.80f)
+                    color = Color(0xFFBDC7D4)
                 )
                 val remaining = (totalTarget - totalSaved).coerceAtLeast(0.0)
                 Text(
                     text = "${tr(language, "Baki", "Remaining")}: ${FormatUtils.formatCompactMoney(remaining, currency)}",
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.80f)
+                    color = Color(0xFFBDC7D4)
                 )
             }
         }
@@ -432,8 +487,34 @@ private fun OneUiSavingsGoalCard(
             )
         }
 
+        val remainingGoal = (goal.targetAmount - goal.currentAmount).coerceAtLeast(0.0)
+        if (remainingGoal > 0.0 && goal.targetDate.isNotBlank()) {
+            val daysLeft = remember(goal.targetDate) {
+                runCatching {
+                    val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+                    val targetMs = sdf.parse(goal.targetDate)?.time ?: 0L
+                    val nowMs = System.currentTimeMillis()
+                    ((targetMs - nowMs) / (1000L * 60L * 60L * 24L)).toInt()
+                }.getOrDefault(0)
+            }
+            if (daysLeft > 0) {
+                val monthsLeft = (daysLeft / 30.0).coerceAtLeast(1.0)
+                val monthlyPace = remainingGoal / monthsLeft
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = tr(
+                        language,
+                        "Kasi ya kufikia lengo: ${FormatUtils.formatCompactMoney(monthlyPace, currency)}/mwezi · siku $daysLeft zimebaki",
+                        "Target pace: ${FormatUtils.formatCompactMoney(monthlyPace, currency)}/mo · $daysLeft days left"
+                    ),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colors.savings
+                )
+            }
+        }
+
         if (goal.notes.isNotBlank()) {
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(6.dp))
             Text(
                 text = goal.notes,
                 style = MaterialTheme.typography.bodySmall,
@@ -489,6 +570,7 @@ private fun OneUiSavingsGoalCard(
 @Composable
 private fun SavingsGoalEditorSheet(
     initial: SavingsGoalEntity?,
+    knownParties: List<PartySummary>,
     language: AppLanguage,
     onDismiss: () -> Unit,
     onSave: (SavingsGoalEntity) -> Unit
@@ -523,11 +605,22 @@ private fun SavingsGoalEditorSheet(
                 value = title,
                 onValueChange = { title = it; errorText = null },
                 label = { Text(tr(language, "Jina la Lengo *", "Goal Title *")) },
+                placeholder = { Text(tr(language, "Mfano: Jina/rentsaving au Akiba ya Kodi", "e.g. Name/rentsaving or Rent Savings")) },
                 singleLine = true,
                 shape = OneUiFieldShape,
                 colors = oneUiTextFieldColors(),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth().testTag("savings_goal_title_input")
             )
+            if (knownParties.isNotEmpty()) {
+                RecognizedNameSuggestionsBar(
+                    query = title,
+                    knownParties = knownParties,
+                    language = language,
+                    onSelectParty = { selected ->
+                        title = selected.name
+                    }
+                )
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(
                     value = targetText,
@@ -579,13 +672,26 @@ private fun SavingsGoalEditorSheet(
                         errorText = tr(language, "Jaza jina na kiasi cha lengo.", "Enter goal title and valid target amount.")
                         return@Button
                     }
+                    val parsed = AutoAccountingEngine.parseSlashTag(title)
+                    val resolvedTitle = parsed.suggestedSavingsGoalTitle
+                        ?: AutoAccountingEngine.stripSlashTag(title).ifBlank { title.trim() }
+                    val resolvedNotes = if (
+                        parsed.hasSlashTag &&
+                        parsed.cleanName.isNotBlank() &&
+                        parsed.suggestedSavingsGoalTitle != null &&
+                        !notes.contains(parsed.cleanName, ignoreCase = true)
+                    ) {
+                        listOf(parsed.cleanName, notes.trim()).filter { it.isNotBlank() }.joinToString(" · ")
+                    } else {
+                        notes.trim()
+                    }
                     onSave(
-                        (initial ?: SavingsGoalEntity(id = "", title = title)).copy(
-                            title = title.trim(),
+                        (initial ?: SavingsGoalEntity(id = "", title = resolvedTitle)).copy(
+                            title = resolvedTitle,
                             targetAmount = target,
                             currentAmount = current,
                             targetDate = targetDate.trim(),
-                            notes = notes.trim()
+                            notes = resolvedNotes
                         )
                     )
                 },
@@ -605,12 +711,14 @@ private fun SavingsGoalEditorSheet(
 private fun SavingsTransactionDialog(
     goal: SavingsGoalEntity,
     type: String,
+    knownParties: List<PartySummary>,
     currency: String,
     language: AppLanguage,
     onDismiss: () -> Unit,
-    onSubmit: (Double, String) -> Unit
+    onSubmit: (Double, String, String) -> Unit
 ) {
     var amountText by remember { mutableStateOf("") }
+    var partyName by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -623,7 +731,10 @@ private fun SavingsTransactionDialog(
             )
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 Text(
                     "${goal.title} (${FormatUtils.formatMoney(goal.currentAmount, currency)})",
                     style = MaterialTheme.typography.bodySmall,
@@ -637,7 +748,46 @@ private fun SavingsTransactionDialog(
                     singleLine = true,
                     shape = OneUiFieldShape,
                     colors = oneUiTextFieldColors(),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth().testTag("savings_txn_amount_input")
+                )
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf(10_000L to "+10K", 25_000L to "+25K", 50_000L to "+50K", 100_000L to "+100K").forEach { (preset, chipLabel) ->
+                        Surface(
+                            onClick = {
+                                val current = amountText.toDoubleOrNull()?.toLong() ?: 0L
+                                amountText = (current + preset).toString()
+                            },
+                            shape = CircleShape,
+                            color = LocalMengiColors.current.savingsSoft
+                        ) {
+                            Text(
+                                text = chipLabel,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = LocalMengiColors.current.savings,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+                            )
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = partyName,
+                    onValueChange = { partyName = it },
+                    label = { Text(tr(language, "Jina Lolote la Mchangiaji (Hiari)", "Any Contributor Name (Optional)")) },
+                    placeholder = { Text(tr(language, "Jina lolote au Jina/saving", "Any name or Name/saving")) },
+                    singleLine = true,
+                    shape = OneUiFieldShape,
+                    colors = oneUiTextFieldColors(),
+                    modifier = Modifier.fillMaxWidth().testTag("savings_txn_party_input")
+                )
+                RecognizedNameSuggestionsBar(
+                    query = partyName,
+                    knownParties = knownParties,
+                    language = language,
+                    onSelectParty = { selected -> partyName = selected.name }
                 )
                 OutlinedTextField(
                     value = note,
@@ -654,9 +804,11 @@ private fun SavingsTransactionDialog(
             Button(
                 onClick = {
                     val amt = amountText.toDoubleOrNull() ?: 0.0
-                    if (amt > 0.0) onSubmit(amt, note)
+                    val cleanParty = AutoAccountingEngine.stripSlashTag(partyName)
+                    if (amt > 0.0) onSubmit(amt, note.trim(), cleanParty)
                 },
-                shape = CircleShape
+                shape = CircleShape,
+                modifier = Modifier.testTag("savings_txn_confirm_btn")
             ) {
                 Text(tr(language, "Thibitisha", "Confirm"))
             }
@@ -692,7 +844,7 @@ private fun SavingsHistorySheet(
         ) {
             Text(goal.title, style = MaterialTheme.typography.headlineMedium)
             Text(tr(language, "Historia ya Akiba", "Savings History"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            HorizontalDivider(color = colors.cardBorder.copy(alpha = 0.5f))
+            HorizontalDivider(color = colors.cardBorder)
             if (logs.isEmpty()) {
                 Text(
                     tr(language, "Hakuna miamala ya akiba bado.", "No savings activity recorded yet."),
@@ -724,7 +876,7 @@ private fun SavingsHistorySheet(
                         )
                     }
                     if (idx < logs.lastIndex) {
-                        HorizontalDivider(color = colors.cardBorder.copy(alpha = 0.35f))
+                        HorizontalDivider(color = colors.cardBorder)
                     }
                 }
             }

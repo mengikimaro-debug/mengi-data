@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="brand_forest">#0F172A</color>
-    <color name="brand_emerald">#2563EB</color>
-    <color name="brand_lime">#38BDF8</color>
-    <color name="brand_paper">#F6F8FC</color>
+    <color name="brand_forest">#1D242C</color>
+    <color name="brand_emerald">#334B63</color>
+    <color name="brand_lime">#56687A</color>
+    <color name="brand_paper">#EDEFF2</color>
 </resources>

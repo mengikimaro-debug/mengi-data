@@ -60,7 +60,11 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import tz.mengidata.app.R
 import tz.mengidata.app.data.db.BillEntity
 import tz.mengidata.app.data.db.InvoiceWithItems
 import tz.mengidata.app.data.db.SavingsGoalEntity
@@ -110,17 +114,20 @@ fun GlobalSearchSheet(
 
         if (scope == "all" || scope == "txns") {
             transactions.filter { t ->
+                val localizedCat = FormatUtils.localizedCategory(t.category, language)
                 q.isEmpty() ||
                     t.description.lowercase(Locale.ROOT).contains(q) ||
                     t.party.lowercase(Locale.ROOT).contains(q) ||
                     t.category.lowercase(Locale.ROOT).contains(q) ||
+                    localizedCat.lowercase(Locale.ROOT).contains(q) ||
                     t.reference.lowercase(Locale.ROOT).contains(q)
             }.take(if (q.isEmpty()) 4 else 25).forEach { t ->
+                val localizedCat = FormatUtils.localizedCategory(t.category, language)
                 out += SearchResultRow(
                     id = "txn_${t.id}",
                     scope = "txns",
-                    title = t.description.ifBlank { t.category },
-                    subtitle = listOf(t.party, t.category, t.date).filter { it.isNotBlank() }.joinToString(" · "),
+                    title = t.description.ifBlank { localizedCat },
+                    subtitle = listOf(t.party, localizedCat, t.date).filter { it.isNotBlank() }.joinToString(" · "),
                     amountText = (if (t.isIncome) "+" else "-") + FormatUtils.formatCompactMoney(t.amount, currency),
                     amountColor = if (t.isIncome) colors.income else colors.expense,
                     icon = Icons.Rounded.AccountBalanceWallet,
@@ -151,16 +158,18 @@ fun GlobalSearchSheet(
 
         if (scope == "all" || scope == "bills") {
             bills.filter { b ->
+                val localizedCat = FormatUtils.localizedCategory(b.category, language)
                 q.isEmpty() ||
                     b.name.lowercase(Locale.ROOT).contains(q) ||
                     b.payee.lowercase(Locale.ROOT).contains(q) ||
-                    b.category.lowercase(Locale.ROOT).contains(q)
+                    b.category.lowercase(Locale.ROOT).contains(q) ||
+                    localizedCat.lowercase(Locale.ROOT).contains(q)
             }.take(if (q.isEmpty()) 3 else 20).forEach { b ->
                 out += SearchResultRow(
                     id = "bill_${b.id}",
                     scope = "bills",
                     title = b.name,
-                    subtitle = listOf(b.payee, b.dueDate).filter { it.isNotBlank() }.joinToString(" · "),
+                    subtitle = listOf(b.payee, FormatUtils.localizedCategory(b.category, language), b.dueDate).filter { it.isNotBlank() }.joinToString(" · "),
                     amountText = FormatUtils.formatCompactMoney(b.amount, currency),
                     amountColor = if (b.paid) colors.income else colors.expense,
                     icon = Icons.AutoMirrored.Rounded.ReceiptLong,
@@ -353,39 +362,38 @@ fun PinLockScreen(
         ) {
             Surface(
                 shape = RoundedCornerShape(24.dp),
-                color = Color.White.copy(alpha = 0.14f),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
-                modifier = Modifier.size(68.dp)
+                color = Color(0xFF2B3745),
+                border = BorderStroke(1.5.dp, Color(0xFF56687A)),
+                shadowElevation = 4.dp,
+                modifier = Modifier.size(76.dp)
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.Rounded.Lock,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(30.dp)
-                    )
-                }
+                Image(
+                    painter = painterResource(R.drawable.mengidata_oneui_icon_1795525888393),
+                    contentDescription = businessName.ifBlank { "Mengidata" },
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
             }
 
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
                     text = businessName.ifBlank { "Mengidata" },
                     style = MaterialTheme.typography.headlineMedium,
-                    color = Color.White
+                    color = Color(0xFFE6EAF0)
                 )
                 Text(
                     text = if (isError) {
-                        tr(language, "PIN si sahihi. Jaribu tena.", "Incorrect PIN. Try again.")
+                        tr(language, "Namba ya siri si sahihi. Jaribu tena.", "Incorrect PIN. Try again.")
                     } else {
-                        tr(language, "Ingiza PIN ya tarakimu 4 kufungua", "Enter 4-digit PIN to unlock")
+                        tr(language, "Ingiza namba ya siri ya tarakimu 4 kufungua", "Enter 4-digit PIN to unlock")
                     },
                     style = MaterialTheme.typography.bodyMedium,
-                    color = if (isError) Color(0xFFFCA5A5) else Color.White.copy(alpha = 0.8f),
+                    color = if (isError) Color(0xFFD6C2A5) else Color(0xFFBDC7D4),
                     textAlign = TextAlign.Center
                 )
             }
 
-            // 4 PIN Dots
+            // 4 Security Code Dots (Calm Matte Solid)
             Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
                 repeat(4) { idx ->
                     val filled = idx < entered.length
@@ -395,9 +403,9 @@ fun PinLockScreen(
                             .clip(CircleShape)
                             .background(
                                 when {
-                                    isError -> Color(0xFFF87171)
+                                    isError -> Color(0xFFC2A684)
                                     filled -> colors.lime
-                                    else -> Color.White.copy(alpha = 0.25f)
+                                    else -> Color(0xFF394654)
                                 }
                             )
                     )
@@ -406,7 +414,7 @@ fun PinLockScreen(
 
             Spacer(Modifier.height(6.dp))
 
-            // Samsung One UI 8.5 Numeric Keypad
+            // Calm Matte Solid Numeric Keypad
             val rows = listOf(
                 listOf("1", "2", "3"),
                 listOf("4", "5", "6"),
@@ -426,7 +434,8 @@ fun PinLockScreen(
                                     Surface(
                                         onClick = { if (entered.isNotEmpty()) entered = entered.dropLast(1) },
                                         shape = CircleShape,
-                                        color = Color.White.copy(alpha = 0.12f),
+                                        color = Color(0xFF232C36),
+                                        border = BorderStroke(1.dp, Color(0xFF394654)),
                                         modifier = Modifier
                                             .size(68.dp)
                                             .testTag("pin_key_del")
@@ -435,7 +444,7 @@ fun PinLockScreen(
                                             Icon(
                                                 Icons.AutoMirrored.Rounded.Backspace,
                                                 contentDescription = tr(language, "Futa", "Delete"),
-                                                tint = Color.White,
+                                                tint = Color(0xFFE6EAF0),
                                                 modifier = Modifier.size(24.dp)
                                             )
                                         }
@@ -445,8 +454,8 @@ fun PinLockScreen(
                                     Surface(
                                         onClick = { appendDigit(key) },
                                         shape = CircleShape,
-                                        color = Color.White.copy(alpha = 0.15f),
-                                        border = BorderStroke(0.75.dp, Color.White.copy(alpha = 0.18f)),
+                                        color = Color(0xFF2B3642),
+                                        border = BorderStroke(1.dp, Color(0xFF425163)),
                                         modifier = Modifier
                                             .size(68.dp)
                                             .testTag("pin_key_$key")
@@ -455,7 +464,7 @@ fun PinLockScreen(
                                             Text(
                                                 text = key,
                                                 style = MaterialTheme.typography.headlineMedium,
-                                                color = Color.White
+                                                color = Color(0xFFE6EAF0)
                                             )
                                         }
                                     }
@@ -486,8 +495,8 @@ fun PinSetupDialog(
         containerColor = MaterialTheme.colorScheme.surface,
         title = {
             Text(
-                if (isChangingExisting) tr(language, "Badili PIN ya Ulinzi", "Change Security PIN")
-                else tr(language, "Weka PIN ya Tarakimu 4", "Set 4-Digit Security PIN")
+                if (isChangingExisting) tr(language, "Badili Namba ya Siri", "Change Security PIN")
+                else tr(language, "Weka Namba ya Siri (Tarakimu 4)", "Set 4-Digit Security PIN")
             )
         },
         text = {
@@ -495,7 +504,7 @@ fun PinSetupDialog(
                 Text(
                     text = tr(
                         language,
-                        "PIN huhifadhiwa kwa usimbaji wa SHA-256 kulinda taarifa zako za biashara.",
+                        "Namba ya siri huhifadhiwa kwa usimbaji wa SHA-256 kulinda taarifa zako za biashara.",
                         "Your PIN is stored with salted SHA-256 hashing to protect your business records."
                     ),
                     style = MaterialTheme.typography.bodySmall,
@@ -504,7 +513,7 @@ fun PinSetupDialog(
                 OutlinedTextField(
                     value = pin,
                     onValueChange = { pin = it.filter { c -> c.isDigit() }.take(4); error = null },
-                    label = { Text(tr(language, "PIN Mpya (tarakimu 4)", "New 4-Digit PIN")) },
+                    label = { Text(tr(language, "Namba ya Siri Mpya (tarakimu 4)", "New 4-Digit PIN")) },
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                     singleLine = true,
@@ -515,7 +524,7 @@ fun PinSetupDialog(
                 OutlinedTextField(
                     value = confirmPin,
                     onValueChange = { confirmPin = it.filter { c -> c.isDigit() }.take(4); error = null },
-                    label = { Text(tr(language, "Thibitisha PIN", "Confirm PIN")) },
+                    label = { Text(tr(language, "Thibitisha Namba ya Siri", "Confirm PIN")) },
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                     singleLine = true,
@@ -536,7 +545,7 @@ fun PinSetupDialog(
                         return@Button
                     }
                     if (pin != confirmPin) {
-                        error = tr(language, "PIN hazilingani.", "PINs do not match.")
+                        error = tr(language, "Namba za siri hazilingani.", "PINs do not match.")
                         return@Button
                     }
                     onSavePin(pin)
@@ -544,7 +553,7 @@ fun PinSetupDialog(
                 shape = CircleShape,
                 modifier = Modifier.testTag("pin_setup_save_btn")
             ) {
-                Text(tr(language, "Hifadhi PIN", "Save PIN"))
+                Text(tr(language, "Hifadhi Namba ya Siri", "Save PIN"))
             }
         },
         dismissButton = {

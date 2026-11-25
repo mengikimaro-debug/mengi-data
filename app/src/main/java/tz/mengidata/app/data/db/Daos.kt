@@ -132,6 +132,9 @@ interface SavingsDao {
     @Query("SELECT * FROM savings_logs ORDER BY date DESC, createdAt DESC")
     suspend fun getAllLogs(): List<SavingsLogEntity>
 
+    @Query("SELECT * FROM savings_logs WHERE savingsId = :goalId ORDER BY date DESC, createdAt DESC")
+    suspend fun getLogsForGoal(goalId: String): List<SavingsLogEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertLog(log: SavingsLogEntity)
 
@@ -168,4 +171,32 @@ interface CategoryDao {
     @Query("DELETE FROM transaction_categories")
     suspend fun deleteAll()
 }
+
+@Dao
+interface DeletedRecordDao {
+    @Query("SELECT * FROM deleted_records ORDER BY deletedAtMillis DESC")
+    fun observeAll(): Flow<List<DeletedRecordEntity>>
+
+    @Query("SELECT * FROM deleted_records ORDER BY deletedAtMillis DESC")
+    suspend fun getAll(): List<DeletedRecordEntity>
+
+    @Query("SELECT * FROM deleted_records WHERE id = :id")
+    suspend fun getById(id: String): DeletedRecordEntity?
+
+    @Query("SELECT COUNT(*) FROM deleted_records")
+    suspend fun count(): Int
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(record: DeletedRecordEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(records: List<DeletedRecordEntity>)
+
+    @Query("DELETE FROM deleted_records WHERE id = :id")
+    suspend fun deleteById(id: String)
+
+    @Query("DELETE FROM deleted_records")
+    suspend fun deleteAll()
+}
+
 

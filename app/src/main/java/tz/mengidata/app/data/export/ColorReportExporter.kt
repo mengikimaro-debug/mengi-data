@@ -49,9 +49,12 @@ object ColorReportExporter {
             currency = currency
         )
 
-        // Strictly separate direct transactions (excluding bills & savings)
+        // Strictly separate direct transactions (excluding bills, savings, and household bills)
         val pureTransactions = transactions
-            .filter { it.source != "bill" && it.source != "savings" }
+            .filter { it.source != "bill" && it.source != "savings" && !AutoAccountingEngine.isHouseholdTransaction(it) }
+            .sortedBy { it.date }
+        val householdTransactions = transactions
+            .filter { AutoAccountingEngine.isHouseholdTransaction(it) }
             .sortedBy { it.date }
 
         val goalsMap = savingsGoals.associateBy { it.id }
@@ -72,66 +75,75 @@ object ColorReportExporter {
  <Styles>
   <Style ss:ID="Title">
    <Font ss:Bold="1" ss:Size="14" ss:Color="#FFFFFF"/>
-   <Interior ss:Color="#0F172A" ss:Pattern="Solid"/>
+   <Interior ss:Color="#242E38" ss:Pattern="Solid"/>
    <Alignment ss:Vertical="Center"/>
   </Style>
   <Style ss:ID="Header">
    <Font ss:Bold="1" ss:Size="11" ss:Color="#FFFFFF"/>
-   <Interior ss:Color="#1D4ED8" ss:Pattern="Solid"/>
+   <Interior ss:Color="#346352" ss:Pattern="Solid"/>
    <Alignment ss:Vertical="Center"/>
   </Style>
   <Style ss:ID="MoneyIn">
-   <Font ss:Bold="1" ss:Color="#065F46"/>
-   <Interior ss:Color="#D1FAE5" ss:Pattern="Solid"/>
+   <Font ss:Bold="1" ss:Color="#2B5B49"/>
+   <Interior ss:Color="#E4EFEA" ss:Pattern="Solid"/>
   </Style>
   <Style ss:ID="MoneyInNum">
-   <Font ss:Bold="1" ss:Color="#065F46"/>
-   <Interior ss:Color="#D1FAE5" ss:Pattern="Solid"/>
+   <Font ss:Bold="1" ss:Color="#2B5B49"/>
+   <Interior ss:Color="#E4EFEA" ss:Pattern="Solid"/>
    <NumberFormat ss:Format="#,##0.00"/>
   </Style>
   <Style ss:ID="HighBillRed">
-   <Font ss:Bold="1" ss:Color="#4C3E6B"/>
-   <Interior ss:Color="#F4F1F9" ss:Pattern="Solid"/>
+   <Font ss:Bold="1" ss:Color="#4A4159"/>
+   <Interior ss:Color="#ECE9F2" ss:Pattern="Solid"/>
   </Style>
   <Style ss:ID="HighBillRedNum">
-   <Font ss:Bold="1" ss:Color="#4C3E6B"/>
-   <Interior ss:Color="#F4F1F9" ss:Pattern="Solid"/>
+   <Font ss:Bold="1" ss:Color="#4A4159"/>
+   <Interior ss:Color="#ECE9F2" ss:Pattern="Solid"/>
    <NumberFormat ss:Format="#,##0.00"/>
   </Style>
   <Style ss:ID="BillAmber">
-   <Font ss:Color="#92400E"/>
-   <Interior ss:Color="#FEF3C7" ss:Pattern="Solid"/>
+   <Font ss:Color="#5B432A"/>
+   <Interior ss:Color="#F0EAE1" ss:Pattern="Solid"/>
   </Style>
   <Style ss:ID="BillAmberNum">
-   <Font ss:Color="#92400E"/>
-   <Interior ss:Color="#FEF3C7" ss:Pattern="Solid"/>
+   <Font ss:Color="#5B432A"/>
+   <Interior ss:Color="#F0EAE1" ss:Pattern="Solid"/>
    <NumberFormat ss:Format="#,##0.00"/>
   </Style>
   <Style ss:ID="ExpenseOrange">
-   <Font ss:Color="#9A3412"/>
-   <Interior ss:Color="#FFEDD5" ss:Pattern="Solid"/>
+   <Font ss:Color="#6D4343"/>
+   <Interior ss:Color="#F2E6E6" ss:Pattern="Solid"/>
   </Style>
   <Style ss:ID="ExpenseOrangeNum">
-   <Font ss:Color="#9A3412"/>
-   <Interior ss:Color="#FFEDD5" ss:Pattern="Solid"/>
+   <Font ss:Color="#6D4343"/>
+   <Interior ss:Color="#F2E6E6" ss:Pattern="Solid"/>
    <NumberFormat ss:Format="#,##0.00"/>
   </Style>
   <Style ss:ID="SavingsBlue">
-   <Font ss:Bold="1" ss:Color="#1E40AF"/>
-   <Interior ss:Color="#DBEAFE" ss:Pattern="Solid"/>
+   <Font ss:Bold="1" ss:Color="#3B4B69"/>
+   <Interior ss:Color="#E8EDF3" ss:Pattern="Solid"/>
   </Style>
   <Style ss:ID="SavingsBlueNum">
-   <Font ss:Bold="1" ss:Color="#1E40AF"/>
-   <Interior ss:Color="#DBEAFE" ss:Pattern="Solid"/>
+   <Font ss:Bold="1" ss:Color="#3B4B69"/>
+   <Interior ss:Color="#E8EDF3" ss:Pattern="Solid"/>
+   <NumberFormat ss:Format="#,##0.00"/>
+  </Style>
+  <Style ss:ID="HouseholdTeal">
+   <Font ss:Bold="1" ss:Color="#2C4A52"/>
+   <Interior ss:Color="#E2ECEF" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="HouseholdTealNum">
+   <Font ss:Bold="1" ss:Color="#2C4A52"/>
+   <Interior ss:Color="#E2ECEF" ss:Pattern="Solid"/>
    <NumberFormat ss:Format="#,##0.00"/>
   </Style>
   <Style ss:ID="TotalRow">
-   <Font ss:Bold="1" ss:Size="11" ss:Color="#0D2818"/>
-   <Interior ss:Color="#ECFDF5" ss:Pattern="Solid"/>
+   <Font ss:Bold="1" ss:Size="11" ss:Color="#1D242C"/>
+   <Interior ss:Color="#E4EFEA" ss:Pattern="Solid"/>
   </Style>
   <Style ss:ID="TotalRowNum">
-   <Font ss:Bold="1" ss:Size="11" ss:Color="#0D2818"/>
-   <Interior ss:Color="#ECFDF5" ss:Pattern="Solid"/>
+   <Font ss:Bold="1" ss:Size="11" ss:Color="#1D242C"/>
+   <Interior ss:Color="#E4EFEA" ss:Pattern="Solid"/>
    <NumberFormat ss:Format="#,##0.00"/>
   </Style>
  </Styles>
@@ -139,7 +151,8 @@ object ColorReportExporter {
         ).append('\n')
 
         // ==================== SHEET 1: AUTO SUMMARY & COLOR LEGEND ====================
-        sb.append(""" <Worksheet ss:Name="Muhtasari_Auto">""").append('\n')
+        val sheetSummary = tr(language, "Muhtasari", "Summary")
+        sb.append(""" <Worksheet ss:Name="$sheetSummary">""").append('\n')
         sb.append("  <Table>\n")
         xmlRow(sb, listOf(
             XmlCell("${settings.businessName.ifBlank { "Mengidata" }} — ${tr(language, "Ripoti ya Kiotomatiki (0% Upotevu)", "Zero-Loss Auto Financial Report")}", "Title"),
@@ -150,34 +163,39 @@ object ColorReportExporter {
 
         // Color Legend
         xmlRow(sb, listOf(
-            XmlCell(tr(language, "MWONGOZO WA RANGI (COLOR LEGEND)", "COLOR LEGEND"), "Header"),
+            XmlCell(tr(language, "MWONGOZO WA RANGI", "COLOR LEGEND"), "Header"),
             XmlCell(tr(language, "MAANA YAKE", "MEANING"), "Header"),
             XmlCell(tr(language, "MSIMBO WA RANGI", "COLOR HEX"), "Header")
         ))
         xmlRow(sb, listOf(
-            XmlCell(tr(language, "KIJANI (Green)", "GREEN"), "MoneyIn"),
+            XmlCell(tr(language, "KIJANI TULIVU", "SAGE GREEN"), "MoneyIn"),
             XmlCell(tr(language, "Pesa Kuingia / Mapato / Malipo ya Ankara", "Money In / Income / Invoice Payments"), "MoneyIn"),
-            XmlCell("#D1FAE5 / #10B981", "MoneyIn")
+            XmlCell("#E4EFEA / #2B5B49", "MoneyIn")
         ))
         xmlRow(sb, listOf(
-            XmlCell(tr(language, "NYEKUNDU (Red)", "RED"), "HighBillRed"),
-            XmlCell(tr(language, "TAHADHARI: Bili Imekuwa Kubwa Sana Leo / Imechelewa", "ALERT: Today's Bill Is Very High / Overdue"), "HighBillRed"),
-            XmlCell("#FEE2E2 / #DC2626", "HighBillRed")
+            XmlCell(tr(language, "ZAMBARAU TULIVU", "SOFT LAVENDER"), "HighBillRed"),
+            XmlCell(tr(language, "TAHADHARI: Bili Kubwa Leo / Imechelewa", "ALERT: Today's Bill Is High / Overdue"), "HighBillRed"),
+            XmlCell("#ECE9F2 / #4A4159", "HighBillRed")
         ))
         xmlRow(sb, listOf(
-            XmlCell(tr(language, "MANJANO (Amber)", "AMBER"), "BillAmber"),
-            XmlCell(tr(language, "Bili ya Kawaida (Imetenganishwa kwenye Tab ya Bili)", "Regular Bill (Separated in Bills Tab)"), "BillAmber"),
-            XmlCell("#FEF3C7 / #D97706", "BillAmber")
+            XmlCell(tr(language, "KAHAWIA TULIVU", "WARM STONE"), "BillAmber"),
+            XmlCell(tr(language, "Bili ya Kawaida (Imetenganishwa kwenye Ukurasa wa Bili)", "Regular Bill (Separated in Bills Tab)"), "BillAmber"),
+            XmlCell("#F0EAE1 / #5B432A", "BillAmber")
         ))
         xmlRow(sb, listOf(
-            XmlCell(tr(language, "MACHUNGWA (Orange)", "ORANGE"), "ExpenseOrange"),
-            XmlCell(tr(language, "Matumizi ya Kawaida (Pesa Kutoka)", "Direct Expenses (Money Out)"), "ExpenseOrange"),
-            XmlCell("#FFEDD5 / #EA580C", "ExpenseOrange")
+            XmlCell(tr(language, "UDONGO TULIVU", "MUTED ROSE"), "ExpenseOrange"),
+            XmlCell(tr(language, "Matumizi Yangu (Pesa Kutoka)", "Personal Expenses (Money Out)"), "ExpenseOrange"),
+            XmlCell("#F2E6E6 / #6D4343", "ExpenseOrange")
         ))
         xmlRow(sb, listOf(
-            XmlCell(tr(language, "BLUU (Blue)", "BLUE"), "SavingsBlue"),
+            XmlCell(tr(language, "BLUU", "BLUE"), "SavingsBlue"),
             XmlCell(tr(language, "Akiba (Malengo na Mihamala ya Akiba)", "Savings (Goals & Savings Logs)"), "SavingsBlue"),
             XmlCell("#DBEAFE / #2563EB", "SavingsBlue")
+        ))
+        xmlRow(sb, listOf(
+            XmlCell(tr(language, "SAMAWATI", "TEAL"), "HouseholdTeal"),
+            XmlCell(tr(language, "Bili ya Nyumbani (Imekatwa na kuhifadhiwa kwenye mfumo)", "Household Bill (Deducted & saved in system)"), "HouseholdTeal"),
+            XmlCell("#E0F2FE / #0E7490", "HouseholdTeal")
         ))
         xmlRow(sb, emptyList())
 
@@ -193,53 +211,59 @@ object ColorReportExporter {
 
         // Zero-Loss Balance Reconciliation Table
         xmlRow(sb, listOf(
-            XmlCell(tr(language, "HESABU YA KIOTOMATIKI (ZERO-LOSS)", "AUTO LEDGER BREAKDOWN"), "Header"),
+            XmlCell(tr(language, "HESABU YA KIOTOMATIKI (0% UPOTEVU)", "AUTO LEDGER BREAKDOWN"), "Header"),
             XmlCell(tr(language, "AINA", "BUCKET"), "Header"),
             XmlCell("${tr(language, "KIASI", "AMOUNT")} ($currency)", "Header")
         ))
         xmlRow(sb, listOf(
-            XmlCell(tr(language, "Jumla ya Pesa Kuingia (Mapato + Ankara)", "Total Money In (Income + Invoices)"), "MoneyIn"),
-            XmlCell("MONEY_IN", "MoneyIn"),
+            XmlCell(tr(language, "Jumla ya Pesa Kuingia (Mapato na Ankara)", "Total Money In (Income + Invoices)"), "MoneyIn"),
+            XmlCell(tr(language, "PESA KUINGIA", "MONEY IN"), "MoneyIn"),
             XmlCell(summary.totalMoneyIn, "MoneyInNum")
         ))
         xmlRow(sb, listOf(
-            XmlCell(tr(language, "Matumizi ya Moja kwa Moja (Bila Bili/Akiba)", "Direct Expenses (Excl. Bills/Savings)"), "ExpenseOrange"),
-            XmlCell("EXPENSE", "ExpenseOrange"),
+            XmlCell(tr(language, "Matumizi Yangu ya Moja kwa Moja", "Personal Direct Expenses"), "ExpenseOrange"),
+            XmlCell(tr(language, "MATUMIZI YANGU", "PERSONAL EXPENSE"), "ExpenseOrange"),
             XmlCell(summary.totalDirectExpenses, "ExpenseOrangeNum")
         ))
         xmlRow(sb, listOf(
-            XmlCell(tr(language, "Bili Zilizolipwa (Tab ya Bili)", "Paid Bills (Bills Tab)"), if (summary.isTodayBillHigh) "HighBillRed" else "BillAmber"),
-            XmlCell("BILL_PAID", if (summary.isTodayBillHigh) "HighBillRed" else "BillAmber"),
+            XmlCell(tr(language, "Bili Zilizolipwa", "Paid Bills"), if (summary.isTodayBillHigh) "HighBillRed" else "BillAmber"),
+            XmlCell(tr(language, "BILI ZILIZOLIPWA", "BILLS PAID"), if (summary.isTodayBillHigh) "HighBillRed" else "BillAmber"),
             XmlCell(summary.totalBillsPaid, if (summary.isTodayBillHigh) "HighBillRedNum" else "BillAmberNum")
         ))
         xmlRow(sb, listOf(
             XmlCell(tr(language, "Bili Zinazodaiwa (Bado Kulipwa)", "Unpaid Bills Pending"), if (summary.totalBillsUnpaid > 0) "HighBillRed" else "BillAmber"),
-            XmlCell("BILL_UNPAID", if (summary.totalBillsUnpaid > 0) "HighBillRed" else "BillAmber"),
+            XmlCell(tr(language, "BILI ZINAZODAIWA", "BILLS UNPAID"), if (summary.totalBillsUnpaid > 0) "HighBillRed" else "BillAmber"),
             XmlCell(summary.totalBillsUnpaid, if (summary.totalBillsUnpaid > 0) "HighBillRedNum" else "BillAmberNum")
         ))
         xmlRow(sb, listOf(
-            XmlCell(tr(language, "Jumla ya Akiba Iliyopo (Tab ya Akiba)", "Current Savings Balance (Savings Tab)"), "SavingsBlue"),
-            XmlCell("SAVINGS", "SavingsBlue"),
+            XmlCell(tr(language, "Bili ya Nyumbani (Imekatwa kawaida)", "Household Bill (Deducted)"), "HouseholdTeal"),
+            XmlCell(tr(language, "BILI YA NYUMBANI", "HOUSEHOLD BILL"), "HouseholdTeal"),
+            XmlCell(summary.totalHouseholdBills, "HouseholdTealNum")
+        ))
+        xmlRow(sb, listOf(
+            XmlCell(tr(language, "Jumla ya Akiba Iliyopo", "Current Savings Balance"), "SavingsBlue"),
+            XmlCell(tr(language, "AKIBA", "SAVINGS"), "SavingsBlue"),
             XmlCell(summary.netSavingsBalance, "SavingsBlueNum")
         ))
         xmlRow(sb, listOf(
-            XmlCell(tr(language, "SALIO HALISI LA FEDHA (CASH BALANCE)", "VERIFIED CASH BALANCE"), "TotalRow"),
+            XmlCell(tr(language, "SALIO HALISI LA FEDHA", "VERIFIED CASH BALANCE"), "TotalRow"),
             XmlCell(tr(language, "0% UPOTEVU", "0% LOSS VERIFIED"), "TotalRow"),
             XmlCell(summary.verifiedCashBalance, "TotalRowNum")
         ))
         xmlRow(sb, listOf(
-            XmlCell(tr(language, "JUMLA YA MALI YOTE (SALIO + AKIBA)", "TOTAL NET WORTH (CASH + SAVINGS)"), "TotalRow"),
+            XmlCell(tr(language, "JUMLA YA MALI YOTE (SALIO NA AKIBA)", "TOTAL NET WORTH (CASH + SAVINGS)"), "TotalRow"),
             XmlCell("${summary.totalRecordsCount} ${tr(language, "rekodi", "records")}", "TotalRow"),
             XmlCell(summary.totalNetWorthWithSavings, "TotalRowNum")
         ))
         sb.append("  </Table>\n </Worksheet>\n")
 
         // ==================== SHEET 2: TRANSACTIONS ONLY (SEPARATED FROM BILLS) ====================
-        sb.append(""" <Worksheet ss:Name="Miamala_Transactions">""").append('\n')
+        val sheetTxns = tr(language, "Miamala", "Transactions")
+        sb.append(""" <Worksheet ss:Name="$sheetTxns">""").append('\n')
         sb.append("  <Table>\n")
         xmlRow(sb, listOf(
             XmlCell(tr(language, "Tarehe", "Date"), "Header"),
-            XmlCell(tr(language, "Uchambuzi Auto", "Auto Class"), "Header"),
+            XmlCell(tr(language, "Uchambuzi Kiotomatiki", "Auto Class"), "Header"),
             XmlCell(tr(language, "Maelezo", "Description"), "Header"),
             XmlCell(tr(language, "Mhusika", "Party"), "Header"),
             XmlCell(tr(language, "Kundi", "Category"), "Header"),
@@ -264,11 +288,11 @@ object ColorReportExporter {
                 XmlCell(bucket.label(language), textStyle),
                 XmlCell(t.description, textStyle),
                 XmlCell(t.party, textStyle),
-                XmlCell(t.category, textStyle),
+                XmlCell(FormatUtils.localizedCategory(t.category, language), textStyle),
                 XmlCell(inAmt, numStyle),
                 XmlCell(outAmt, numStyle),
                 XmlCell(runningBalance, numStyle),
-                XmlCell(t.method, textStyle),
+                XmlCell(FormatUtils.localizedMethod(t.method, language), textStyle),
                 XmlCell(bucket.colorMeaning(language), textStyle)
             ))
         }
@@ -287,7 +311,8 @@ object ColorReportExporter {
         sb.append("  </Table>\n </Worksheet>\n")
 
         // ==================== SHEET 3: BILLS ONLY (SEPARATED FROM TRANSACTIONS) ====================
-        sb.append(""" <Worksheet ss:Name="Bili_Bills">""").append('\n')
+        val sheetBills = tr(language, "Bili", "Bills")
+        sb.append(""" <Worksheet ss:Name="$sheetBills">""").append('\n')
         sb.append("  <Table>\n")
         xmlRow(sb, listOf(
             XmlCell(tr(language, "Jina la Bili", "Bill Name"), "Header"),
@@ -298,7 +323,7 @@ object ColorReportExporter {
             XmlCell(tr(language, "Hali", "Status"), "Header"),
             XmlCell(tr(language, "Kiasi", "Amount"), "Header"),
             XmlCell(tr(language, "Njia", "Method"), "Header"),
-            XmlCell(tr(language, "Tahadhari & Rangi", "Alert & Color"), "Header")
+            XmlCell(tr(language, "Tahadhari na Rangi", "Alert & Color"), "Header")
         ))
 
         bills.sortedBy { it.dueDate }.forEach { b ->
@@ -314,7 +339,7 @@ object ColorReportExporter {
                 isOverdue -> Triple(
                     "HighBillRed",
                     "HighBillRedNum",
-                    tr(language, "NYEKUNDU - Bili Imechelewa!", "RED - Overdue Bill!")
+                    tr(language, "ZAMBARAU - Bili Imechelewa!", "LAVENDER - Overdue Bill!")
                 )
                 else -> Triple(
                     "BillAmber",
@@ -329,13 +354,13 @@ object ColorReportExporter {
             }
             xmlRow(sb, listOf(
                 XmlCell(b.name, textStyle),
-                XmlCell(b.category, textStyle),
+                XmlCell(FormatUtils.localizedCategory(b.category, language), textStyle),
                 XmlCell(b.payee, textStyle),
                 XmlCell(b.dueDate, textStyle),
                 XmlCell(b.paidDate.ifBlank { "-" }, textStyle),
                 XmlCell(statusText, textStyle),
                 XmlCell(b.amount, numStyle),
-                XmlCell(b.method, textStyle),
+                XmlCell(FormatUtils.localizedMethod(b.method, language), textStyle),
                 XmlCell(alertLabel, textStyle)
             ))
         }
@@ -350,7 +375,7 @@ object ColorReportExporter {
             XmlCell("", "TotalRow"),
             XmlCell(
                 if (summary.isTodayBillHigh) {
-                    tr(language, "NYEKUNDU: Bili za leo kubwa (${FormatUtils.formatMoney(summary.todayBillsTotal, currency)})", "RED: High bills today")
+                    tr(language, "TAHADHARI: Bili za leo kubwa (${FormatUtils.formatMoney(summary.todayBillsTotal, currency)})", "ALERT: High bills today (${FormatUtils.formatMoney(summary.todayBillsTotal, currency)})")
                 } else {
                     tr(language, "Bili za leo zipo sawa", "Today's bills normal")
                 },
@@ -360,7 +385,8 @@ object ColorReportExporter {
         sb.append("  </Table>\n </Worksheet>\n")
 
         // ==================== SHEET 4: SAVINGS ONLY (AKIBA) ====================
-        sb.append(""" <Worksheet ss:Name="Akiba_Savings">""").append('\n')
+        val sheetSavings = tr(language, "Akiba", "Savings")
+        sb.append(""" <Worksheet ss:Name="$sheetSavings">""").append('\n')
         sb.append("  <Table>\n")
         xmlRow(sb, listOf(
             XmlCell(tr(language, "Tarehe", "Date"), "Header"),
@@ -393,6 +419,38 @@ object ColorReportExporter {
         ))
         sb.append("  </Table>\n </Worksheet>\n")
 
+        // ==================== SHEET 5: HOUSEHOLD BILLS ONLY ====================
+        val sheetHousehold = tr(language, "Bili_Nyumbani", "Household_Bills")
+        sb.append(""" <Worksheet ss:Name="$sheetHousehold">""").append('\n')
+        sb.append("  <Table>\n")
+        xmlRow(sb, listOf(
+            XmlCell(tr(language, "Tarehe", "Date"), "Header"),
+            XmlCell(tr(language, "Maelezo", "Description"), "Header"),
+            XmlCell(tr(language, "Mpokeaji (Nyumbani)", "Recipient (Home)"), "Header"),
+            XmlCell(tr(language, "Kiasi", "Amount"), "Header"),
+            XmlCell(tr(language, "Njia", "Method"), "Header"),
+            XmlCell(tr(language, "Rangi na Hadhi", "Color & Status"), "Header")
+        ))
+        householdTransactions.forEach { t ->
+            xmlRow(sb, listOf(
+                XmlCell(t.date, "HouseholdTeal"),
+                XmlCell(t.description, "HouseholdTeal"),
+                XmlCell(t.party.ifBlank { tr(language, "Nyumbani", "Household") }, "HouseholdTeal"),
+                XmlCell(t.amount, "HouseholdTealNum"),
+                XmlCell(FormatUtils.localizedMethod(t.method, language), "HouseholdTeal"),
+                XmlCell(AutoBucket.HOUSEHOLD_BILL.colorMeaning(language), "HouseholdTeal")
+            ))
+        }
+        xmlRow(sb, listOf(
+            XmlCell(tr(language, "JUMLA YA BILI YA NYUMBANI", "TOTAL HOUSEHOLD BILLS"), "TotalRow"),
+            XmlCell("${householdTransactions.size}", "TotalRow"),
+            XmlCell(tr(language, "Nyumbani", "Household"), "TotalRow"),
+            XmlCell(summary.totalHouseholdBills, "TotalRowNum"),
+            XmlCell("", "TotalRow"),
+            XmlCell(tr(language, "Imekatwa kwenye mfumo · Alama: Bili ya Nyumbani", "Deducted in system · Tagged: Household Bill"), "HouseholdTeal")
+        ))
+        sb.append("  </Table>\n </Worksheet>\n")
+
         sb.append("</Workbook>\n")
         return sb.toString()
     }
@@ -404,10 +462,16 @@ object ColorReportExporter {
         language: AppLanguage
     ): String {
         val pureTransactions = transactions
-            .filter { it.source != "bill" && it.source != "savings" }
+            .filter { it.source != "bill" && it.source != "savings" && !AutoAccountingEngine.isHouseholdTransaction(it) }
             .sortedBy { it.date }
         val sb = StringBuilder(UTF8_BOM)
-        sb.append("Date,Auto_Bucket,Direction,Description,Party,Category,Money_In,Money_Out,Running_Balance,Method,Reference,Color_Hex,Color_Meaning\n")
+        sb.append(
+            tr(
+                language,
+                "Tarehe,Aina_Kiotomatiki,Mwelekeo,Maelezo,Mhusika,Kundi,Pesa_Kuingia,Pesa_Kutoka,Salio_Linaloendelea,Njia,Kumbukumbu,Msimbo_Rangi,Maana_Rangi\n",
+                "Date,Auto_Bucket,Direction,Description,Party,Category,Money_In,Money_Out,Running_Balance,Method,Reference,Color_Hex,Color_Meaning\n"
+            )
+        )
         var running = 0.0
         pureTransactions.forEach { t ->
             val isIn = t.isIncome
@@ -417,14 +481,14 @@ object ColorReportExporter {
             val bucket = if (isIn) AutoBucket.MONEY_IN else AutoBucket.EXPENSE
             sb.append(csv(t.date)).append(',')
                 .append(csv(bucket.label(language))).append(',')
-                .append(csv(if (isIn) "PESA_KUINGIA" else "PESA_KUTOKA")).append(',')
+                .append(csv(if (isIn) tr(language, "PESA_KUINGIA", "MONEY_IN") else tr(language, "PESA_KUTOKA", "MONEY_OUT"))).append(',')
                 .append(csv(t.description)).append(',')
                 .append(csv(t.party)).append(',')
-                .append(csv(t.category)).append(',')
+                .append(csv(FormatUtils.localizedCategory(t.category, language))).append(',')
                 .append(num(inAmt)).append(',')
                 .append(num(outAmt)).append(',')
                 .append(num(running)).append(',')
-                .append(csv(t.method)).append(',')
+                .append(csv(FormatUtils.localizedMethod(t.method, language))).append(',')
                 .append(csv(t.reference)).append(',')
                 .append(csv(bucket.colorHex)).append(',')
                 .append(csv(bucket.colorMeaning(language))).append('\n')
@@ -448,7 +512,13 @@ object ColorReportExporter {
             transactions, bills, invoices, savingsGoals, savingsLogs, currency
         )
         val sb = StringBuilder(UTF8_BOM)
-        sb.append("Bill_Name,Category,Payee,Due_Date,Paid_Date,Status,Amount,Method,Recurring,High_Bill_Alert,Color_Hex,Color_Meaning\n")
+        sb.append(
+            tr(
+                language,
+                "Jina_la_Bili,Kundi,Mlipwaji,Tarehe_ya_Mwisho,Tarehe_ya_Kulipwa,Hali,Kiasi,Njia,Inajirudia,Tahadhari,Msimbo_Rangi,Maana_Rangi\n",
+                "Bill_Name,Category,Payee,Due_Date,Paid_Date,Status,Amount,Method,Recurring,High_Bill_Alert,Color_Hex,Color_Meaning\n"
+            )
+        )
         bills.sortedBy { it.dueDate }.forEach { b ->
             val isHighToday = b.id in summary.highBillIds ||
                 ((b.dueDate == today || b.paidDate == today) && summary.isTodayBillHigh)
@@ -464,14 +534,14 @@ object ColorReportExporter {
                 else -> tr(language, "Inadaiwa", "Unpaid")
             }
             sb.append(csv(b.name)).append(',')
-                .append(csv(b.category)).append(',')
+                .append(csv(FormatUtils.localizedCategory(b.category, language))).append(',')
                 .append(csv(b.payee)).append(',')
                 .append(csv(b.dueDate)).append(',')
                 .append(csv(b.paidDate)).append(',')
                 .append(csv(status)).append(',')
                 .append(num(b.amount)).append(',')
-                .append(csv(b.method)).append(',')
-                .append(csv(if (b.recurring) "YES" else "NO")).append(',')
+                .append(csv(FormatUtils.localizedMethod(b.method, language))).append(',')
+                .append(csv(if (b.recurring) tr(language, "NDIO", "YES") else tr(language, "HAPANA", "NO"))).append(',')
                 .append(csv(alertText)).append(',')
                 .append(csv(bucket.colorHex)).append(',')
                 .append(csv(bucket.colorMeaning(language))).append('\n')
@@ -488,12 +558,18 @@ object ColorReportExporter {
     ): String {
         val goalsMap = savingsGoals.associateBy { it.id }
         val sb = StringBuilder(UTF8_BOM)
-        sb.append("Date,Savings_Goal,Action,Amount,Goal_Current_Balance,Goal_Target,Note,Color_Hex,Color_Meaning\n")
+        sb.append(
+            tr(
+                language,
+                "Tarehe,Lengo_la_Akiba,Kitendo,Kiasi,Salio_la_Lengo,Lengo_Kamili,Maelezo,Msimbo_Rangi,Maana_Rangi\n",
+                "Date,Savings_Goal,Action,Amount,Goal_Current_Balance,Goal_Target,Note,Color_Hex,Color_Meaning\n"
+            )
+        )
         savingsLogs.sortedBy { it.date }.forEach { log ->
             val goal = goalsMap[log.savingsId]
             sb.append(csv(log.date)).append(',')
-                .append(csv(goal?.title ?: "Akiba")).append(',')
-                .append(csv(if (log.type == "deposit") "WEKA_AKIBA" else "TOA_AKIBA")).append(',')
+                .append(csv(goal?.title ?: tr(language, "Akiba", "Savings"))).append(',')
+                .append(csv(if (log.type == "deposit") tr(language, "WEKA_AKIBA", "DEPOSIT") else tr(language, "TOA_AKIBA", "WITHDRAW"))).append(',')
                 .append(num(log.amount)).append(',')
                 .append(num(goal?.currentAmount ?: 0.0)).append(',')
                 .append(num(goal?.targetAmount ?: 0.0)).append(',')
@@ -504,7 +580,7 @@ object ColorReportExporter {
         return sb.toString()
     }
 
-    // --- 5. Master Separated CSV (All 4 sections clearly separated + color legend) ---
+    // --- 5. Master Separated CSV (All 5 sections clearly separated + color legend) ---
 
     fun buildMasterSeparatedCsv(
         settings: BusinessSettingsEntity,
@@ -520,26 +596,70 @@ object ColorReportExporter {
             transactions, bills, invoices, savingsGoals, savingsLogs, currency
         )
         val sb = StringBuilder(UTF8_BOM)
-        sb.append("=== SECTION 1: MUHTASARI WA AUTO & MWONGOZO WA RANGI (ZERO-LOSS) ===\n")
-        sb.append("Metric,Amount_Currency,Color_Hex,Color_Meaning\n")
-        sb.append(csv("Pesa Kuingia (Money In)")).append(',').append(num(summary.totalMoneyIn)).append(',').append(csv(AutoBucket.MONEY_IN.colorHex)).append(',').append(csv(AutoBucket.MONEY_IN.colorMeaning(language))).append('\n')
-        sb.append(csv("Matumizi Moja kwa Moja (Direct Expenses)")).append(',').append(num(summary.totalDirectExpenses)).append(',').append(csv(AutoBucket.EXPENSE.colorHex)).append(',').append(csv(AutoBucket.EXPENSE.colorMeaning(language))).append('\n')
-        sb.append(csv("Bili Zilizolipwa (Paid Bills)")).append(',').append(num(summary.totalBillsPaid)).append(',').append(csv(if (summary.isTodayBillHigh) AutoBucket.HIGH_BILL_TODAY.colorHex else AutoBucket.BILL.colorHex)).append(',').append(csv(if (summary.isTodayBillHigh) AutoBucket.HIGH_BILL_TODAY.colorMeaning(language) else AutoBucket.BILL.colorMeaning(language))).append('\n')
-        sb.append(csv("Bili za Leo (Today Bills)")).append(',').append(num(summary.todayBillsTotal)).append(',').append(csv(if (summary.isTodayBillHigh) AutoBucket.HIGH_BILL_TODAY.colorHex else AutoBucket.BILL.colorHex)).append(',').append(csv(if (summary.isTodayBillHigh) summary.highBillAlertSw else "KAWAIDA")).append('\n')
-        sb.append(csv("Akiba Iliyopo (Savings Balance)")).append(',').append(num(summary.netSavingsBalance)).append(',').append(csv(AutoBucket.SAVINGS.colorHex)).append(',').append(csv(AutoBucket.SAVINGS.colorMeaning(language))).append('\n')
-        sb.append(csv("SALIO HALISI (Verified Cash Balance)")).append(',').append(num(summary.verifiedCashBalance)).append(',').append(csv("#0D2818")).append(',').append(csv("0% UPOTEVU")).append('\n')
+        sb.append(
+            tr(
+                language,
+                "=== SEHEMU YA 1: MUHTASARI WA KIOTOMATIKI NA MWONGOZO WA RANGI (0% UPOTEVU) ===\n",
+                "=== SECTION 1: AUTO SUMMARY & COLOR LEGEND (ZERO-LOSS) ===\n"
+            )
+        )
+        sb.append(tr(language, "Kipengele,Kiasi,Msimbo_Rangi,Maana_Rangi\n", "Metric,Amount_Currency,Color_Hex,Color_Meaning\n"))
+        sb.append(csv(tr(language, "Pesa Kuingia", "Money In"))).append(',').append(num(summary.totalMoneyIn)).append(',').append(csv(AutoBucket.MONEY_IN.colorHex)).append(',').append(csv(AutoBucket.MONEY_IN.colorMeaning(language))).append('\n')
+        sb.append(csv(tr(language, "Matumizi Yangu ya Moja kwa Moja", "Personal Direct Expenses"))).append(',').append(num(summary.totalDirectExpenses)).append(',').append(csv(AutoBucket.EXPENSE.colorHex)).append(',').append(csv(AutoBucket.EXPENSE.colorMeaning(language))).append('\n')
+        sb.append(csv(tr(language, "Bili Zilizolipwa", "Paid Bills"))).append(',').append(num(summary.totalBillsPaid)).append(',').append(csv(if (summary.isTodayBillHigh) AutoBucket.HIGH_BILL_TODAY.colorHex else AutoBucket.BILL.colorHex)).append(',').append(csv(if (summary.isTodayBillHigh) AutoBucket.HIGH_BILL_TODAY.colorMeaning(language) else AutoBucket.BILL.colorMeaning(language))).append('\n')
+        sb.append(csv(tr(language, "Bili za Leo", "Today's Bills"))).append(',').append(num(summary.todayBillsTotal)).append(',').append(csv(if (summary.isTodayBillHigh) AutoBucket.HIGH_BILL_TODAY.colorHex else AutoBucket.BILL.colorHex)).append(',').append(csv(if (summary.isTodayBillHigh) tr(language, summary.highBillAlertSw, summary.highBillAlertEn) else tr(language, "KAWAIDA", "NORMAL"))).append('\n')
+        sb.append(csv(tr(language, "Bili ya Nyumbani", "Household Bill"))).append(',').append(num(summary.totalHouseholdBills)).append(',').append(csv(AutoBucket.HOUSEHOLD_BILL.colorHex)).append(',').append(csv(AutoBucket.HOUSEHOLD_BILL.colorMeaning(language))).append('\n')
+        sb.append(csv(tr(language, "Akiba Iliyopo", "Savings Balance"))).append(',').append(num(summary.netSavingsBalance)).append(',').append(csv(AutoBucket.SAVINGS.colorHex)).append(',').append(csv(AutoBucket.SAVINGS.colorMeaning(language))).append('\n')
+        sb.append(csv(tr(language, "SALIO HALISI", "VERIFIED CASH BALANCE"))).append(',').append(num(summary.verifiedCashBalance)).append(',').append(csv("#0D2818")).append(',').append(csv(tr(language, "0% UPOTEVU", "0% LOSS VERIFIED"))).append('\n')
         sb.append('\n')
 
-        sb.append("=== SECTION 2: MIAMALA PEKEE (TRANSACTIONS ONLY - SEPARATED FROM BILLS) ===\n")
+        sb.append(
+            tr(
+                language,
+                "=== SEHEMU YA 2: MIAMALA PEKEE (IMETENGANISHWA NA BILI NA NYUMBANI) ===\n",
+                "=== SECTION 2: TRANSACTIONS ONLY (SEPARATED FROM BILLS & HOUSEHOLD) ===\n"
+            )
+        )
         sb.append(buildTransactionsOnlyCsv(transactions, language).removePrefix(UTF8_BOM))
         sb.append('\n')
 
-        sb.append("=== SECTION 3: BILI PEKEE (BILLS ONLY - SEPARATED FROM TRANSACTIONS) ===\n")
+        sb.append(
+            tr(
+                language,
+                "=== SEHEMU YA 3: BILI PEKEE (IMETENGANISHWA NA MIAMALA) ===\n",
+                "=== SECTION 3: BILLS ONLY (SEPARATED FROM TRANSACTIONS) ===\n"
+            )
+        )
         sb.append(buildBillsOnlyCsv(bills, transactions, invoices, savingsGoals, savingsLogs, currency, language).removePrefix(UTF8_BOM))
         sb.append('\n')
 
-        sb.append("=== SECTION 4: AKIBA PEKEE (SAVINGS ONLY) ===\n")
+        sb.append(
+            tr(
+                language,
+                "=== SEHEMU YA 4: AKIBA PEKEE ===\n",
+                "=== SECTION 4: SAVINGS ONLY ===\n"
+            )
+        )
         sb.append(buildSavingsOnlyCsv(savingsGoals, savingsLogs, language).removePrefix(UTF8_BOM))
+        sb.append('\n')
+
+        sb.append(
+            tr(
+                language,
+                "=== SEHEMU YA 5: BILI ZA NYUMBANI PEKEE ===\n",
+                "=== SECTION 5: HOUSEHOLD BILLS ONLY ===\n"
+            )
+        )
+        sb.append(tr(language, "Tarehe,Maelezo,Mpokeaji,Kiasi,Njia,Msimbo_Rangi,Maana_Rangi\n", "Date,Description,Recipient,Amount,Method,Color_Hex,Color_Meaning\n"))
+        transactions.filter { AutoAccountingEngine.isHouseholdTransaction(it) }.sortedBy { it.date }.forEach { t ->
+            sb.append(csv(t.date)).append(',')
+                .append(csv(t.description)).append(',')
+                .append(csv(t.party.ifBlank { tr(language, "Nyumbani", "Household") })).append(',')
+                .append(num(t.amount)).append(',')
+                .append(csv(FormatUtils.localizedMethod(t.method, language))).append(',')
+                .append(csv(AutoBucket.HOUSEHOLD_BILL.colorHex)).append(',')
+                .append(csv(AutoBucket.HOUSEHOLD_BILL.colorMeaning(language))).append('\n')
+        }
         return sb.toString()
     }
 
@@ -557,7 +677,7 @@ object ColorReportExporter {
         val sb = StringBuilder(UTF8_BOM)
         val periodLabel = if (language == AppLanguage.EN) period.labelEn else period.labelSw
 
-        sb.append(csv(tr(language, "RIPOTI YA UCHAMBUZI WA MAKUNDI (CATEGORY ANALYTICS)", "CATEGORY ANALYTICAL REPORT"))).append(',')
+        sb.append(csv(tr(language, "RIPOTI YA UCHAMBUZI WA MAKUNDI", "CATEGORY ANALYTICAL REPORT"))).append(',')
         sb.append(csv(periodLabel)).append(',')
         sb.append(csv(currency)).append('\n')
         sb.append(
@@ -576,7 +696,7 @@ object ColorReportExporter {
             sb.append(
                 listOf(
                     csv(tr(language, "Mapato", "Income")),
-                    csv(item.categoryName),
+                    csv(FormatUtils.localizedCategory(item.categoryName, language)),
                     item.transactionCount.toString(),
                     num(item.totalAmount),
                     String.format(Locale.US, "%.1f%%", item.sharePercent),
@@ -595,7 +715,7 @@ object ColorReportExporter {
             sb.append(
                 listOf(
                     csv(tr(language, "Matumizi", "Expense")),
-                    csv(item.categoryName),
+                    csv(FormatUtils.localizedCategory(item.categoryName, language)),
                     item.transactionCount.toString(),
                     num(item.totalAmount),
                     String.format(Locale.US, "%.1f%%", item.sharePercent),
