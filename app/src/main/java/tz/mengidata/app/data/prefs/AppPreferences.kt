@@ -40,6 +40,26 @@ class AppPreferences(context: Context) {
     )
     val pinLockEnabled: StateFlow<Boolean> = _pinLockEnabled.asStateFlow()
 
+    private val _notificationsEnabled = MutableStateFlow(prefs.getBoolean(KEY_NOTIFICATIONS_ENABLED, true))
+    val notificationsEnabled: StateFlow<Boolean> = _notificationsEnabled.asStateFlow()
+
+    private val _billAlertsEnabled = MutableStateFlow(prefs.getBoolean(KEY_BILL_ALERTS_ENABLED, true))
+    val billAlertsEnabled: StateFlow<Boolean> = _billAlertsEnabled.asStateFlow()
+
+    private val _transactionAlertsEnabled = MutableStateFlow(prefs.getBoolean(KEY_TXN_ALERTS_ENABLED, true))
+    val transactionAlertsEnabled: StateFlow<Boolean> = _transactionAlertsEnabled.asStateFlow()
+
+    private val _savingsAlertsEnabled = MutableStateFlow(prefs.getBoolean(KEY_SAVINGS_ALERTS_ENABLED, true))
+    val savingsAlertsEnabled: StateFlow<Boolean> = _savingsAlertsEnabled.asStateFlow()
+
+    private val _systemAlertsEnabled = MutableStateFlow(prefs.getBoolean(KEY_SYSTEM_ALERTS_ENABLED, true))
+    val systemAlertsEnabled: StateFlow<Boolean> = _systemAlertsEnabled.asStateFlow()
+
+    private val _largeBillThreshold = MutableStateFlow(
+        prefs.getFloat(KEY_LARGE_BILL_THRESHOLD, DEFAULT_LARGE_BILL_THRESHOLD.toFloat()).toDouble()
+    )
+    val largeBillThreshold: StateFlow<Double> = _largeBillThreshold.asStateFlow()
+
     fun setThemeMode(mode: ThemeMode) {
         prefs.edit().putString(KEY_THEME, mode.key).apply()
         _themeMode.value = mode
@@ -77,6 +97,37 @@ class AppPreferences(context: Context) {
 
     fun togglePrivacyMask() {
         setPrivacyMaskEnabled(!_privacyMaskEnabled.value)
+    }
+
+    fun setNotificationsEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_NOTIFICATIONS_ENABLED, enabled).apply()
+        _notificationsEnabled.value = enabled
+    }
+
+    fun setBillAlertsEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_BILL_ALERTS_ENABLED, enabled).apply()
+        _billAlertsEnabled.value = enabled
+    }
+
+    fun setTransactionAlertsEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_TXN_ALERTS_ENABLED, enabled).apply()
+        _transactionAlertsEnabled.value = enabled
+    }
+
+    fun setSavingsAlertsEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_SAVINGS_ALERTS_ENABLED, enabled).apply()
+        _savingsAlertsEnabled.value = enabled
+    }
+
+    fun setSystemAlertsEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_SYSTEM_ALERTS_ENABLED, enabled).apply()
+        _systemAlertsEnabled.value = enabled
+    }
+
+    fun setLargeBillThreshold(amount: Double) {
+        val safe = amount.coerceAtLeast(1000.0)
+        prefs.edit().putFloat(KEY_LARGE_BILL_THRESHOLD, safe.toFloat()).apply()
+        _largeBillThreshold.value = safe
     }
 
     fun saveAppPin(pin: String): Boolean {
@@ -121,6 +172,7 @@ class AppPreferences(context: Context) {
     }
 
     companion object {
+        const val DEFAULT_LARGE_BILL_THRESHOLD = 100_000.0
         private const val PREFS_NAME = "mengidata_preferences"
         private const val KEY_THEME = "theme_mode"
         private const val KEY_DYNAMIC_COLOR = "dynamic_color_enabled"
@@ -128,6 +180,12 @@ class AppPreferences(context: Context) {
         private const val KEY_LANGUAGE = "app_language"
         private const val KEY_AUTO_UPDATE = "auto_update_enabled"
         private const val KEY_PRIVACY_MASK = "privacy_mask_enabled"
+        private const val KEY_NOTIFICATIONS_ENABLED = "notifications_enabled"
+        private const val KEY_BILL_ALERTS_ENABLED = "bill_alerts_enabled"
+        private const val KEY_TXN_ALERTS_ENABLED = "txn_alerts_enabled"
+        private const val KEY_SAVINGS_ALERTS_ENABLED = "savings_alerts_enabled"
+        private const val KEY_SYSTEM_ALERTS_ENABLED = "system_alerts_enabled"
+        private const val KEY_LARGE_BILL_THRESHOLD = "large_bill_threshold_tzs"
         private const val KEY_PIN_SALT = "app_pin_salt"
         private const val KEY_PIN_HASH = "app_pin_hash"
         private const val KEY_LAST_UPDATE_CHECK = "last_update_check_ms"

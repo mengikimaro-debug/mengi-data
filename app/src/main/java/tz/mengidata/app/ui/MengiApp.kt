@@ -1,8 +1,10 @@
 package tz.mengidata.app.ui
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -89,6 +91,7 @@ import tz.mengidata.app.R
 import tz.mengidata.app.i18n.AppLanguage
 import tz.mengidata.app.i18n.tr
 import tz.mengidata.app.ui.components.GlobalSearchSheet
+import tz.mengidata.app.ui.components.LargeBillWarningPopOverlay
 import tz.mengidata.app.ui.components.MengiSidebarSheet
 import tz.mengidata.app.ui.components.OneUiFloatingNavBar
 import tz.mengidata.app.ui.components.OneUiNavTab
@@ -140,6 +143,14 @@ fun MengiApp(viewModel: MengiViewModel) {
     val privacyMaskEnabled by viewModel.privacyMaskEnabled.collectAsStateWithLifecycle()
     val pinLockEnabled by viewModel.pinLockEnabled.collectAsStateWithLifecycle()
     val isAppUnlocked by viewModel.isAppUnlocked.collectAsStateWithLifecycle()
+    val phonePermissions by viewModel.phonePermissions.collectAsStateWithLifecycle()
+    val notificationsEnabled by viewModel.notificationsEnabled.collectAsStateWithLifecycle()
+    val billAlertsEnabled by viewModel.billAlertsEnabled.collectAsStateWithLifecycle()
+    val transactionAlertsEnabled by viewModel.transactionAlertsEnabled.collectAsStateWithLifecycle()
+    val savingsAlertsEnabled by viewModel.savingsAlertsEnabled.collectAsStateWithLifecycle()
+    val systemAlertsEnabled by viewModel.systemAlertsEnabled.collectAsStateWithLifecycle()
+    val largeBillThreshold by viewModel.largeBillThreshold.collectAsStateWithLifecycle()
+    val largeBillWarningPopup by viewModel.largeBillWarningPopup.collectAsStateWithLifecycle()
     val updateState by viewModel.updateState.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val metrics by viewModel.dashboardMetrics.collectAsStateWithLifecycle()
@@ -167,6 +178,24 @@ fun MengiApp(viewModel: MengiViewModel) {
     var showGlobalSearch by remember { mutableStateOf(false) }
     var showPartyDirectory by remember { mutableStateOf(false) }
     var showGlobalRecoveryVault by remember { mutableStateOf(false) }
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { _ ->
+        viewModel.refreshPhonePermissions()
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.refreshPhonePermissions()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            notificationsEnabled &&
+            !phonePermissions.postNotificationsGranted
+        ) {
+            runCatching {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
 
     val createDocumentLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("*/*")
@@ -649,6 +678,13 @@ fun MengiApp(viewModel: MengiViewModel) {
                                             autoUpdateEnabled = autoUpdateEnabled,
                                             privacyMaskEnabled = privacyMaskEnabled,
                                             pinLockEnabled = pinLockEnabled,
+                                            phonePermissions = phonePermissions,
+                                            notificationsEnabled = notificationsEnabled,
+                                            billAlertsEnabled = billAlertsEnabled,
+                                            transactionAlertsEnabled = transactionAlertsEnabled,
+                                            savingsAlertsEnabled = savingsAlertsEnabled,
+                                            systemAlertsEnabled = systemAlertsEnabled,
+                                            largeBillThreshold = largeBillThreshold,
                                             updateState = updateState,
                                             statsSummary = summary,
                                             hasSafetySnapshot = hasSafetySnapshot,
@@ -661,6 +697,28 @@ fun MengiApp(viewModel: MengiViewModel) {
                                             onSavePin = { pin -> viewModel.setupAppPin(pin) },
                                             onDisablePin = viewModel::disableAppPin,
                                             onLockNow = viewModel::lockAppNow,
+                                            onRequestPostNotificationsPermission = {
+                                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                                    runCatching {
+                                                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                                    }
+                                                }
+                                            },
+                                            onOpenAppNotificationSettings = {
+                                                runCatching { context.startActivity(viewModel.openAppNotificationSettings()) }
+                                            },
+                                            onOpenAppDetailsSettings = {
+                                                runCatching { context.startActivity(viewModel.openAppDetailsSettings()) }
+                                            },
+                                            onSetNotificationsEnabled = viewModel::setNotificationsEnabled,
+                                            onSetBillAlertsEnabled = viewModel::setBillAlertsEnabled,
+                                            onSetTransactionAlertsEnabled = viewModel::setTransactionAlertsEnabled,
+                                            onSetSavingsAlertsEnabled = viewModel::setSavingsAlertsEnabled,
+                                            onSetSystemAlertsEnabled = viewModel::setSystemAlertsEnabled,
+                                            onSaveLargeBillThreshold = viewModel::setLargeBillThreshold,
+                                            onTestLargeBillWarningPopup = viewModel::sendTestLargeBillWarning,
+                                            onTestSystemNotification = viewModel::sendTestSystemNotification,
+                                            onSendDueRemindersNow = viewModel::runDueBillsAndInvoicesReminderNow,
                                             onCheckUpdates = { viewModel.checkForUpdates(silentIfUpToDate = false) },
                                             onDownloadUpdate = viewModel::startUpdateDownloadAndInstall,
                                             onOpenInstallPermissionSettings = {
@@ -693,6 +751,16 @@ fun MengiApp(viewModel: MengiViewModel) {
                             }
                         }
                     }
+
+                    // 3-Second Large Bill Warning Pop-Up Overlay (Top of Screen)
+                    LargeBillWarningPopOverlay(
+                        popup = largeBillWarningPopup,
+                        language = language,
+                        onDismiss = viewModel::dismissLargeBillWarningPopup,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 56.dp)
+                    )
 
                     // Samsung One UI 8.5 Solid Opaque Floating Capsule Bottom Dock
                     if (showFloatingDock) {

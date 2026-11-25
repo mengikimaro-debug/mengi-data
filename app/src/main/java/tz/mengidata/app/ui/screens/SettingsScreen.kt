@@ -73,8 +73,10 @@ import tz.mengidata.app.data.db.PhoneStorageStatus
 import tz.mengidata.app.i18n.AppLanguage
 import tz.mengidata.app.i18n.ThemeMode
 import tz.mengidata.app.i18n.tr
+import tz.mengidata.app.notifications.PhonePermissionsSnapshot
 import tz.mengidata.app.ui.components.ConfirmActionDialog
 import tz.mengidata.app.ui.components.MengiCard
+import tz.mengidata.app.ui.components.NotificationAndPermissionsCard
 import tz.mengidata.app.ui.components.OneUiFieldShape
 import tz.mengidata.app.ui.components.OneUiScreenHeader
 import tz.mengidata.app.ui.components.OneUiSegmentedTabs
@@ -101,6 +103,13 @@ fun SettingsScreen(
     autoUpdateEnabled: Boolean,
     privacyMaskEnabled: Boolean,
     pinLockEnabled: Boolean,
+    phonePermissions: PhonePermissionsSnapshot,
+    notificationsEnabled: Boolean,
+    billAlertsEnabled: Boolean,
+    transactionAlertsEnabled: Boolean,
+    savingsAlertsEnabled: Boolean,
+    systemAlertsEnabled: Boolean,
+    largeBillThreshold: Double,
     updateState: UpdateUiState,
     statsSummary: String,
     hasSafetySnapshot: Boolean,
@@ -113,6 +122,18 @@ fun SettingsScreen(
     onSavePin: (String) -> Unit,
     onDisablePin: () -> Unit,
     onLockNow: () -> Unit,
+    onRequestPostNotificationsPermission: () -> Unit,
+    onOpenAppNotificationSettings: () -> Unit,
+    onOpenAppDetailsSettings: () -> Unit,
+    onSetNotificationsEnabled: (Boolean) -> Unit,
+    onSetBillAlertsEnabled: (Boolean) -> Unit,
+    onSetTransactionAlertsEnabled: (Boolean) -> Unit,
+    onSetSavingsAlertsEnabled: (Boolean) -> Unit,
+    onSetSystemAlertsEnabled: (Boolean) -> Unit,
+    onSaveLargeBillThreshold: (Double) -> Unit,
+    onTestLargeBillWarningPopup: () -> Unit,
+    onTestSystemNotification: () -> Unit,
+    onSendDueRemindersNow: () -> Unit,
     onCheckUpdates: () -> Unit,
     onDownloadUpdate: (UpdateInfo) -> Unit,
     onOpenInstallPermissionSettings: () -> Unit,
@@ -414,6 +435,34 @@ fun SettingsScreen(
                         }
                     }
                 }
+            }
+
+            // 1C. Notification Manager, Phone Permissions & 3-Sec Large Bill Warning Card
+            item(key = "notifications_permissions_card") {
+                NotificationAndPermissionsCard(
+                    language = language,
+                    currency = settings.currency.ifBlank { "TZS" },
+                    phonePermissions = phonePermissions,
+                    notificationsEnabled = notificationsEnabled,
+                    billAlertsEnabled = billAlertsEnabled,
+                    transactionAlertsEnabled = transactionAlertsEnabled,
+                    savingsAlertsEnabled = savingsAlertsEnabled,
+                    systemAlertsEnabled = systemAlertsEnabled,
+                    largeBillThreshold = largeBillThreshold,
+                    onRequestPostNotificationsPermission = onRequestPostNotificationsPermission,
+                    onOpenInstallPermissionSettings = onOpenInstallPermissionSettings,
+                    onOpenAppNotificationSettings = onOpenAppNotificationSettings,
+                    onOpenAppDetailsSettings = onOpenAppDetailsSettings,
+                    onSetNotificationsEnabled = onSetNotificationsEnabled,
+                    onSetBillAlertsEnabled = onSetBillAlertsEnabled,
+                    onSetTransactionAlertsEnabled = onSetTransactionAlertsEnabled,
+                    onSetSavingsAlertsEnabled = onSetSavingsAlertsEnabled,
+                    onSetSystemAlertsEnabled = onSetSystemAlertsEnabled,
+                    onSaveLargeBillThreshold = onSaveLargeBillThreshold,
+                    onTestLargeBillWarningPopup = onTestLargeBillWarningPopup,
+                    onTestSystemNotification = onTestSystemNotification,
+                    onSendDueRemindersNow = onSendDueRemindersNow
+                )
             }
 
             // 2. App Update System Card

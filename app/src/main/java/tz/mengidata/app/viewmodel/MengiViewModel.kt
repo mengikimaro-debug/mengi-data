@@ -48,6 +48,11 @@ import tz.mengidata.app.i18n.ThemeMode
 import tz.mengidata.app.i18n.tr
 import tz.mengidata.app.ui.components.MonthlyChartPoint
 import tz.mengidata.app.ui.components.MonthlyTrendPoint
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import tz.mengidata.app.notifications.LargeBillWarningPopup
+import tz.mengidata.app.notifications.MengiNotificationManager
+import tz.mengidata.app.notifications.PhonePermissionsSnapshot
 import tz.mengidata.app.updater.AppUpdateManager
 import tz.mengidata.app.updater.InstallResultEvent
 import tz.mengidata.app.updater.UpdateInfo
@@ -88,6 +93,7 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
     private val prefs = AppPreferences(application)
     private val repository = FinanceRepository(application, MengiDatabase.getInstance(application), prefs)
     val updateManager = AppUpdateManager(application)
+    val notificationManager = MengiNotificationManager(application)
 
     val themeMode: StateFlow<ThemeMode> = prefs.themeMode
     val dynamicColorEnabled: StateFlow<Boolean> = prefs.dynamicColorEnabled
@@ -96,9 +102,22 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
     val autoUpdateEnabled: StateFlow<Boolean> = prefs.autoUpdateEnabled
     val privacyMaskEnabled: StateFlow<Boolean> = prefs.privacyMaskEnabled
     val pinLockEnabled: StateFlow<Boolean> = prefs.pinLockEnabled
+    val notificationsEnabled: StateFlow<Boolean> = prefs.notificationsEnabled
+    val billAlertsEnabled: StateFlow<Boolean> = prefs.billAlertsEnabled
+    val transactionAlertsEnabled: StateFlow<Boolean> = prefs.transactionAlertsEnabled
+    val savingsAlertsEnabled: StateFlow<Boolean> = prefs.savingsAlertsEnabled
+    val systemAlertsEnabled: StateFlow<Boolean> = prefs.systemAlertsEnabled
+    val largeBillThreshold: StateFlow<Double> = prefs.largeBillThreshold
 
     private val _isAppUnlocked = MutableStateFlow(!prefs.pinLockEnabled.value)
     val isAppUnlocked: StateFlow<Boolean> = _isAppUnlocked.asStateFlow()
+
+    private val _phonePermissions = MutableStateFlow(notificationManager.getPermissionsSnapshot())
+    val phonePermissions: StateFlow<PhonePermissionsSnapshot> = _phonePermissions.asStateFlow()
+
+    private val _largeBillWarningPopup = MutableStateFlow<LargeBillWarningPopup?>(null)
+    val largeBillWarningPopup: StateFlow<LargeBillWarningPopup?> = _largeBillWarningPopup.asStateFlow()
+    private var warningDismissJob: Job? = null
 
     val settings: StateFlow<BusinessSettingsEntity> = repository.settingsFlow.stateIn(
         viewModelScope,
@@ -361,6 +380,50 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
         val status = repository.getPhoneStorageStatus()
         _phoneStorageStatus.value = status
         _hasSafetySnapshot.value = status.hasAnyBackup
+        _phonePermissions.value = notificationManager.getPermissionsSnapshot(status.hasAnyBackup)
+    }
+
+    fun refreshPhonePermissions() {
+        _phonePermissions.value = notificationManager.getPermissionsSnapshot(_phoneStorageStatus.value.hasAnyBackup)
+    }
+
+    fun dismissLargeBillWarningPopup() {
+        warningDismissJob?.cancel()
+        _largeBillWarningPopup.value = null
+    }
+
+    fun triggerLargeBillWarning(
+        billName: String,
+        amount: Double,
+        category: String = "Bili"
+    ) {
+        val threshold = prefs.largeBillThreshold.value
+        val cur = settings.value.currency.ifBlank { "TZS" }
+        val popup = LargeBillWarningPopup(
+            billName = billName.ifBlank { tr(language.value, "Bili Kubwa", "Large Bill") },
+            amountFormatted = FormatUtils.formatMoney(amount, cur),
+            thresholdFormatted = FormatUtils.formatMoney(threshold, cur),
+            category = category.ifBlank { tr(language.value, "Bili", "Bill") },
+            durationMillis = 3_000L
+        )
+        warningDismissJob?.cancel()
+        _largeBillWarningPopup.value = popup
+        warningDismissJob = viewModelScope.launch {
+            delay(3_000L)
+            if (_largeBillWarningPopup.value?.id == popup.id) {
+                _largeBillWarningPopup.value = null
+            }
+        }
+        if (prefs.notificationsEnabled.value && prefs.billAlertsEnabled.value) {
+            notificationManager.notifyLargeBillWarning(
+                billName = popup.billName,
+                amount = amount,
+                threshold = threshold,
+                category = popup.category,
+                currency = cur,
+                language = language.value
+            )
+        }
     }
 
     private var lastUpdateInfo: UpdateInfo? = null
@@ -463,8 +526,16 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
                 overrideBucket = overrideBucket,
                 markBillPaid = markBillPaid
             )
-            _hasSafetySnapshot.value = repository.hasSafetySnapshot()
+            refreshStorageStatus()
             val label = bucket.label(language.value)
+            val threshold = prefs.largeBillThreshold.value
+            if ((bucket == AutoBucket.HOUSEHOLD_BILL || bucket == AutoBucket.EXPENSE) && amount >= threshold) {
+                triggerLargeBillWarning(
+                    billName = description.ifBlank { label },
+                    amount = amount,
+                    category = label
+                )
+            }
             emitNotice(
                 tr(
                     language.value,
@@ -500,7 +571,17 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
     fun saveTransaction(txn: TransactionEntity) {
         viewModelScope.launch {
             repository.saveTransaction(txn)
-            _hasSafetySnapshot.value = repository.hasSafetySnapshot()
+            refreshStorageStatus()
+            val cur = settings.value.currency.ifBlank { "TZS" }
+            if (!txn.isIncome && txn.amount >= prefs.largeBillThreshold.value) {
+                triggerLargeBillWarning(
+                    billName = txn.description.ifBlank { txn.category },
+                    amount = txn.amount,
+                    category = txn.category
+                )
+            } else if (prefs.notificationsEnabled.value && prefs.transactionAlertsEnabled.value) {
+                notificationManager.notifyTransactionSaved(txn, cur, language.value)
+            }
             emitNotice(tr(language.value, "Muamala umehifadhiwa.", "Transaction saved."))
         }
     }
@@ -528,6 +609,18 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
     fun saveInvoice(invoice: InvoiceEntity, items: List<InvoiceItemEntity>) {
         viewModelScope.launch {
             repository.saveInvoice(invoice, items)
+            refreshStorageStatus()
+            if (prefs.notificationsEnabled.value && prefs.billAlertsEnabled.value) {
+                val total = items.sumOf { it.lineTotal }
+                notificationManager.notifyInvoiceEvent(
+                    invoiceNumber = invoice.number,
+                    clientName = invoice.customerName,
+                    amount = total,
+                    currency = settings.value.currency.ifBlank { "TZS" },
+                    language = language.value,
+                    isPayment = false
+                )
+            }
             emitNotice(tr(language.value, "Ankara imehifadhiwa.", "Invoice saved."))
         }
     }
@@ -670,6 +763,22 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
     fun saveBill(bill: BillEntity) {
         viewModelScope.launch {
             repository.saveBill(bill)
+            refreshStorageStatus()
+            val cur = settings.value.currency.ifBlank { "TZS" }
+            if (bill.amount >= prefs.largeBillThreshold.value) {
+                triggerLargeBillWarning(
+                    billName = bill.name,
+                    amount = bill.amount,
+                    category = bill.category
+                )
+            } else if (prefs.notificationsEnabled.value && prefs.billAlertsEnabled.value) {
+                notificationManager.notifyBillEvent(
+                    bill = bill,
+                    currency = cur,
+                    language = language.value,
+                    justPaid = bill.paid
+                )
+            }
             emitNotice(tr(language.value, "Bili imehifadhiwa.", "Bill saved."))
         }
     }
@@ -677,6 +786,23 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
     fun toggleBillPaid(billId: String) {
         viewModelScope.launch {
             val before = repository.toggleBillPaid(billId) ?: return@launch
+            refreshStorageStatus()
+            if (!before.paid) {
+                if (before.amount >= prefs.largeBillThreshold.value) {
+                    triggerLargeBillWarning(
+                        billName = before.name,
+                        amount = before.amount,
+                        category = before.category
+                    )
+                } else if (prefs.notificationsEnabled.value && prefs.billAlertsEnabled.value) {
+                    notificationManager.notifyBillEvent(
+                        bill = before.copy(paid = true),
+                        currency = settings.value.currency.ifBlank { "TZS" },
+                        language = language.value,
+                        justPaid = true
+                    )
+                }
+            }
             emitNotice(
                 message = if (before.paid) {
                     tr(language.value, "Malipo ya bili yametenduliwa.", "Bill marked unpaid.")
@@ -946,6 +1072,20 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
     ) {
         viewModelScope.launch {
             repository.recordSavingsTransaction(goalId, type, amount, note, partyName)
+            refreshStorageStatus()
+            val goal = savingsGoals.value.firstOrNull { it.id == goalId }
+            if (goal != null && prefs.notificationsEnabled.value && prefs.savingsAlertsEnabled.value) {
+                val newTotal = if (type == "deposit") goal.currentAmount + amount else (goal.currentAmount - amount).coerceAtLeast(0.0)
+                notificationManager.notifySavingsActivity(
+                    goalName = goal.title,
+                    amount = amount,
+                    newTotal = newTotal,
+                    targetAmount = goal.targetAmount,
+                    isDeposit = type == "deposit",
+                    currency = settings.value.currency.ifBlank { "TZS" },
+                    language = language.value
+                )
+            }
             val msg = if (type == "deposit") {
                 tr(language.value, "Fedha zimeongezwa kwenye akiba.", "Deposit recorded.")
             } else {
@@ -1275,13 +1415,104 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun onResumeCheckInstallPermission() {
+        refreshPhonePermissions()
         val state = _updateState.value
         if (state is UpdateUiState.PermissionRequired && updateManager.canRequestPackageInstalls()) {
             _updateState.value = UpdateUiState.Available(state.info)
         }
     }
 
+    fun setNotificationsEnabled(enabled: Boolean) {
+        prefs.setNotificationsEnabled(enabled)
+        refreshPhonePermissions()
+    }
+
+    fun setBillAlertsEnabled(enabled: Boolean) = prefs.setBillAlertsEnabled(enabled)
+
+    fun setTransactionAlertsEnabled(enabled: Boolean) = prefs.setTransactionAlertsEnabled(enabled)
+
+    fun setSavingsAlertsEnabled(enabled: Boolean) = prefs.setSavingsAlertsEnabled(enabled)
+
+    fun setSystemAlertsEnabled(enabled: Boolean) = prefs.setSystemAlertsEnabled(enabled)
+
+    fun setLargeBillThreshold(amount: Double) {
+        prefs.setLargeBillThreshold(amount)
+        val cur = settings.value.currency.ifBlank { "TZS" }
+        emitNotice(
+            tr(
+                language.value,
+                "Kiwango cha Onyo la Bili Kubwa kimewekwa: ${FormatUtils.formatMoney(prefs.largeBillThreshold.value, cur)}",
+                "Large Bill Warning threshold set to: ${FormatUtils.formatMoney(prefs.largeBillThreshold.value, cur)}"
+            )
+        )
+    }
+
+    fun sendTestLargeBillWarning() {
+        val threshold = prefs.largeBillThreshold.value
+        triggerLargeBillWarning(
+            billName = tr(language.value, "Bili ya Mfano (Kodi / Umeme)", "Sample Large Bill (Rent / Power)"),
+            amount = threshold * 1.25,
+            category = tr(language.value, "Bili ya Nyumbani", "Household Bill")
+        )
+    }
+
+    fun sendTestSystemNotification() {
+        refreshPhonePermissions()
+        val ok = notificationManager.sendTestNotification(
+            language = language.value,
+            businessName = settings.value.businessName.ifBlank { "Mengidata" }
+        )
+        if (ok) {
+            emitNotice(
+                tr(
+                    language.value,
+                    "Taarifa ya majaribio imetumwa kwenye simu yako!",
+                    "Test notification sent to your phone!"
+                )
+            )
+        } else {
+            emitNotice(
+                tr(
+                    language.value,
+                    "Washa ruhusa ya Taarifa za Simu (POST_NOTIFICATIONS) kwanza.",
+                    "Please grant POST_NOTIFICATIONS permission first."
+                )
+            )
+        }
+    }
+
+    fun runDueBillsAndInvoicesReminderNow() {
+        refreshPhonePermissions()
+        val count = notificationManager.runSmartDueReminders(
+            bills = bills.value,
+            invoices = invoices.value,
+            currency = settings.value.currency.ifBlank { "TZS" },
+            language = language.value
+        )
+        if (count > 0) {
+            emitNotice(
+                tr(
+                    language.value,
+                    "Ukumbusho wa malipo ($count) umetumwa kwenye taarifa za simu.",
+                    "Payment reminder ($count due items) posted to phone notifications."
+                )
+            )
+        } else {
+            emitNotice(
+                tr(
+                    language.value,
+                    "Hakuna bili au ankara zilizochelewa leo.",
+                    "No overdue bills or unpaid due invoices today."
+                )
+            )
+        }
+    }
+
     fun openInstallPermissionSettings(): Intent = updateManager.buildInstallPermissionIntent()
+
+    fun openAppNotificationSettings(): Intent = notificationManager.buildAppNotificationSettingsIntent()
+
+    fun openAppDetailsSettings(): Intent = notificationManager.buildAppDetailsSettingsIntent()
 
     fun openReleasesInBrowser(): Intent = updateManager.buildReleasesBrowserIntent()
 
