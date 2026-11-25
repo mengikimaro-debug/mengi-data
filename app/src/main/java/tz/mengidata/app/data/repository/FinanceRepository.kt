@@ -1,10 +1,19 @@
 package tz.mengidata.app.data.repository
 
 import android.content.Context
+import android.net.Uri
 import androidx.room.withTransaction
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -20,6 +29,7 @@ import tz.mengidata.app.data.db.InvoiceWithItems
 import tz.mengidata.app.data.db.MengiDatabase
 import tz.mengidata.app.data.db.PhoneStorageStatus
 import tz.mengidata.app.data.db.PhoneStorageVault
+import tz.mengidata.app.data.db.SavedPublicPdf
 import tz.mengidata.app.data.db.SavingsGoalEntity
 import tz.mengidata.app.data.db.SavingsLogEntity
 import tz.mengidata.app.data.db.TransactionCategoryEntity
@@ -46,7 +56,15 @@ class FinanceRepository(
     private val savingsDao = db.savingsDao()
     private val categoryDao = db.categoryDao()
     private val deletedRecordDao = db.deletedRecordDao()
-    private val storageVault = PhoneStorageVault(appContext)
+    private val storageVault = PhoneStorageVault(appContext).apply {
+        setCustomFolderUri(prefs.customBackupFolderUri.value)
+    }
+    private val backupMutex = Mutex()
+    private val autoBackupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    @Volatile
+    private var scheduledBackupJob: Job? = null
+
+    val phoneStorageStatusFlow: StateFlow<PhoneStorageStatus> = storageVault.statusFlow
 
     val settingsFlow: Flow<BusinessSettingsEntity> =
         settingsDao.observeSettings().map { it ?: BusinessSettingsEntity() }
@@ -61,18 +79,49 @@ class FinanceRepository(
 
     fun getPhoneStorageStatus(): PhoneStorageStatus = storageVault.getStatus()
 
+    fun setCustomBackupFolderUri(uriString: String) {
+        prefs.setCustomBackupFolderUri(uriString)
+        storageVault.setCustomFolderUri(uriString)
+    }
+
+    fun savePdfToPublicDocuments(filename: String, pdfBytes: ByteArray): Uri? {
+        return storageVault.savePdfToPublicDocuments(filename, pdfBytes)
+    }
+
+    suspend fun listSavedPublicInvoicePdfs(): List<SavedPublicPdf> = withContext(Dispatchers.IO) {
+        storageVault.listSavedPublicInvoicePdfs()
+    }
+
+    suspend fun deleteSavedPublicPdf(pdf: SavedPublicPdf): Boolean = withContext(Dispatchers.IO) {
+        storageVault.deleteSavedPublicPdf(pdf)
+    }
+
     suspend fun ensureInitialized() {
         withContext(Dispatchers.IO) {
             ensureDefaultCategoriesSeeded()
             if (!prefs.isSeeded()) {
                 val existing = settingsDao.getSettings()
-                if (existing == null) {
-                    loadDemoData()
+                val existingTxns = txnDao.getAll()
+                if (existing == null && existingTxns.isEmpty()) {
+                    // Auto-recover user data from phone storage if a backup already exists!
+                    val recovered = runCatching {
+                        val savedJson = storageVault.readBestAvailableSnapshot()
+                        if (!savedJson.isNullOrBlank()) {
+                            importBackupJson(savedJson)
+                            true
+                        } else {
+                            false
+                        }
+                    }.getOrDefault(false)
+                    if (!recovered) {
+                        loadDemoData()
+                    }
                 }
                 prefs.markSeeded()
             }
             reconcileLedgerIntegrity()
-            persistSafetySnapshot()
+            storageVault.refreshStatus()
+            scheduleAutoBackup()
         }
     }
 
@@ -107,7 +156,7 @@ class FinanceRepository(
             }
             entity
         }
-        persistSafetySnapshot()
+        scheduleAutoBackup()
         return saved
     }
 
@@ -121,7 +170,7 @@ class FinanceRepository(
             }
             categoryDao.deleteById(categoryId)
         }
-        persistSafetySnapshot()
+        scheduleAutoBackup()
     }
 
     /**
@@ -155,7 +204,7 @@ class FinanceRepository(
 
     suspend fun saveSettings(settings: BusinessSettingsEntity) {
         settingsDao.upsert(settings.copy(id = 1))
-        persistSafetySnapshot()
+        scheduleAutoBackup()
     }
 
     // --- Smart Auto-Entry (auto-classifies Akiba, Bili, Matumizi, Pesa Kuingia) ---
@@ -352,7 +401,7 @@ class FinanceRepository(
                 )
             }
         }
-        persistSafetySnapshot()
+        scheduleAutoBackup()
         return bucket
     }
 
@@ -387,7 +436,7 @@ class FinanceRepository(
             else -> withId
         }
         txnDao.upsert(clean)
-        persistSafetySnapshot()
+        scheduleAutoBackup()
     }
 
     suspend fun deleteTransaction(id: String): TransactionEntity? {
@@ -397,7 +446,7 @@ class FinanceRepository(
             txnDao.deleteById(id)
             found
         } ?: return null
-        persistSafetySnapshot()
+        scheduleAutoBackup()
         return existing
     }
 
@@ -444,7 +493,7 @@ class FinanceRepository(
             }
             finalInvoice
         }
-        persistSafetySnapshot()
+        scheduleAutoBackup()
         return result
     }
 
@@ -461,7 +510,7 @@ class FinanceRepository(
             invoiceDao.upsertInvoice(updated.copy(linkedTxnId = linkedId))
             current
         }
-        persistSafetySnapshot()
+        scheduleAutoBackup()
         return result
     }
 
@@ -477,7 +526,7 @@ class FinanceRepository(
             val linkedId = syncInvoiceTransactionLocked(updated)
             invoiceDao.upsertInvoice(updated.copy(linkedTxnId = linkedId))
         }
-        persistSafetySnapshot()
+        scheduleAutoBackup()
     }
 
     suspend fun recordInvoicePayment(invoiceId: String, addedAmount: Double): InvoiceWithItems? {
@@ -495,7 +544,7 @@ class FinanceRepository(
             invoiceDao.upsertInvoice(updated.copy(linkedTxnId = linkedId))
             current
         }
-        persistSafetySnapshot()
+        scheduleAutoBackup()
         return result
     }
 
@@ -526,7 +575,7 @@ class FinanceRepository(
             }
             copyInvoice
         }
-        persistSafetySnapshot()
+        scheduleAutoBackup()
         return result
     }
 
@@ -538,7 +587,7 @@ class FinanceRepository(
             invoiceDao.deleteItemsForInvoice(invoiceId)
             invoiceDao.deleteInvoiceById(invoiceId)
         }
-        persistSafetySnapshot()
+        scheduleAutoBackup()
     }
 
     private suspend fun syncInvoiceTransactionLocked(invoice: InvoiceEntity): String? {
@@ -584,7 +633,7 @@ class FinanceRepository(
             billDao.upsert(finalBill)
             finalBill
         }
-        persistSafetySnapshot()
+        scheduleAutoBackup()
         return result
     }
 
@@ -600,7 +649,7 @@ class FinanceRepository(
             billDao.upsert(updated.copy(linkedTxnId = linkedId))
             existing
         }
-        persistSafetySnapshot()
+        scheduleAutoBackup()
         return result
     }
 
@@ -620,7 +669,7 @@ class FinanceRepository(
             billDao.upsert(nextBill)
             nextBill
         }
-        persistSafetySnapshot()
+        scheduleAutoBackup()
         return result
     }
 
@@ -631,7 +680,7 @@ class FinanceRepository(
             existing.linkedTxnId?.let { txnDao.deleteById(it) }
             billDao.deleteById(billId)
         }
-        persistSafetySnapshot()
+        scheduleAutoBackup()
     }
 
     private suspend fun syncBillTransactionLocked(bill: BillEntity): String? {
@@ -693,7 +742,7 @@ class FinanceRepository(
                 )
             }
         }
-        persistSafetySnapshot()
+        scheduleAutoBackup()
     }
 
     suspend fun deleteSavingsGoal(id: String) {
@@ -703,7 +752,7 @@ class FinanceRepository(
             archiveSavingsGoalLocked(goal, logs)
             savingsDao.deleteGoalById(id)
         }
-        persistSafetySnapshot()
+        scheduleAutoBackup()
     }
 
     suspend fun recordSavingsTransaction(
@@ -726,7 +775,7 @@ class FinanceRepository(
                 partyName = partyName.trim()
             )
         }
-        persistSafetySnapshot()
+        scheduleAutoBackup()
     }
 
     private suspend fun recordSavingsTransactionLocked(
@@ -1044,7 +1093,7 @@ class FinanceRepository(
             true
         }
         if (restored) {
-            persistSafetySnapshot()
+            scheduleAutoBackup()
         }
         return restored
     }
@@ -1536,16 +1585,40 @@ class FinanceRepository(
 
     // --- Automatic Local & Phone Storage Safety Vault (Zero-Loss Recovery) ---
 
-    fun hasSafetySnapshot(): Boolean = storageVault.getStatus().hasAnyBackup
+    fun hasSafetySnapshot(): Boolean = storageVault.statusFlow.value.hasAnyBackup
 
-    suspend fun persistSafetySnapshot(): Boolean = withContext(Dispatchers.IO) {
-        runCatching {
-            val json = exportBackupJson()
-            storageVault.saveAutoSnapshot(json)
-        }.getOrDefault(false)
+    suspend fun refreshStorageStatusAsync(): PhoneStorageStatus = withContext(Dispatchers.IO) {
+        storageVault.getStatus()
     }
 
-    suspend fun syncToPhoneStorageNow(): Boolean = persistSafetySnapshot()
+    /**
+     * Non-blocking debounced background auto-backup to phone storage.
+     * Lets every UI save/edit/delete return in milliseconds while safely mirroring to
+     * Documents/Mengidata, daily history, and custom SAF folder off the main thread.
+     */
+    fun scheduleAutoBackup(delayMs: Long = 600L) {
+        if (!prefs.autoPhoneBackupEnabled.value) return
+        scheduledBackupJob?.cancel()
+        scheduledBackupJob = autoBackupScope.launch {
+            if (delayMs > 0L) delay(delayMs)
+            persistSafetySnapshot(force = false)
+        }
+    }
+
+    suspend fun persistSafetySnapshot(force: Boolean = false): Boolean = withContext(Dispatchers.IO) {
+        if (!force && !prefs.autoPhoneBackupEnabled.value) {
+            return@withContext false
+        }
+        scheduledBackupJob?.cancel()
+        backupMutex.withLock {
+            runCatching {
+                val json = exportBackupJson()
+                storageVault.saveAutoSnapshot(json)
+            }.getOrDefault(false)
+        }
+    }
+
+    suspend fun syncToPhoneStorageNow(): Boolean = persistSafetySnapshot(force = true)
 
     suspend fun restoreLatestSafetySnapshot(): Boolean = withContext(Dispatchers.IO) {
         val json = storageVault.readBestAvailableSnapshot() ?: return@withContext false

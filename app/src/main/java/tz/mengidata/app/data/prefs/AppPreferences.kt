@@ -31,6 +31,12 @@ class AppPreferences(context: Context) {
     private val _autoUpdateEnabled = MutableStateFlow(prefs.getBoolean(KEY_AUTO_UPDATE, false))
     val autoUpdateEnabled: StateFlow<Boolean> = _autoUpdateEnabled.asStateFlow()
 
+    private val _autoPhoneBackupEnabled = MutableStateFlow(prefs.getBoolean(KEY_AUTO_PHONE_BACKUP, true))
+    val autoPhoneBackupEnabled: StateFlow<Boolean> = _autoPhoneBackupEnabled.asStateFlow()
+
+    private val _customBackupFolderUri = MutableStateFlow(prefs.getString(KEY_CUSTOM_BACKUP_FOLDER_URI, "") ?: "")
+    val customBackupFolderUri: StateFlow<String> = _customBackupFolderUri.asStateFlow()
+
     private val _privacyMaskEnabled = MutableStateFlow(prefs.getBoolean(KEY_PRIVACY_MASK, false))
     val privacyMaskEnabled: StateFlow<Boolean> = _privacyMaskEnabled.asStateFlow()
 
@@ -88,6 +94,16 @@ class AppPreferences(context: Context) {
     fun setAutoUpdateEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_AUTO_UPDATE, enabled).apply()
         _autoUpdateEnabled.value = enabled
+    }
+
+    fun setAutoPhoneBackupEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_AUTO_PHONE_BACKUP, enabled).apply()
+        _autoPhoneBackupEnabled.value = enabled
+    }
+
+    fun setCustomBackupFolderUri(uriString: String) {
+        prefs.edit().putString(KEY_CUSTOM_BACKUP_FOLDER_URI, uriString).apply()
+        _customBackupFolderUri.value = uriString
     }
 
     fun setPrivacyMaskEnabled(enabled: Boolean) {
@@ -165,6 +181,13 @@ class AppPreferences(context: Context) {
         return true
     }
 
+    fun shouldRunDailyDueReminder(todayIso: String): Boolean {
+        val last = prefs.getString(KEY_LAST_DUE_REMINDER_DATE, null)
+        if (last == todayIso) return false
+        prefs.edit().putString(KEY_LAST_DUE_REMINDER_DATE, todayIso).apply()
+        return true
+    }
+
     fun isSeeded(): Boolean = prefs.getBoolean(KEY_INITIAL_SEEDED, false)
 
     fun markSeeded() {
@@ -179,6 +202,8 @@ class AppPreferences(context: Context) {
         private const val KEY_HIGH_CONTRAST = "high_contrast_enabled"
         private const val KEY_LANGUAGE = "app_language"
         private const val KEY_AUTO_UPDATE = "auto_update_enabled"
+        private const val KEY_AUTO_PHONE_BACKUP = "auto_phone_backup_enabled"
+        private const val KEY_CUSTOM_BACKUP_FOLDER_URI = "custom_backup_folder_uri"
         private const val KEY_PRIVACY_MASK = "privacy_mask_enabled"
         private const val KEY_NOTIFICATIONS_ENABLED = "notifications_enabled"
         private const val KEY_BILL_ALERTS_ENABLED = "bill_alerts_enabled"
@@ -189,6 +214,7 @@ class AppPreferences(context: Context) {
         private const val KEY_PIN_SALT = "app_pin_salt"
         private const val KEY_PIN_HASH = "app_pin_hash"
         private const val KEY_LAST_UPDATE_CHECK = "last_update_check_ms"
+        private const val KEY_LAST_DUE_REMINDER_DATE = "last_due_reminder_date"
         private const val KEY_INITIAL_SEEDED = "initial_db_seeded"
         private const val TWELVE_HOURS_MS = 12L * 60L * 60L * 1000L
     }

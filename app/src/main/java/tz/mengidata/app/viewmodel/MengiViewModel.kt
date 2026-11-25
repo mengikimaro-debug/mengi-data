@@ -5,6 +5,7 @@ import android.content.Intent
 import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -13,8 +14,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import tz.mengidata.app.data.accounting.AutoAccountingEngine
 import tz.mengidata.app.data.accounting.AutoBucket
 import tz.mengidata.app.data.accounting.BusinessHealthEngine
@@ -32,6 +38,7 @@ import tz.mengidata.app.data.db.InvoiceItemEntity
 import tz.mengidata.app.data.db.InvoiceWithItems
 import tz.mengidata.app.data.db.MengiDatabase
 import tz.mengidata.app.data.db.PhoneStorageStatus
+import tz.mengidata.app.data.db.SavedPublicPdf
 import tz.mengidata.app.data.db.SavingsGoalEntity
 import tz.mengidata.app.data.db.SavingsLogEntity
 import tz.mengidata.app.data.db.TransactionCategoryEntity
@@ -48,6 +55,7 @@ import tz.mengidata.app.i18n.ThemeMode
 import tz.mengidata.app.i18n.tr
 import tz.mengidata.app.ui.components.MonthlyChartPoint
 import tz.mengidata.app.ui.components.MonthlyTrendPoint
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import tz.mengidata.app.notifications.LargeBillWarningPopup
@@ -100,6 +108,7 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
     val highContrastEnabled: StateFlow<Boolean> = prefs.highContrastEnabled
     val language: StateFlow<AppLanguage> = prefs.language
     val autoUpdateEnabled: StateFlow<Boolean> = prefs.autoUpdateEnabled
+    val autoPhoneBackupEnabled: StateFlow<Boolean> = prefs.autoPhoneBackupEnabled
     val privacyMaskEnabled: StateFlow<Boolean> = prefs.privacyMaskEnabled
     val pinLockEnabled: StateFlow<Boolean> = prefs.pinLockEnabled
     val notificationsEnabled: StateFlow<Boolean> = prefs.notificationsEnabled
@@ -112,8 +121,11 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
     private val _isAppUnlocked = MutableStateFlow(!prefs.pinLockEnabled.value)
     val isAppUnlocked: StateFlow<Boolean> = _isAppUnlocked.asStateFlow()
 
-    private val _phonePermissions = MutableStateFlow(notificationManager.getPermissionsSnapshot())
+    private val _phonePermissions = MutableStateFlow(PhonePermissionsSnapshot())
     val phonePermissions: StateFlow<PhonePermissionsSnapshot> = _phonePermissions.asStateFlow()
+
+    private val _savedPublicPdfs = MutableStateFlow<List<SavedPublicPdf>>(emptyList())
+    val savedPublicPdfs: StateFlow<List<SavedPublicPdf>> = _savedPublicPdfs.asStateFlow()
 
     private val _largeBillWarningPopup = MutableStateFlow<LargeBillWarningPopup?>(null)
     val largeBillWarningPopup: StateFlow<LargeBillWarningPopup?> = _largeBillWarningPopup.asStateFlow()
@@ -176,10 +188,17 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
         selectedPeriod
     ) { txns, cats, period ->
         CategoryAnalyticsEngine.analyze(txns, cats, period)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CategoryAnalyticsReport())
+    }
+        .flowOn(Dispatchers.Default)
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CategoryAnalyticsReport())
 
     private val _updateState = MutableStateFlow<UpdateUiState>(UpdateUiState.Idle)
     val updateState: StateFlow<UpdateUiState> = _updateState.asStateFlow()
+    private var updateDownloadJob: Job? = null
+
+    private val _installLaunchRequests = MutableSharedFlow<Intent>(extraBufferCapacity = 4)
+    val installLaunchRequests: SharedFlow<Intent> = _installLaunchRequests.asSharedFlow()
 
     private val _notices = MutableSharedFlow<SnackbarNotice>(extraBufferCapacity = 4)
     val notices: SharedFlow<SnackbarNotice> = _notices.asSharedFlow()
@@ -206,80 +225,94 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
         val period = values[4] as PeriodFilter
         val lang = values[5] as AppLanguage
 
-        val periodTxns = txns.filter { FormatUtils.isDateInPeriod(it.date, period) }
-        val income = periodTxns.filter { it.isIncome }.sumOf { it.amount }
-        // Personal/system expenses, Household Bills, and Savings (Akiba)
-        // are ALL deducted normally from system balance, while each stays clearly identified!
-        val personalExpense = periodTxns
-            .filter {
-                !it.isIncome &&
-                    !AutoAccountingEngine.isHouseholdTransaction(it) &&
-                    !AutoAccountingEngine.isSavingsTransaction(it)
-            }
-            .sumOf { it.amount }
-        val periodHousehold = periodTxns
-            .filter { AutoAccountingEngine.isHouseholdTransaction(it) }
-            .sumOf { it.amount }
-        val periodSavingsOutflow = periodTxns
-            .filter { !it.isIncome && AutoAccountingEngine.isSavingsTransaction(it) }
-            .sumOf { it.amount }
-        val totalOutflow = personalExpense + periodHousehold + periodSavingsOutflow
-
-        val receivables = invs.filter { !it.isDraft }.sumOf { it.balance }
-        val unpaidBills = bls.filter { !it.paid }
         val today = FormatUtils.todayIso()
-        val todayHousehold = txns
-            .filter { it.date == today && AutoAccountingEngine.isHouseholdTransaction(it) }
-            .sumOf { it.amount }
-        val chart = (-5..0).map { offset ->
-            val key = FormatUtils.monthKey(FormatUtils.addMonthsIso(today, offset))
-            val mTxns = txns.filter { FormatUtils.monthKey(it.date) == key }
+        var income = 0.0
+        var personalExpense = 0.0
+        var periodHousehold = 0.0
+        var periodSavingsOutflow = 0.0
+        var todayHousehold = 0.0
+
+        // Single-pass O(N) grouping by monthKey for fast 6-month charts & trends
+        val monthIncome = HashMap<String, Double>(12)
+        val monthExpense = HashMap<String, Double>(12)
+        val monthHousehold = HashMap<String, Double>(12)
+        val monthPersonal = HashMap<String, Double>(12)
+        val monthSavingsDep = HashMap<String, Double>(12)
+        val monthSavingsWdr = HashMap<String, Double>(12)
+
+        for (t in txns) {
+            val isHouse = AutoAccountingEngine.isHouseholdTransaction(t)
+            val isSav = !isHouse && AutoAccountingEngine.isSavingsTransaction(t)
+            val mKey = FormatUtils.monthKey(t.date)
+
+            if (t.isIncome) {
+                monthIncome[mKey] = (monthIncome[mKey] ?: 0.0) + t.amount
+                if (isSav) monthSavingsWdr[mKey] = (monthSavingsWdr[mKey] ?: 0.0) + t.amount
+            } else {
+                monthExpense[mKey] = (monthExpense[mKey] ?: 0.0) + t.amount
+                when {
+                    isHouse -> monthHousehold[mKey] = (monthHousehold[mKey] ?: 0.0) + t.amount
+                    isSav -> monthSavingsDep[mKey] = (monthSavingsDep[mKey] ?: 0.0) + t.amount
+                    else -> monthPersonal[mKey] = (monthPersonal[mKey] ?: 0.0) + t.amount
+                }
+            }
+
+            if (t.date == today && isHouse) {
+                todayHousehold += t.amount
+            }
+
+            if (FormatUtils.isDateInPeriod(t.date, period)) {
+                if (t.isIncome) {
+                    income += t.amount
+                } else {
+                    when {
+                        isHouse -> periodHousehold += t.amount
+                        isSav -> periodSavingsOutflow += t.amount
+                        else -> personalExpense += t.amount
+                    }
+                }
+            }
+        }
+
+        val totalOutflow = personalExpense + periodHousehold + periodSavingsOutflow
+        val receivables = invs.sumOf { if (!it.isDraft) it.balance else 0.0 }
+        var unpaidBillsTotal = 0.0
+        var overdueBillsCount = 0
+        for (b in bls) {
+            if (!b.paid) {
+                unpaidBillsTotal += b.amount
+                if (b.isOverdue) overdueBillsCount++
+            }
+        }
+
+        val monthKeys = (-5..0).map { offset ->
+            FormatUtils.monthKey(FormatUtils.addMonthsIso(today, offset))
+        }
+        val chart = monthKeys.map { key ->
             MonthlyChartPoint(
                 label = FormatUtils.shortMonthLabel(key, lang),
-                income = mTxns.filter { it.isIncome }.sumOf { it.amount },
-                expense = mTxns
-                    .filter { !it.isIncome }
-                    .sumOf { it.amount }
+                income = monthIncome[key] ?: 0.0,
+                expense = monthExpense[key] ?: 0.0
             )
         }
 
-        // Monthly spending trends comparing Household Bills, Personal Expenses, and Savings Progress
         val totalVaultSavings = goals.sumOf { it.currentAmount }
-        val monthOffsets = (-5..0).toList()
-        val rawMonthlyTrends = monthOffsets.map { offset ->
-            val key = FormatUtils.monthKey(FormatUtils.addMonthsIso(today, offset))
-            val mTxns = txns.filter { FormatUtils.monthKey(it.date) == key }
-            val mHousehold = mTxns
-                .filter { AutoAccountingEngine.isHouseholdTransaction(it) }
-                .sumOf { it.amount }
-            val mPersonal = mTxns
-                .filter {
-                    !it.isIncome &&
-                        !AutoAccountingEngine.isHouseholdTransaction(it) &&
-                        !AutoAccountingEngine.isSavingsTransaction(it)
-                }
-                .sumOf { it.amount }
-            val mSavingsDeposit = mTxns
-                .filter { !it.isIncome && AutoAccountingEngine.isSavingsTransaction(it) }
-                .sumOf { it.amount }
-            val mSavingsWithdraw = mTxns
-                .filter { it.isIncome && AutoAccountingEngine.isSavingsTransaction(it) }
-                .sumOf { it.amount }
-            Triple(key, Triple(mHousehold, mPersonal, mSavingsDeposit), mSavingsDeposit - mSavingsWithdraw)
-        }
-        val runningCumulative = DoubleArray(rawMonthlyTrends.size)
+        val totalSavingsTarget = goals.sumOf { it.targetAmount }
+        val runningCumulative = DoubleArray(monthKeys.size)
         var cursorSavings = totalVaultSavings
-        for (i in rawMonthlyTrends.indices.reversed()) {
+        for (i in monthKeys.indices.reversed()) {
+            val key = monthKeys[i]
             runningCumulative[i] = cursorSavings.coerceAtLeast(0.0)
-            cursorSavings = (cursorSavings - rawMonthlyTrends[i].third).coerceAtLeast(0.0)
+            val netMonthSavings = (monthSavingsDep[key] ?: 0.0) - (monthSavingsWdr[key] ?: 0.0)
+            cursorSavings = (cursorSavings - netMonthSavings).coerceAtLeast(0.0)
         }
-        val spendingTrends = rawMonthlyTrends.mapIndexed { idx, (key, buckets, _) ->
+        val spendingTrends = monthKeys.mapIndexed { idx, key ->
             MonthlyTrendPoint(
                 monthKey = key,
                 label = FormatUtils.shortMonthLabel(key, lang),
-                householdBills = buckets.first,
-                personalExpenses = buckets.second,
-                savingsDeposited = buckets.third,
+                householdBills = monthHousehold[key] ?: 0.0,
+                personalExpenses = monthPersonal[key] ?: 0.0,
+                savingsDeposited = monthSavingsDep[key] ?: 0.0,
                 cumulativeSavings = runningCumulative[idx]
             )
         }
@@ -293,15 +326,18 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
             todayHouseholdBills = todayHousehold,
             netProfit = income - totalOutflow,
             receivablesBalance = receivables,
-            unpaidBillsTotal = unpaidBills.sumOf { it.amount },
-            overdueBillsCount = unpaidBills.count { it.isOverdue },
+            unpaidBillsTotal = unpaidBillsTotal,
+            overdueBillsCount = overdueBillsCount,
             totalSavings = totalVaultSavings,
-            totalSavingsTarget = goals.sumOf { it.targetAmount },
+            totalSavingsTarget = totalSavingsTarget,
             chartPoints = chart,
             spendingTrendPoints = spendingTrends,
             recentTransactions = txns.take(5)
         )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardMetrics())
+    }
+        .flowOn(Dispatchers.Default)
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardMetrics())
 
     val zeroLossLedger: StateFlow<ZeroLossLedgerSummary> = combine(
         transactions,
@@ -330,7 +366,10 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
             savingsLogs = logs,
             currency = s.currency.ifBlank { "TZS" }
         )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ZeroLossLedgerSummary())
+    }
+        .flowOn(Dispatchers.Default)
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ZeroLossLedgerSummary())
 
     val businessHealth: StateFlow<BusinessHealthReport> = combine(
         transactions,
@@ -358,7 +397,10 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
             categoryAnalytics = catReport,
             currency = s.currency.ifBlank { "TZS" }
         )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BusinessHealthReport())
+    }
+        .flowOn(Dispatchers.Default)
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BusinessHealthReport())
 
     val partyDirectory: StateFlow<List<PartySummary>> = combine(
         transactions,
@@ -368,23 +410,33 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
         savingsLogs
     ) { txns, invs, bls, goals, logs ->
         PartyDirectoryEngine.buildDirectory(txns, invs, bls, goals, logs)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    }
+        .flowOn(Dispatchers.Default)
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    private val _hasSafetySnapshot = MutableStateFlow(repository.hasSafetySnapshot())
-    val hasSafetySnapshot: StateFlow<Boolean> = _hasSafetySnapshot.asStateFlow()
+    val phoneStorageStatus: StateFlow<PhoneStorageStatus> = repository.phoneStorageStatusFlow
 
-    private val _phoneStorageStatus = MutableStateFlow(repository.getPhoneStorageStatus())
-    val phoneStorageStatus: StateFlow<PhoneStorageStatus> = _phoneStorageStatus.asStateFlow()
+    val hasSafetySnapshot: StateFlow<Boolean> = phoneStorageStatus
+        .map { it.hasAnyBackup }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
-    private fun refreshStorageStatus() {
-        val status = repository.getPhoneStorageStatus()
-        _phoneStorageStatus.value = status
-        _hasSafetySnapshot.value = status.hasAnyBackup
-        _phonePermissions.value = notificationManager.getPermissionsSnapshot(status.hasAnyBackup)
+    fun refreshStorageStatus() {
+        viewModelScope.launch {
+            val status = repository.refreshStorageStatusAsync()
+            val snapshot = withContext(Dispatchers.IO) {
+                notificationManager.getPermissionsSnapshot(status.hasAnyBackup)
+            }
+            _phonePermissions.value = snapshot
+        }
     }
 
     fun refreshPhonePermissions() {
-        _phonePermissions.value = notificationManager.getPermissionsSnapshot(_phoneStorageStatus.value.hasAnyBackup)
+        val hasBackup = phoneStorageStatus.value.hasAnyBackup
+        viewModelScope.launch(Dispatchers.IO) {
+            _phonePermissions.value = notificationManager.getPermissionsSnapshot(hasBackup)
+        }
     }
 
     fun dismissLargeBillWarningPopup() {
@@ -402,34 +454,54 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
         val cur = settings.value.currency.ifBlank { "TZS" }
         val cleanName = billName.ifBlank { tr(language.value, "Bili Kubwa", "Large Bill") }
         val cleanCategory = category.ifBlank { tr(language.value, "Bili", "Bill") }
-        refreshPhonePermissions()
-        if (forceForTest || (prefs.notificationsEnabled.value && prefs.billAlertsEnabled.value)) {
-            val posted = notificationManager.notifyLargeBillWarning(
-                billName = cleanName,
-                amount = amount,
-                threshold = threshold,
-                category = cleanCategory,
-                currency = cur,
-                language = language.value
-            )
-            if (forceForTest && !posted) {
-                emitNotice(
-                    tr(
-                        language.value,
-                        "Washa ruhusa ya Taarifa za Simu (POST_NOTIFICATIONS) kwanza.",
-                        "Please grant POST_NOTIFICATIONS permission first."
-                    )
+        val posted = notificationManager.notifyLargeBillWarning(
+            billName = cleanName,
+            amount = amount,
+            threshold = threshold,
+            category = cleanCategory,
+            currency = cur,
+            language = language.value
+        )
+        if (forceForTest && !posted) {
+            emitNotice(
+                tr(
+                    language.value,
+                    "Washa ruhusa ya Taarifa za Simu (POST_NOTIFICATIONS) kwanza.",
+                    "Please grant POST_NOTIFICATIONS permission first."
                 )
-            }
+            )
         }
     }
 
     private var lastUpdateInfo: UpdateInfo? = null
+    private var lastVerifiedApkPath: String? = null
+    private var directFallbackAttempted: Boolean = false
+
+    private var lastResumeRefreshMs: Long = 0L
 
     init {
         viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                notificationManager.ensureNotificationChannels()
+            }
             repository.ensureInitialized()
             refreshStorageStatus()
+            refreshSavedPublicPdfs()
+            // Automatically check due bills & overdue invoices once per day via Android system notifications
+            val todayIso = FormatUtils.todayIso()
+            if (prefs.shouldRunDailyDueReminder(todayIso)) {
+                withContext(Dispatchers.IO) {
+                    val currentBills = runCatching { repository.billsFlow.first() }.getOrDefault(emptyList())
+                    val currentInvoices = runCatching { repository.invoicesFlow.first() }.getOrDefault(emptyList())
+                    val currentSettings = runCatching { repository.settingsFlow.first() }.getOrDefault(BusinessSettingsEntity())
+                    notificationManager.runSmartDueReminders(
+                        bills = currentBills,
+                        invoices = currentInvoices,
+                        currency = currentSettings.currency.ifBlank { "TZS" },
+                        language = language.value
+                    )
+                }
+            }
             if (prefs.shouldAutoCheckUpdates()) {
                 checkForUpdates(silentIfUpToDate = true)
             }
@@ -439,17 +511,57 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
                 when (event) {
                     is InstallResultEvent.PendingUserAction -> {
                         val info = lastUpdateInfo
+                        val apkPath = event.cachedApkPath ?: lastVerifiedApkPath
+                        if (apkPath != null) lastVerifiedApkPath = apkPath
                         if (info != null) {
-                            _updateState.value = UpdateUiState.Installing(info)
+                            _updateState.value = UpdateUiState.Installing(info, apkPath)
                         }
+                        // Launch Android's confirmation sheet directly from the foreground Activity
+                        // so Android 14/15/16 Background Activity Launch (BAL) never drops it.
+                        _installLaunchRequests.tryEmit(event.confirmIntent)
                     }
                     is InstallResultEvent.Success -> {
                         val version = lastUpdateInfo?.version ?: updateManager.currentVersionName
+                        lastVerifiedApkPath = null
                         _updateState.value = UpdateUiState.Success(version)
                         emitNotice(tr(language.value, "Sasisho limesakinishwa kikamilifu.", "Update installed successfully."))
                     }
                     is InstallResultEvent.Failure -> {
-                        _updateState.value = UpdateUiState.Error(event.reason, lastUpdateInfo)
+                        val apkPath = event.cachedApkPath ?: lastVerifiedApkPath
+                        if (apkPath != null) lastVerifiedApkPath = apkPath
+
+                        if (event.shouldFallbackToDirectInstaller &&
+                            !directFallbackAttempted &&
+                            !apkPath.isNullOrBlank() &&
+                            File(apkPath).exists()
+                        ) {
+                            directFallbackAttempted = true
+                            val info = lastUpdateInfo
+                            if (info != null) {
+                                _updateState.value = UpdateUiState.Installing(info, apkPath)
+                            }
+                            runCatching {
+                                _installLaunchRequests.tryEmit(updateManager.buildDirectApkInstallIntent(File(apkPath)))
+                            }.onFailure {
+                                _updateState.value = UpdateUiState.Error(
+                                    message = event.reason,
+                                    retryInfo = lastUpdateInfo,
+                                    cachedApkPath = apkPath
+                                )
+                            }
+                        } else if (event.isSignatureConflict) {
+                            handleSignatureConflictRecovery(
+                                reason = event.reason,
+                                apkPath = apkPath,
+                                info = lastUpdateInfo
+                            )
+                        } else {
+                            _updateState.value = UpdateUiState.Error(
+                                message = event.reason,
+                                retryInfo = lastUpdateInfo,
+                                cachedApkPath = apkPath?.takeIf { File(it).exists() }
+                            )
+                        }
                     }
                 }
             }
@@ -547,8 +659,10 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
     fun reconcileLedgerNow() {
         viewModelScope.launch {
             val repaired = repository.reconcileLedgerIntegrity()
-            repository.persistSafetySnapshot()
-            _hasSafetySnapshot.value = repository.hasSafetySnapshot()
+            withContext(Dispatchers.IO) {
+                repository.persistSafetySnapshot()
+            }
+            refreshStorageStatus()
             val msg = if (repaired > 0) {
                 tr(
                     language.value,
@@ -577,7 +691,7 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
                     amount = txn.amount,
                     category = txn.category
                 )
-            } else if (prefs.notificationsEnabled.value && prefs.transactionAlertsEnabled.value) {
+            } else {
                 notificationManager.notifyTransactionSaved(txn, cur, language.value)
             }
             emitNotice(tr(language.value, "Muamala umehifadhiwa.", "Transaction saved."))
@@ -608,17 +722,15 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.saveInvoice(invoice, items)
             refreshStorageStatus()
-            if (prefs.notificationsEnabled.value && prefs.billAlertsEnabled.value) {
-                val total = items.sumOf { it.lineTotal }
-                notificationManager.notifyInvoiceEvent(
-                    invoiceNumber = invoice.number,
-                    clientName = invoice.customerName,
-                    amount = total,
-                    currency = settings.value.currency.ifBlank { "TZS" },
-                    language = language.value,
-                    isPayment = false
-                )
-            }
+            val total = items.sumOf { it.lineTotal }
+            notificationManager.notifyInvoiceEvent(
+                invoiceNumber = invoice.number,
+                clientName = invoice.customerName,
+                amount = total,
+                currency = settings.value.currency.ifBlank { "TZS" },
+                language = language.value,
+                isPayment = false
+            )
             emitNotice(tr(language.value, "Ankara imehifadhiwa.", "Invoice saved."))
         }
     }
@@ -727,12 +839,20 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
     fun exportInvoicePdf(invoiceWithItems: InvoiceWithItems) {
         viewModelScope.launch {
             val lang = language.value
-            val bytes = InvoicePdfGenerator.generatePdfBytes(invoiceWithItems, settings.value, lang)
+            val currentSettings = settings.value
             val safeNumber = invoiceWithItems.invoice.number.replace(Regex("[^A-Za-z0-9_-]"), "_")
             val prefix = if (lang == AppLanguage.EN) "Invoice" else "Ankara"
+            val filename = "${prefix}_$safeNumber.pdf"
+            val bytes = withContext(Dispatchers.IO) {
+                val generated = InvoicePdfGenerator.generatePdfBytes(invoiceWithItems, currentSettings, lang)
+                // Always mirror directly into public Documents/Mengidata/Ankara/ so it is immediately retrievable
+                runCatching { repository.savePdfToPublicDocuments(filename, generated) }
+                generated
+            }
+            refreshSavedPublicPdfs()
             _exportRequests.emit(
                 PendingFileExport(
-                    filename = "${prefix}_$safeNumber.pdf",
+                    filename = filename,
                     mimeType = "application/pdf",
                     bytes = bytes
                 )
@@ -743,7 +863,10 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
     fun printInvoicePdf(invoiceWithItems: InvoiceWithItems) {
         viewModelScope.launch {
             val lang = language.value
-            val bytes = InvoicePdfGenerator.generatePdfBytes(invoiceWithItems, settings.value, lang)
+            val currentSettings = settings.value
+            val bytes = withContext(Dispatchers.IO) {
+                InvoicePdfGenerator.generatePdfBytes(invoiceWithItems, currentSettings, lang)
+            }
             val titlePrefix = if (lang == AppLanguage.EN) "Invoice" else "Ankara"
             val ok = InvoicePdfGenerator.printInvoicePdf(
                 getApplication(),
@@ -769,7 +892,7 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
                     amount = bill.amount,
                     category = bill.category
                 )
-            } else if (prefs.notificationsEnabled.value && prefs.billAlertsEnabled.value) {
+            } else {
                 notificationManager.notifyBillEvent(
                     bill = bill,
                     currency = cur,
@@ -792,7 +915,7 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
                         amount = before.amount,
                         category = before.category
                     )
-                } else if (prefs.notificationsEnabled.value && prefs.billAlertsEnabled.value) {
+                } else {
                     notificationManager.notifyBillEvent(
                         bill = before.copy(paid = true),
                         currency = settings.value.currency.ifBlank { "TZS" },
@@ -1017,6 +1140,94 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
+    fun buildViewInvoicePdfIntent(invoiceWithItems: InvoiceWithItems): Intent? {
+        val app = getApplication<Application>()
+        val lang = language.value
+        val pdfBytes = InvoicePdfGenerator.generatePdfBytes(invoiceWithItems, settings.value, lang)
+        val safeNumber = invoiceWithItems.invoice.number.replace(Regex("[^A-Za-z0-9_-]"), "_")
+        val filePrefix = if (lang == AppLanguage.EN) "Invoice" else "Ankara"
+        val filename = "${filePrefix}_$safeNumber.pdf"
+        // Also mirror a clean application/pdf copy into Documents/Mengidata/Ankara/
+        runCatching { repository.savePdfToPublicDocuments(filename, pdfBytes) }
+        return buildViewPdfFileIntent(filename, pdfBytes)
+    }
+
+    fun buildViewPdfFileIntent(filename: String, pdfBytes: ByteArray): Intent? {
+        val app = getApplication<Application>()
+        val safeName = if (filename.endsWith(".pdf", ignoreCase = true)) filename else "$filename.pdf"
+        return runCatching {
+            val dir = File(app.cacheDir, "shared_pdfs").apply { if (!exists()) mkdirs() }
+            val file = File(dir, safeName)
+            file.writeBytes(pdfBytes)
+            val uri = FileProvider.getUriForFile(app, "${app.packageName}.fileprovider", file)
+            Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/pdf")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NO_HISTORY)
+            }
+        }.getOrNull()
+    }
+
+    fun savePublicPdfMirror(filename: String, pdfBytes: ByteArray) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                runCatching { repository.savePdfToPublicDocuments(filename, pdfBytes) }
+            }
+            refreshSavedPublicPdfs()
+        }
+    }
+
+    fun refreshSavedPublicPdfs() {
+        viewModelScope.launch {
+            val items = repository.listSavedPublicInvoicePdfs()
+            _savedPublicPdfs.value = items
+        }
+    }
+
+    fun deleteSavedPublicPdf(pdf: SavedPublicPdf) {
+        viewModelScope.launch {
+            val deleted = repository.deleteSavedPublicPdf(pdf)
+            refreshSavedPublicPdfs()
+            if (deleted) {
+                emitNotice(tr(language.value, "PDF imefutwa kwenye hifadhi ya simu.", "PDF deleted from phone storage."))
+            }
+        }
+    }
+
+    fun buildViewSavedPublicPdfIntent(pdf: SavedPublicPdf): Intent? {
+        val app = getApplication<Application>()
+        val uri = resolvePublicPdfUri(app, pdf) ?: return null
+        return Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/pdf")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+    }
+
+    fun buildShareSavedPublicPdfIntent(pdf: SavedPublicPdf): Intent? {
+        val app = getApplication<Application>()
+        val uri = resolvePublicPdfUri(app, pdf) ?: return null
+        return Intent(Intent.ACTION_SEND).apply {
+            type = "application/pdf"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_SUBJECT, pdf.displayName)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+    }
+
+    private fun resolvePublicPdfUri(app: Application, pdf: SavedPublicPdf): android.net.Uri? {
+        if (!pdf.absolutePath.isNullOrBlank()) {
+            val file = File(pdf.absolutePath)
+            if (file.exists() && file.length() > 0L) {
+                val fpUri = runCatching {
+                    FileProvider.getUriForFile(app, "${app.packageName}.fileprovider", file)
+                }.getOrNull()
+                if (fpUri != null) return fpUri
+            }
+        }
+        return pdf.contentUri
+    }
+
     private fun buildSharePdfFileIntent(
         app: Application,
         filename: String,
@@ -1025,7 +1236,8 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
         bodyText: String
     ): Intent? = runCatching {
         val dir = File(app.cacheDir, "shared_pdfs").apply { if (!exists()) mkdirs() }
-        val file = File(dir, filename)
+        val safeName = if (filename.endsWith(".pdf", ignoreCase = true)) filename else "$filename.pdf"
+        val file = File(dir, safeName)
         file.writeBytes(pdfBytes)
         val uri = FileProvider.getUriForFile(app, "${app.packageName}.fileprovider", file)
         Intent(Intent.ACTION_SEND).apply {
@@ -1072,7 +1284,7 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
             repository.recordSavingsTransaction(goalId, type, amount, note, partyName)
             refreshStorageStatus()
             val goal = savingsGoals.value.firstOrNull { it.id == goalId }
-            if (goal != null && prefs.notificationsEnabled.value && prefs.savingsAlertsEnabled.value) {
+            if (goal != null) {
                 val newTotal = if (type == "deposit") goal.currentAmount + amount else (goal.currentAmount - amount).coerceAtLeast(0.0)
                 notificationManager.notifySavingsActivity(
                     goalName = goal.title,
@@ -1232,6 +1444,58 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun setAutoPhoneBackupEnabled(enabled: Boolean) {
+        prefs.setAutoPhoneBackupEnabled(enabled)
+        if (enabled) {
+            viewModelScope.launch {
+                val ok = repository.persistSafetySnapshot(force = true)
+                refreshStorageStatus()
+                if (ok) {
+                    emitNotice(
+                        tr(
+                            language.value,
+                            "Hifadhi ya kiotomatiki kwenye simu imewashwa na data zimehifadhiwa!",
+                            "Auto phone storage backup enabled and synced!"
+                        )
+                    )
+                }
+            }
+        } else {
+            emitNotice(
+                tr(
+                    language.value,
+                    "Hifadhi ya kiotomatiki kwenye simu imesimamishwa.",
+                    "Auto phone storage backup paused."
+                )
+            )
+        }
+    }
+
+    fun setCustomBackupFolderUri(uriString: String) {
+        repository.setCustomBackupFolderUri(uriString)
+        viewModelScope.launch {
+            val ok = repository.syncToPhoneStorageNow()
+            refreshStorageStatus()
+            if (ok) {
+                emitNotice(
+                    tr(
+                        language.value,
+                        "Folda ya hifadhi ya simu imeunganishwa na data zimehifadhiwa kiotomatiki!",
+                        "Phone storage folder linked and synced automatically!"
+                    )
+                )
+            }
+        }
+    }
+
+    fun autoBackupOnBackground() {
+        if (!prefs.autoPhoneBackupEnabled.value) return
+        viewModelScope.launch {
+            runCatching { repository.persistSafetySnapshot(force = false) }
+            refreshStorageStatus()
+        }
+    }
+
     fun syncDatabaseToPhoneStorage() {
         viewModelScope.launch {
             val ok = repository.syncToPhoneStorageNow()
@@ -1380,43 +1644,191 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
             _updateState.value = UpdateUiState.PermissionRequired(info)
             return
         }
-        viewModelScope.launch {
-            // Proactively sync the database to phone storage (Documents/Mengidata) before updating
-            runCatching { repository.syncToPhoneStorageNow() }
-            refreshStorageStatus()
+        directFallbackAttempted = false
+        updateDownloadJob?.cancel()
+        updateDownloadJob = viewModelScope.launch {
+            try {
+                // Proactively sync the database to phone storage (Documents/Mengidata) before updating
+                runCatching { repository.syncToPhoneStorageNow() }
+                refreshStorageStatus()
 
-            _updateState.value = UpdateUiState.Downloading(info, 0, 0L, info.expectedSizeBytes)
-            updateManager.downloadAndVerifyApk(
-                info = info,
-                onProgress = { pct, downloaded, total ->
-                    _updateState.value = UpdateUiState.Downloading(info, pct, downloaded, total)
-                },
-                onVerifying = {
-                    _updateState.value = UpdateUiState.Verifying(info)
-                }
-            ).onSuccess { verifiedApk ->
-                _updateState.value = UpdateUiState.Installing(info)
-                updateManager.installVerifiedApk(verifiedApk)
-                    .onFailure { err ->
+                // Reuse already-downloaded & verified APK if present so retries & permission returns are instant
+                val cachedApk = updateManager.findValidCachedApk(info)
+                val verifiedApk: File = if (cachedApk != null) {
+                    cachedApk
+                } else {
+                    _updateState.value = UpdateUiState.Downloading(
+                        info = info,
+                        progressPercent = 0,
+                        downloadedBytes = 0L,
+                        totalBytes = info.expectedSizeBytes,
+                        speedBytesPerSec = 0L,
+                        etaSeconds = -1L,
+                        activeStreams = 4
+                    )
+                    val downloadResult = updateManager.downloadAndVerifyApk(
+                        info = info,
+                        onProgress = { progress ->
+                            _updateState.value = UpdateUiState.Downloading(
+                                info = info,
+                                progressPercent = progress.percent,
+                                downloadedBytes = progress.downloadedBytes,
+                                totalBytes = progress.totalBytes,
+                                speedBytesPerSec = progress.speedBytesPerSec,
+                                etaSeconds = progress.etaSeconds,
+                                activeStreams = progress.activeStreams
+                            )
+                        },
+                        onVerifying = {
+                            _updateState.value = UpdateUiState.Verifying(info)
+                        }
+                    )
+                    downloadResult.getOrElse { err ->
                         _updateState.value = UpdateUiState.Error(
-                            err.message ?: tr(language.value, "Imeshindwa kuanzisha usakinishaji.", "Install failed."),
+                            message = err.message ?: tr(language.value, "Imeshindwa kupakua au kuthibitisha APK.", "Download or signature verification failed."),
                             retryInfo = info
                         )
+                        return@launch
                     }
-            }.onFailure { err ->
-                _updateState.value = UpdateUiState.Error(
-                    err.message ?: tr(language.value, "Imeshindwa kupakua au kuthibitisha APK.", "Download or signature verification failed."),
-                    retryInfo = info
-                )
+                }
+
+                lastVerifiedApkPath = verifiedApk.absolutePath
+
+                // Pre-check signing certificate match before asking Android PackageInstaller
+                val certMatches = updateManager.hasMatchingSigningCertificate(verifiedApk)
+                if (!certMatches) {
+                    handleSignatureConflictRecovery(
+                        reason = tr(
+                            language.value,
+                            "Saini ya toleo lililopo simuni ni tofauti na toleo jipya v${info.version}.",
+                            "The installed build uses a different signing key than v${info.version}."
+                        ),
+                        apkPath = verifiedApk.absolutePath,
+                        info = info
+                    )
+                    return@launch
+                }
+
+                _updateState.value = UpdateUiState.Installing(info, verifiedApk.absolutePath)
+                updateManager.installVerifiedApk(verifiedApk)
+                    .onFailure {
+                        // Automatically fall back to native FileProvider ACTION_VIEW APK installer
+                        directFallbackAttempted = true
+                        launchDirectApkInstall(verifiedApk.absolutePath)
+                    }
+            } catch (ce: CancellationException) {
+                // Restore Available state cleanly when user taps Cancel
+                _updateState.value = UpdateUiState.Available(info)
+                throw ce
             }
         }
     }
 
+    private suspend fun handleSignatureConflictRecovery(
+        reason: String,
+        apkPath: String?,
+        info: UpdateInfo?
+    ) {
+        val version = info?.version ?: "latest"
+        // Guarantee user's financial data is backed up AND copy the verified APK to public Downloads/Mengidata/
+        runCatching { repository.syncToPhoneStorageNow() }
+        val savedName = if (!apkPath.isNullOrBlank()) {
+            updateManager.saveApkToPublicDownloads(File(apkPath), version)
+        } else {
+            null
+        }
+        val guidance = if (savedName != null) {
+            tr(
+                language.value,
+                "$reason Data zako zimehifadhiwa salama kwenye Documents/Mengidata na faili la $savedName limehifadhiwa kwenye Downloads/Mengidata. Bonyeza 'Ondoa Toleo la Zamani' kisha fungua $savedName kwenye Downloads — data zako zitarudi zenyewe!",
+                "$reason Your data is safely backed up in Documents/Mengidata and $savedName has been saved to Downloads/Mengidata. Tap 'Uninstall Old Version' then open $savedName from Downloads — your data will auto-restore!"
+            )
+        } else {
+            tr(
+                language.value,
+                "$reason Data zako zimehifadhiwa salama kwenye Documents/Mengidata — ondoa toleo la zamani kisha sakinisha Mengidata.apk mpya.",
+                "$reason Your data is safely backed up in Documents/Mengidata — uninstall the old version then install the new Mengidata.apk."
+            )
+        }
+        _updateState.value = UpdateUiState.Error(
+            message = guidance,
+            retryInfo = info,
+            cachedApkPath = apkPath?.takeIf { File(it).exists() },
+            isSignatureConflict = true,
+            savedDownloadsName = savedName
+        )
+    }
+
+    fun launchDirectApkInstall(apkPath: String) {
+        val file = File(apkPath)
+        val info = lastUpdateInfo
+        if (!updateManager.canRequestPackageInstalls()) {
+            if (info != null) {
+                _updateState.value = UpdateUiState.PermissionRequired(info)
+            }
+            return
+        }
+        if (!file.exists()) {
+            if (info != null) {
+                startUpdateDownloadAndInstall(info)
+            }
+            return
+        }
+        if (info != null) {
+            _updateState.value = UpdateUiState.Installing(info, apkPath)
+        }
+        runCatching {
+            _installLaunchRequests.tryEmit(updateManager.buildDirectApkInstallIntent(file))
+        }.onFailure { err ->
+            _updateState.value = UpdateUiState.Error(
+                message = err.message ?: tr(language.value, "Imeshindwa kufungua kisakinishi cha Android.", "Failed to open Android APK installer."),
+                retryInfo = info,
+                cachedApkPath = apkPath
+            )
+        }
+    }
+
+    fun fallbackToDirectInstallIfAvailable() {
+        val apkPath = lastVerifiedApkPath
+        if (!apkPath.isNullOrBlank() && File(apkPath).exists() && !directFallbackAttempted) {
+            directFallbackAttempted = true
+            launchDirectApkInstall(apkPath)
+        }
+    }
+
+    fun openUninstallOldApp(): Intent = updateManager.buildUninstallSelfIntent()
+
+    fun cancelUpdateDownload() {
+        updateDownloadJob?.cancel()
+        updateDownloadJob = null
+        val info = lastUpdateInfo
+        if (info != null) {
+            _updateState.value = UpdateUiState.Available(info)
+        } else {
+            _updateState.value = UpdateUiState.Idle
+        }
+    }
+
     fun onResumeCheckInstallPermission() {
-        refreshPhonePermissions()
-        val state = _updateState.value
-        if (state is UpdateUiState.PermissionRequired && updateManager.canRequestPackageInstalls()) {
-            _updateState.value = UpdateUiState.Available(state.info)
+        val now = System.currentTimeMillis()
+        val prevStorageGranted = _phonePermissions.value.storageManagerGranted
+        val hasBackup = phoneStorageStatus.value.hasAnyBackup
+        viewModelScope.launch(Dispatchers.IO) {
+            val snapshot = notificationManager.getPermissionsSnapshot(hasBackup)
+            _phonePermissions.value = snapshot
+            val permissionChanged = snapshot.storageManagerGranted != prevStorageGranted
+            if (permissionChanged || now - lastResumeRefreshMs >= 4_000L) {
+                lastResumeRefreshMs = now
+                refreshStorageStatus()
+                refreshSavedPublicPdfs()
+            }
+            val state = _updateState.value
+            if (state is UpdateUiState.PermissionRequired && updateManager.canRequestPackageInstalls()) {
+                withContext(Dispatchers.Main) {
+                    // Automatically continue download/install as soon as the user enables "Allow from this source"
+                    startUpdateDownloadAndInstall(state.info)
+                }
+            }
         }
     }
 
@@ -1509,6 +1921,10 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
 
     fun openInstallPermissionSettings(): Intent = updateManager.buildInstallPermissionIntent()
 
+    fun openManageStorageSettings(): Intent = notificationManager.buildManageStoragePermissionIntent()
+
+    fun openManageStorageFallbackSettings(): Intent = notificationManager.buildManageAllFilesFallbackIntent()
+
     fun openAppNotificationSettings(): Intent = notificationManager.buildAppNotificationSettingsIntent()
 
     fun openAppDetailsSettings(): Intent = notificationManager.buildAppDetailsSettingsIntent()
@@ -1517,6 +1933,28 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
 
     fun notifyFileSaved() {
         emitNotice(tr(language.value, "Faili limehifadhiwa.", "File saved."))
+    }
+
+    fun notifyPdfSaved(onOpenPdf: () -> Unit) {
+        emitNotice(
+            message = tr(
+                language.value,
+                "PDF imehifadhiwa kikamilifu! Gusa kufungua.",
+                "PDF saved successfully! Tap to open."
+            ),
+            undoLabel = tr(language.value, "Fungua PDF", "Open PDF"),
+            onUndo = onOpenPdf
+        )
+    }
+
+    fun notifyNoPdfViewer() {
+        emitNotice(
+            tr(
+                language.value,
+                "Hakuna programu ya kufungua PDF kwenye simu hii — unaweza kutuma au kuchapisha.",
+                "No PDF viewer app found — you can share or print instead."
+            )
+        )
     }
 
     fun notifyFileError() {

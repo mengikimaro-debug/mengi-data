@@ -6,4 +6,7 @@
     <cache-path
         name="mengidata_updates"
         path="mengidata_updates/" />
+    <external-path
+        name="public_mengidata_docs"
+        path="Documents/Mengidata/" />
 </paths>

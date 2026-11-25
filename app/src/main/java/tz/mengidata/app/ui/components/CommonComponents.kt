@@ -99,31 +99,18 @@ fun MengiCard(
 ) {
     val colors = LocalMengiColors.current
     val resolvedBorder = borderColor ?: colors.cardBorder
-    val border = BorderStroke(1.dp, resolvedBorder)
+    val border = remember(resolvedBorder) { BorderStroke(1.dp, resolvedBorder) }
     val shape = MaterialTheme.shapes.large // 26.dp One UI squircle
 
     if (onClick != null) {
-        val interactionSource = remember { MutableInteractionSource() }
-        val isPressed by interactionSource.collectIsPressedAsState()
-        val scale by animateFloatAsState(
-            targetValue = if (isPressed) 0.976f else 1f,
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioMediumBouncy,
-                stiffness = Spring.StiffnessMedium
-            ),
-            label = "oneui_card_press"
-        )
         Surface(
             onClick = onClick,
-            interactionSource = interactionSource,
-            modifier = modifier
-                .fillMaxWidth()
-                .scale(scale),
+            modifier = modifier.fillMaxWidth(),
             shape = shape,
             color = containerColor,
             border = border,
             tonalElevation = 0.dp,
-            shadowElevation = if (colors.isDark) 0.dp else 2.5.dp
+            shadowElevation = 0.dp
         ) {
             Column(modifier = Modifier.padding(contentPadding), content = content)
         }
@@ -134,7 +121,7 @@ fun MengiCard(
             color = containerColor,
             border = border,
             tonalElevation = 0.dp,
-            shadowElevation = if (colors.isDark) 0.dp else 1.5.dp
+            shadowElevation = 0.dp
         ) {
             Column(modifier = Modifier.padding(contentPadding), content = content)
         }

@@ -26,6 +26,7 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.DeleteForever
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PhoneAndroid
@@ -76,7 +77,6 @@ import tz.mengidata.app.i18n.tr
 import tz.mengidata.app.notifications.PhonePermissionsSnapshot
 import tz.mengidata.app.ui.components.ConfirmActionDialog
 import tz.mengidata.app.ui.components.MengiCard
-import tz.mengidata.app.ui.components.NotificationAndPermissionsCard
 import tz.mengidata.app.ui.components.OneUiFieldShape
 import tz.mengidata.app.ui.components.OneUiScreenHeader
 import tz.mengidata.app.ui.components.OneUiSegmentedTabs
@@ -85,6 +85,7 @@ import tz.mengidata.app.ui.components.RecoveryVaultSheet
 import tz.mengidata.app.ui.components.ReportColorLegendStrip
 import tz.mengidata.app.ui.components.StatusPill
 import tz.mengidata.app.ui.components.TypedConfirmDangerDialog
+import tz.mengidata.app.ui.components.UpdateCenterCard
 import tz.mengidata.app.ui.components.oneUiTextFieldColors
 import tz.mengidata.app.ui.theme.ContrastAccessibility
 import tz.mengidata.app.ui.theme.LocalMengiColors
@@ -101,15 +102,10 @@ fun SettingsScreen(
     themeMode: ThemeMode,
     language: AppLanguage,
     autoUpdateEnabled: Boolean,
+    autoPhoneBackupEnabled: Boolean = true,
     privacyMaskEnabled: Boolean,
     pinLockEnabled: Boolean,
     phonePermissions: PhonePermissionsSnapshot,
-    notificationsEnabled: Boolean,
-    billAlertsEnabled: Boolean,
-    transactionAlertsEnabled: Boolean,
-    savingsAlertsEnabled: Boolean,
-    systemAlertsEnabled: Boolean,
-    largeBillThreshold: Double,
     updateState: UpdateUiState,
     statsSummary: String,
     hasSafetySnapshot: Boolean,
@@ -118,26 +114,20 @@ fun SettingsScreen(
     onSetThemeMode: (ThemeMode) -> Unit,
     onSetLanguage: (AppLanguage) -> Unit,
     onSetAutoUpdate: (Boolean) -> Unit,
+    onSetAutoPhoneBackup: (Boolean) -> Unit = {},
+    onPickCustomBackupFolder: () -> Unit = {},
     onSetPrivacyMask: (Boolean) -> Unit,
     onSavePin: (String) -> Unit,
     onDisablePin: () -> Unit,
     onLockNow: () -> Unit,
-    onRequestPostNotificationsPermission: () -> Unit,
-    onOpenAppNotificationSettings: () -> Unit,
-    onOpenAppDetailsSettings: () -> Unit,
-    onSetNotificationsEnabled: (Boolean) -> Unit,
-    onSetBillAlertsEnabled: (Boolean) -> Unit,
-    onSetTransactionAlertsEnabled: (Boolean) -> Unit,
-    onSetSavingsAlertsEnabled: (Boolean) -> Unit,
-    onSetSystemAlertsEnabled: (Boolean) -> Unit,
-    onSaveLargeBillThreshold: (Double) -> Unit,
-    onTestLargeBillWarningPopup: () -> Unit,
-    onTestSystemNotification: () -> Unit,
-    onSendDueRemindersNow: () -> Unit,
+    onRequestManageStoragePermission: () -> Unit = {},
     onCheckUpdates: () -> Unit,
     onDownloadUpdate: (UpdateInfo) -> Unit,
+    onCancelDownloadUpdate: () -> Unit = {},
     onOpenInstallPermissionSettings: () -> Unit,
     onOpenReleasesBrowser: () -> Unit,
+    onDirectInstallApk: (String) -> Unit = {},
+    onUninstallOldApp: () -> Unit = {},
     onSaveSettings: (BusinessSettingsEntity) -> Unit,
     onExportColorExcel: () -> Unit,
     onExportTransactionsCsv: () -> Unit,
@@ -437,344 +427,21 @@ fun SettingsScreen(
                 }
             }
 
-            // 1C. Notification Manager, Phone Permissions & 3-Sec Large Bill Warning Card
-            item(key = "notifications_permissions_card") {
-                NotificationAndPermissionsCard(
-                    language = language,
-                    currency = settings.currency.ifBlank { "TZS" },
-                    phonePermissions = phonePermissions,
-                    notificationsEnabled = notificationsEnabled,
-                    billAlertsEnabled = billAlertsEnabled,
-                    transactionAlertsEnabled = transactionAlertsEnabled,
-                    savingsAlertsEnabled = savingsAlertsEnabled,
-                    systemAlertsEnabled = systemAlertsEnabled,
-                    largeBillThreshold = largeBillThreshold,
-                    onRequestPostNotificationsPermission = onRequestPostNotificationsPermission,
-                    onOpenInstallPermissionSettings = onOpenInstallPermissionSettings,
-                    onOpenAppNotificationSettings = onOpenAppNotificationSettings,
-                    onOpenAppDetailsSettings = onOpenAppDetailsSettings,
-                    onSetNotificationsEnabled = onSetNotificationsEnabled,
-                    onSetBillAlertsEnabled = onSetBillAlertsEnabled,
-                    onSetTransactionAlertsEnabled = onSetTransactionAlertsEnabled,
-                    onSetSavingsAlertsEnabled = onSetSavingsAlertsEnabled,
-                    onSetSystemAlertsEnabled = onSetSystemAlertsEnabled,
-                    onSaveLargeBillThreshold = onSaveLargeBillThreshold,
-                    onTestLargeBillWarningPopup = onTestLargeBillWarningPopup,
-                    onTestSystemNotification = onTestSystemNotification,
-                    onSendDueRemindersNow = onSendDueRemindersNow
-                )
-            }
-
-            // 2. App Update System Card
+            // 2. Flagship Bespoke OTA Update Console (4x Turbo Multi-Stream)
             item(key = "update_card") {
-                MengiCard {
-                    OneUiSettingsSectionHeader(
-                        icon = Icons.Rounded.SystemUpdate,
-                        iconBg = colors.savingsSoft,
-                        iconTint = colors.savings,
-                        title = tr(language, "Mfumo wa Masasisho", "App Update System"),
-                        subtitle = "${tr(language, "Toleo la sasa", "Installed")}: v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
-                        badge = {
-                            StatusPill(
-                                text = "SHA-256",
-                                containerColor = colors.limeSoft,
-                                contentColor = colors.limeInk
-                            )
-                        }
-                    )
-
-                    Spacer(Modifier.height(10.dp))
-                    Text(
-                        text = tr(
-                            language,
-                            "Hukagua matoleo mapya kwenye GitHub, kuthibitisha cheti cha saini (SHA-256) cha APK, na kusakinisha salama kwenye Android 13+.",
-                            "Checks GitHub Releases, verifies APK SHA-256 signing certificate, and installs cleanly on Android 13+."
-                        ),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    Spacer(Modifier.height(10.dp))
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = colors.subtleSurface,
-                        border = BorderStroke(1.dp, colors.cardBorder),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Text(
-                                text = tr(
-                                    language,
-                                    "Mpya katika Toleo v${BuildConfig.VERSION_NAME}",
-                                    "What's New in Version v${BuildConfig.VERSION_NAME}"
-                                ),
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = tr(
-                                    language,
-                                    "• Kidhibiti cha Taarifa (Notification Manager) & Ruhusa za Android 13+\n• Onyo la Bili Kubwa la Pop-Up kwa Sekunde 3 unapoweka au kulipa bili kubwa\n• Mwonekano tulivu wa Giza (Dark Mode) bila mng'ao + Mpangilio bora wa data\n• Masasisho ya moja kwa moja ya GitHub + Hifadhi salama ya simu (Documents/Mengidata)",
-                                    "• Full Android 13+ Notification Manager & Phone Permissions hub\n• 3-Second Large Bill Warning Pop-Up banner when recording or paying large bills\n• Calm matte Dark Mode with zero glare & structured data layout\n• Seamless GitHub in-app APK updates + automatic phone storage backup"
-                                ),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
-                    Spacer(Modifier.height(12.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = tr(language, "Kagua masasisho kiotomatiki", "Auto-check for updates"),
-                                style = MaterialTheme.typography.titleSmall
-                            )
-                            Text(
-                                text = tr(language, "Kila baada ya saa 12 unapofungua programu", "Every 12 hours on app launch"),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Switch(
-                            checked = autoUpdateEnabled,
-                            onCheckedChange = onSetAutoUpdate,
-                            modifier = Modifier.testTag("auto_update_switch")
-                        )
-                    }
-
-                    Spacer(Modifier.height(12.dp))
-
-                    when (updateState) {
-                        is UpdateUiState.Idle -> Unit
-
-                        is UpdateUiState.Checking -> {
-                            UpdateStatusBanner(
-                                containerColor = colors.subtleSurface,
-                                contentColor = MaterialTheme.colorScheme.onSurface
-                            ) {
-                                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                                Text(tr(language, "Inakagua toleo jipya GitHub...", "Checking GitHub Releases..."), style = MaterialTheme.typography.bodySmall)
-                            }
-                        }
-
-                        is UpdateUiState.UpToDate -> {
-                            UpdateStatusBanner(
-                                containerColor = colors.incomeSoft,
-                                contentColor = colors.income
-                            ) {
-                                Icon(Icons.Rounded.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Text(
-                                    tr(
-                                        language,
-                                        "Unatumia toleo la hivi karibuni (v${updateState.currentVersion}).",
-                                        "You are on the latest version (v${updateState.currentVersion})."
-                                    ),
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                            }
-                        }
-
-                        is UpdateUiState.Available -> {
-                            Surface(
-                                shape = RoundedCornerShape(18.dp),
-                                color = colors.limeSoft,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Column(
-                                    modifier = Modifier.padding(14.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Text(
-                                        text = tr(
-                                            language,
-                                            "Toleo jipya v${updateState.info.version} linapatikana",
-                                            "New version v${updateState.info.version} available"
-                                        ),
-                                        style = MaterialTheme.typography.titleSmall,
-                                        color = colors.limeInk
-                                    )
-                                    if (updateState.info.releaseNotes.isNotBlank()) {
-                                        Text(
-                                            text = updateState.info.releaseNotes.take(400),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = colors.limeInk
-                                        )
-                                    }
-                                    Button(
-                                        onClick = { onDownloadUpdate(updateState.info) },
-                                        shape = CircleShape,
-                                        modifier = Modifier.testTag("download_update_btn")
-                                    ) {
-                                        Icon(Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                                        Spacer(Modifier.size(6.dp))
-                                        Text(tr(language, "Pakua, Thibitisha na Sakinisha", "Download, Verify & Install"))
-                                    }
-                                }
-                            }
-                        }
-
-                        is UpdateUiState.PermissionRequired -> {
-                            Surface(
-                                shape = RoundedCornerShape(18.dp),
-                                color = colors.warningSoft,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Column(
-                                    modifier = Modifier.padding(14.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Text(
-                                        text = tr(
-                                            language,
-                                            "Ruhusu usakinishaji wa programu kwa Mengidata ili kuendelea na usakinishaji wa v${updateState.info.version}.",
-                                            "Allow 'Install unknown apps' for Mengidata to install v${updateState.info.version}."
-                                        ),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = colors.warning
-                                    )
-                                    Button(
-                                        onClick = onOpenInstallPermissionSettings,
-                                        shape = CircleShape,
-                                        modifier = Modifier.testTag("grant_install_permission_btn")
-                                    ) {
-                                        Icon(Icons.Rounded.Security, contentDescription = null, modifier = Modifier.size(18.dp))
-                                        Spacer(Modifier.size(6.dp))
-                                        Text(tr(language, "Fungua Ruhusa ya Kusakinisha", "Open Install Permission"))
-                                    }
-                                }
-                            }
-                        }
-
-                        is UpdateUiState.Downloading -> {
-                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text(
-                                        tr(language, "Inapakua v${updateState.info.version}...", "Downloading v${updateState.info.version}..."),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                    Text("${updateState.progressPercent}%", style = MaterialTheme.typography.labelMedium)
-                                }
-                                LinearProgressIndicator(
-                                    progress = { updateState.progressPercent / 100f },
-                                    modifier = Modifier.fillMaxWidth().height(8.dp).clip(CircleShape)
-                                )
-                            }
-                        }
-
-                        is UpdateUiState.Verifying -> {
-                            UpdateStatusBanner(
-                                containerColor = colors.subtleSurface,
-                                contentColor = MaterialTheme.colorScheme.onSurface
-                            ) {
-                                Icon(Icons.Rounded.VerifiedUser, contentDescription = null, modifier = Modifier.size(18.dp), tint = colors.income)
-                                Text(
-                                    tr(language, "Inathibitisha saini ya SHA-256 na toleo la APK...", "Verifying APK SHA-256 signature & version..."),
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                            }
-                        }
-
-                        is UpdateUiState.Installing -> {
-                            UpdateStatusBanner(
-                                containerColor = colors.incomeSoft,
-                                contentColor = colors.income
-                            ) {
-                                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = colors.income)
-                                Text(
-                                    tr(language, "APK imethibitishwa! Thibitisha dirisha la Android kusakinisha.", "APK verified! Confirm the Android install dialog."),
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                            }
-                        }
-
-                        is UpdateUiState.Success -> {
-                            UpdateStatusBanner(
-                                containerColor = colors.incomeSoft,
-                                contentColor = colors.income
-                            ) {
-                                Icon(Icons.Rounded.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Text(
-                                    tr(language, "Toleo v${updateState.version} limesakinishwa!", "Version v${updateState.version} installed!"),
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                            }
-                        }
-
-                        is UpdateUiState.Error -> {
-                            Surface(
-                                shape = RoundedCornerShape(18.dp),
-                                color = colors.expenseSoft,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Column(
-                                    modifier = Modifier.padding(14.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        Icon(Icons.Rounded.ErrorOutline, contentDescription = null, tint = colors.expense, modifier = Modifier.size(18.dp))
-                                        Text(updateState.message, style = MaterialTheme.typography.bodySmall, color = colors.expense)
-                                    }
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        if (updateState.retryInfo != null) {
-                                            OutlinedButton(onClick = { onDownloadUpdate(updateState.retryInfo) }, shape = CircleShape) {
-                                                Text(tr(language, "Jaribu tena", "Retry"))
-                                            }
-                                        }
-                                        OutlinedButton(onClick = onOpenReleasesBrowser, shape = CircleShape) {
-                                            Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
-                                            Spacer(Modifier.size(4.dp))
-                                            Text(tr(language, "Pakua GitHub", "GitHub APK"))
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(Modifier.height(12.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Button(
-                            onClick = onCheckUpdates,
-                            enabled = updateState !is UpdateUiState.Checking &&
-                                updateState !is UpdateUiState.Downloading &&
-                                updateState !is UpdateUiState.Verifying,
-                            shape = CircleShape,
-                            modifier = Modifier.weight(1f).height(46.dp).testTag("check_updates_btn")
-                        ) {
-                            Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.size(6.dp))
-                            Text(tr(language, "Kagua Sasisho", "Check Now"), maxLines = 1)
-                        }
-                        OutlinedButton(
-                            onClick = onOpenReleasesBrowser,
-                            shape = CircleShape,
-                            modifier = Modifier.height(46.dp).testTag("open_releases_web_btn")
-                        ) {
-                            Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.size(4.dp))
-                            Text("GitHub")
-                        }
-                    }
-                }
+                UpdateCenterCard(
+                    language = language,
+                    autoUpdateEnabled = autoUpdateEnabled,
+                    updateState = updateState,
+                    onSetAutoUpdate = onSetAutoUpdate,
+                    onCheckUpdates = onCheckUpdates,
+                    onDownloadUpdate = onDownloadUpdate,
+                    onCancelDownload = onCancelDownloadUpdate,
+                    onOpenInstallPermissionSettings = onOpenInstallPermissionSettings,
+                    onOpenReleasesBrowser = onOpenReleasesBrowser,
+                    onDirectInstallApk = onDirectInstallApk,
+                    onUninstallOldApp = onUninstallOldApp
+                )
             }
 
             // 3. Business Profile & Invoice Defaults
@@ -922,37 +589,92 @@ fun SettingsScreen(
                 }
             }
 
-            // 4A. In-App SQLite Database & Phone Storage Protection Card
+            // 4A. Automatic Phone Storage Backup & Zero-Loss Vault Card
             item(key = "database_phone_storage_card") {
                 val lastSyncedLabel = remember(phoneStorageStatus.lastSyncedMillis, language) {
                     if (phoneStorageStatus.lastSyncedMillis > 0L) {
-                        val fmt = SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault())
+                        val fmt = SimpleDateFormat("dd MMM yyyy, HH:mm:ss", Locale.getDefault())
                         fmt.format(Date(phoneStorageStatus.lastSyncedMillis))
                     } else {
                         tr(language, "Haijasawazishwa bado", "Not synced yet")
                     }
+                }
+                val sizeLabel = remember(phoneStorageStatus.backupSizeBytes) {
+                    val kb = phoneStorageStatus.backupSizeBytes / 1024.0
+                    if (kb >= 1024.0) String.format(Locale.US, "%.2f MB", kb / 1024.0)
+                    else if (kb > 0.0) String.format(Locale.US, "%.1f KB", kb)
+                    else "0 KB"
                 }
                 MengiCard {
                     OneUiSettingsSectionHeader(
                         icon = Icons.Rounded.PhoneAndroid,
                         iconBg = colors.incomeSoft,
                         iconTint = colors.income,
-                        title = tr(language, "Hifadhidata ya Ndani na Hifadhi ya Simu", "In-App Database & Phone Storage"),
+                        title = tr(language, "Hifadhi Kiotomatiki kwenye Simu", "Auto Phone Storage Backup"),
                         subtitle = tr(
                             language,
-                            "SQLite ya ndani (WAL) + nakala salama kwenye hifadhi ya simu.",
-                            "Local SQLite Room (WAL) + automatic phone storage mirror."
+                            "Data hujihifadhi zenyewe kwenye simu kila unapofanya badiliko au kufunga app.",
+                            "Data automatically backs itself up to phone storage on every change & exit."
                         ),
                         badge = {
                             StatusPill(
-                                text = tr(language, "Imelindwa", "Protected"),
-                                containerColor = colors.incomeSoft,
-                                contentColor = colors.income
+                                text = when {
+                                    phoneStorageStatus.isSyncingNow -> tr(language, "Inahifadhi...", "Syncing...")
+                                    autoPhoneBackupEnabled -> tr(language, "Auto: WAZI", "Auto: ON")
+                                    else -> tr(language, "Imesimama", "Paused")
+                                },
+                                containerColor = if (autoPhoneBackupEnabled) colors.incomeSoft else colors.warningSoft,
+                                contentColor = if (autoPhoneBackupEnabled) colors.income else colors.warning
                             )
                         }
                     )
                     Spacer(Modifier.height(12.dp))
 
+                    // Auto-Backup Master Toggle
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = colors.subtleSurface,
+                        border = BorderStroke(1.dp, colors.cardBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = tr(
+                                        language,
+                                        "Hifadhi Data Kiotomatiki (Auto-Save)",
+                                        "Automatic Phone Storage Sync"
+                                    ),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = tr(
+                                        language,
+                                        "Huhifadhi nakala ya papo hapo + nakala za siku 7 na hurejesha kiotomatiki ukisakinisha upya.",
+                                        "Instant auto-mirror + 7-day daily history + automatic restore on reinstall."
+                                    ),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = autoPhoneBackupEnabled,
+                                onCheckedChange = onSetAutoPhoneBackup,
+                                modifier = Modifier.testTag("auto_phone_backup_switch")
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+
+                    // Live Storage Proof Panel
                     Surface(
                         shape = RoundedCornerShape(16.dp),
                         color = colors.subtleSurface,
@@ -976,27 +698,73 @@ fun SettingsScreen(
                                 Text(
                                     text = tr(
                                         language,
-                                        "Ulinzi wa Data Kutofutika kwa Bahati Mbaya",
-                                        "Accidental Deletion & Storage Protection"
+                                        "Mahali Data Zinapohifadhiwa Kwenye Simu",
+                                        "Active Phone Storage Vault Locations"
                                     ),
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
                             Text(
-                                text = tr(
-                                    language,
-                                    "Kila badiliko huhifadhiwa kwenye hifadhidata ya ndani ya programu na kunakiliwa kwenye folda ya simu: ${phoneStorageStatus.phoneBackupPathLabel}",
-                                    "Every change is saved to the in-app database and mirrored to phone storage: ${phoneStorageStatus.phoneBackupPathLabel}"
-                                ),
+                                text = "• ${phoneStorageStatus.phoneBackupPathLabel} ($sizeLabel)",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurface
                             )
+                            if (phoneStorageStatus.hasCustomFolderBackup && phoneStorageStatus.customFolderLabel.isNotBlank()) {
+                                Text(
+                                    text = "• ${tr(language, "Folda Maalum", "Custom Folder")}: ${phoneStorageStatus.customFolderLabel}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = colors.income,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
                             Text(
-                                text = "${tr(language, "Nakala ya mwisho", "Last phone sync")}: $lastSyncedLabel · ${tr(language, "Kikapu cha urejeshaji", "Recovery vault")}: ${deletedRecords.size}",
+                                text = "${tr(language, "Hifadhi ya mwisho", "Last auto-save")}: $lastSyncedLabel",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
+                            Text(
+                                text = "${tr(language, "Nakala za siku", "Daily snapshots")}: ${phoneStorageStatus.dailySnapshotCount} · ${tr(language, "Kikapu cha urejeshaji", "Recovery vault")}: ${deletedRecords.size}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            HorizontalDivider(color = colors.cardBorder)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.weight(1f).padding(end = 8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (phonePermissions.storageManagerGranted) Icons.Rounded.CheckCircle else Icons.Rounded.Storage,
+                                        contentDescription = null,
+                                        tint = if (phonePermissions.storageManagerGranted) colors.income else colors.warning,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Text(
+                                        text = if (phonePermissions.storageManagerGranted) {
+                                            tr(language, "Ruhusa ya Hifadhi Kamili (Storage Manager): Imewashwa", "All Files Access (Storage Manager): Granted")
+                                        } else {
+                                            tr(language, "Ruhusu Hifadhi Kamili (Storage Manager) kuhifadhi na kusoma PDF za ankara", "Grant Storage Manager access to save & retrieve Invoice PDFs")
+                                        },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (phonePermissions.storageManagerGranted) colors.income else MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                                if (!phonePermissions.storageManagerGranted) {
+                                    FilledTonalButton(
+                                        onClick = onRequestManageStoragePermission,
+                                        shape = CircleShape,
+                                        modifier = Modifier.testTag("perm_storage_manager_btn")
+                                    ) {
+                                        Text(tr(language, "Ruhusu", "Allow"), style = MaterialTheme.typography.labelMedium)
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -1016,8 +784,28 @@ fun SettingsScreen(
                                 text = tr(
                                     language,
                                     "Hifadhi kwenye Simu Sasa",
-                                    "Sync Database to Phone Storage"
+                                    "Sync Database to Phone Storage Now"
                                 ),
+                                maxLines = 1
+                            )
+                        }
+
+                        OutlinedButton(
+                            onClick = onPickCustomBackupFolder,
+                            shape = CircleShape,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .testTag("pick_backup_folder_btn")
+                        ) {
+                            Icon(Icons.Rounded.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.size(8.dp))
+                            Text(
+                                text = if (phoneStorageStatus.hasCustomFolderBackup) {
+                                    tr(language, "Badili Folda Maalum ya Simu / SD", "Change Custom Phone / SD Folder")
+                                } else {
+                                    tr(language, "Chagua Folda ya Ziada (Simu / SD Card)", "Pick Extra Phone / SD Backup Folder")
+                                },
                                 maxLines = 1
                             )
                         }

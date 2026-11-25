@@ -31,11 +31,15 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Payments
 import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.Print
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -73,6 +77,7 @@ import tz.mengidata.app.data.db.InvoiceEntity
 import tz.mengidata.app.data.db.InvoiceItemEntity
 import tz.mengidata.app.data.accounting.PartySummary
 import tz.mengidata.app.data.db.InvoiceWithItems
+import tz.mengidata.app.data.db.SavedPublicPdf
 import tz.mengidata.app.i18n.AppLanguage
 import tz.mengidata.app.i18n.FormatUtils
 import tz.mengidata.app.i18n.tr
@@ -107,8 +112,16 @@ fun InvoicesScreen(
     onShareInvoicePdf: (InvoiceWithItems) -> Unit = {},
     onMarkUnpaid: (String) -> Unit,
     onDeleteInvoice: (String) -> Unit,
+    onOpenPdf: (InvoiceWithItems) -> Unit = {},
     onExportPdf: (InvoiceWithItems) -> Unit,
-    onPrintPdf: (InvoiceWithItems) -> Unit
+    onPrintPdf: (InvoiceWithItems) -> Unit,
+    savedPublicPdfs: List<SavedPublicPdf> = emptyList(),
+    storageManagerGranted: Boolean = false,
+    onRequestManageStoragePermission: () -> Unit = {},
+    onRefreshSavedPublicPdfs: () -> Unit = {},
+    onOpenSavedPublicPdf: (SavedPublicPdf) -> Unit = {},
+    onShareSavedPublicPdf: (SavedPublicPdf) -> Unit = {},
+    onDeleteSavedPublicPdf: (SavedPublicPdf) -> Unit = {}
 ) {
     val currency = settings.currency.ifBlank { "TZS" }
     val colors = LocalMengiColors.current
@@ -119,6 +132,7 @@ fun InvoicesScreen(
     var editingInvoice by remember { mutableStateOf<InvoiceWithItems?>(null) }
     var partialPayTarget by remember { mutableStateOf<InvoiceWithItems?>(null) }
     var showBuilder by remember { mutableStateOf(false) }
+    var showSavedPdfsSheet by remember { mutableStateOf(false) }
     var pendingDeleteId by remember { mutableStateOf<String?>(null) }
 
     val overdueCount = remember(invoices) { invoices.count { it.isOverdue } }
@@ -244,6 +258,91 @@ fun InvoicesScreen(
                 }
             }
 
+            item(key = "public_pdf_archive") {
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    color = colors.subtleSurface,
+                    border = BorderStroke(1.dp, colors.cardBorder),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.FolderOpen,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = tr(language, "Hifadhi ya PDF za Ankara (Simu)", "Saved PDF Invoices (Phone Storage)"),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = if (storageManagerGranted) {
+                                        tr(
+                                            language,
+                                            "Documents/Mengidata/Ankara · ${savedPublicPdfs.size} faili za PDF",
+                                            "Documents/Mengidata/Ankara · ${savedPublicPdfs.size} PDF files"
+                                        )
+                                    } else {
+                                        tr(
+                                            language,
+                                            "Ruhusu Storage Manager ili kusoma na kuhifadhi PDF zote za simu (${savedPublicPdfs.size} zimepatikana)",
+                                            "Grant Storage Manager access to save & retrieve all public PDFs (${savedPublicPdfs.size} found)"
+                                        )
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            FilledTonalButton(
+                                onClick = {
+                                    onRefreshSavedPublicPdfs()
+                                    showSavedPdfsSheet = true
+                                },
+                                shape = CircleShape,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("open_saved_pdfs_btn")
+                            ) {
+                                Icon(Icons.Rounded.PictureAsPdf, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.size(6.dp))
+                                Text(
+                                    text = tr(language, "PDF Zilizohifadhiwa (${savedPublicPdfs.size})", "Saved PDFs (${savedPublicPdfs.size})"),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            if (!storageManagerGranted) {
+                                Button(
+                                    onClick = onRequestManageStoragePermission,
+                                    shape = CircleShape,
+                                    modifier = Modifier.testTag("grant_storage_manager_invoices_btn")
+                                ) {
+                                    Icon(Icons.Rounded.Security, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.size(4.dp))
+                                    Text(tr(language, "Ruhusu Hifadhi", "Allow Storage"), maxLines = 1)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             item(key = "search_and_filters") {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedTextField(
@@ -350,6 +449,7 @@ fun InvoicesScreen(
             onShare = { onShareInvoice(fresh) },
             onSharePdf = { onShareInvoicePdf(fresh) },
             onMarkUnpaid = { onMarkUnpaid(fresh.invoice.id) },
+            onOpenPdf = { onOpenPdf(fresh) },
             onExportPdf = { onExportPdf(fresh) },
             onPrintPdf = { onPrintPdf(fresh) },
             onDelete = {
@@ -388,6 +488,20 @@ fun InvoicesScreen(
                 showBuilder = false
                 editingInvoice = null
             }
+        )
+    }
+
+    if (showSavedPdfsSheet) {
+        SavedPublicPdfsSheet(
+            savedPdfs = savedPublicPdfs,
+            storageManagerGranted = storageManagerGranted,
+            language = language,
+            onRequestManageStoragePermission = onRequestManageStoragePermission,
+            onRefresh = onRefreshSavedPublicPdfs,
+            onOpenPdf = onOpenSavedPublicPdf,
+            onSharePdf = onShareSavedPublicPdf,
+            onDeletePdf = onDeleteSavedPublicPdf,
+            onDismiss = { showSavedPdfsSheet = false }
         )
     }
 
@@ -527,6 +641,7 @@ private fun InvoiceDetailSheet(
     onShare: () -> Unit,
     onSharePdf: () -> Unit,
     onMarkUnpaid: () -> Unit,
+    onOpenPdf: () -> Unit,
     onExportPdf: () -> Unit,
     onPrintPdf: () -> Unit,
     onDelete: () -> Unit
@@ -613,6 +728,15 @@ private fun InvoiceDetailSheet(
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilledTonalButton(
+                    onClick = onOpenPdf,
+                    shape = CircleShape,
+                    modifier = Modifier.weight(1f).height(48.dp).testTag("open_invoice_pdf_btn")
+                ) {
+                    Icon(Icons.Rounded.Visibility, contentDescription = null, modifier = Modifier.size(17.dp))
+                    Spacer(Modifier.size(5.dp))
+                    Text(tr(language, "Fungua PDF", "Open PDF"), maxLines = 1)
+                }
+                FilledTonalButton(
                     onClick = onExportPdf,
                     shape = CircleShape,
                     modifier = Modifier.weight(1f).height(48.dp).testTag("export_invoice_pdf_btn")
@@ -621,24 +745,26 @@ private fun InvoiceDetailSheet(
                     Spacer(Modifier.size(5.dp))
                     Text(tr(language, "Hifadhi PDF", "Save PDF"), maxLines = 1)
                 }
-                FilledTonalButton(
+            }
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
                     onClick = onSharePdf,
                     shape = CircleShape,
-                    modifier = Modifier.weight(1f).height(48.dp).testTag("share_invoice_pdf_btn")
+                    modifier = Modifier.weight(1f).height(46.dp).testTag("share_invoice_pdf_btn")
                 ) {
                     Icon(Icons.Rounded.PictureAsPdf, contentDescription = null, modifier = Modifier.size(17.dp))
                     Spacer(Modifier.size(5.dp))
                     Text(tr(language, "Tuma PDF", "Share PDF"), maxLines = 1)
                 }
-            }
-            OutlinedButton(
-                onClick = onPrintPdf,
-                shape = CircleShape,
-                modifier = Modifier.fillMaxWidth().height(46.dp).testTag("print_invoice_pdf_btn")
-            ) {
-                Icon(Icons.Rounded.Print, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.size(6.dp))
-                Text(tr(language, "Chapisha Ankara", "Print Invoice"))
+                OutlinedButton(
+                    onClick = onPrintPdf,
+                    shape = CircleShape,
+                    modifier = Modifier.weight(1f).height(46.dp).testTag("print_invoice_pdf_btn")
+                ) {
+                    Icon(Icons.Rounded.Print, contentDescription = null, modifier = Modifier.size(17.dp))
+                    Spacer(Modifier.size(5.dp))
+                    Text(tr(language, "Chapisha", "Print"), maxLines = 1)
+                }
             }
 
             if (!item.isPaid) {
@@ -1067,3 +1193,167 @@ private fun InvoiceBuilderSheet(
         }
     }
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SavedPublicPdfsSheet(
+    savedPdfs: List<SavedPublicPdf>,
+    storageManagerGranted: Boolean,
+    language: AppLanguage,
+    onRequestManageStoragePermission: () -> Unit,
+    onRefresh: () -> Unit,
+    onOpenPdf: (SavedPublicPdf) -> Unit,
+    onSharePdf: (SavedPublicPdf) -> Unit,
+    onDeletePdf: (SavedPublicPdf) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val colors = LocalMengiColors.current
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = OneUiSheetShape
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = tr(language, "PDF za Ankara Kwenye Simu", "Saved Invoice PDFs"),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Documents/Mengidata/Ankara",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                IconButton(onClick = onRefresh) {
+                    Icon(
+                        imageVector = Icons.Rounded.Refresh,
+                        contentDescription = tr(language, "Onyesha upya", "Refresh")
+                    )
+                }
+            }
+
+            if (!storageManagerGranted) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = colors.warningSoft,
+                    border = BorderStroke(1.dp, colors.warning.copy(alpha = 0.4f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = tr(
+                                language,
+                                "Ruhusa ya Storage Manager (All Files Access) haijawashwa. Washa ili uweze kuhifadhi na kurejesha PDF zote za ankara kwenye hifadhi ya simu.",
+                                "All Files Access (MANAGE_EXTERNAL_STORAGE) is not enabled yet. Enable it to save and retrieve all invoice PDFs from public storage."
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Button(
+                            onClick = onRequestManageStoragePermission,
+                            shape = CircleShape,
+                            modifier = Modifier.fillMaxWidth().testTag("sheet_grant_storage_manager_btn")
+                        ) {
+                            Icon(Icons.Rounded.Security, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.size(6.dp))
+                            Text(tr(language, "Ruhusu Storage Manager", "Grant All Files Access"))
+                        }
+                    }
+                }
+            }
+
+            if (savedPdfs.isEmpty()) {
+                EmptyStateCard(
+                    title = tr(language, "Hakuna PDF iliyohifadhiwa bado", "No saved PDFs yet"),
+                    subtitle = tr(
+                        language,
+                        "Fungua ankara yoyote na bonyeza 'Hifadhi PDF' ili ihifadhiwe moja kwa moja kwenye Documents/Mengidata/Ankara.",
+                        "Open any invoice and tap 'Save PDF' to store it directly in Documents/Mengidata/Ankara."
+                    ),
+                    icon = Icons.Rounded.PictureAsPdf
+                )
+            } else {
+                savedPdfs.forEach { pdf ->
+                    val sizeKb = ((pdf.sizeBytes + 1023L) / 1024L).coerceAtLeast(1L)
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = colors.subtleSurface,
+                        border = BorderStroke(1.dp, colors.cardBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.PictureAsPdf,
+                                contentDescription = null,
+                                tint = colors.expense,
+                                modifier = Modifier.size(28.dp)
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = pdf.displayName,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "$sizeKb KB · ${pdf.locationLabel}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            IconButton(onClick = { onOpenPdf(pdf) }) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Visibility,
+                                    contentDescription = tr(language, "Fungua PDF", "Open PDF"),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            IconButton(onClick = { onSharePdf(pdf) }) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Share,
+                                    contentDescription = tr(language, "Tuma PDF", "Share PDF"),
+                                    tint = colors.income
+                                )
+                            }
+                            IconButton(onClick = { onDeletePdf(pdf) }) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Delete,
+                                    contentDescription = tr(language, "Futa PDF", "Delete PDF"),
+                                    tint = colors.expense
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+

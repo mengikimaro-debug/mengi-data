@@ -2,9 +2,9 @@ package tz.mengidata.app.i18n
 
 import java.text.DecimalFormat
 import java.text.DecimalFormatSymbols
-import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Date
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToLong
@@ -37,68 +37,64 @@ fun tr(lang: AppLanguage, sw: String, en: String): String =
     if (lang == AppLanguage.EN) en else sw
 
 object FormatUtils {
-    private val isoFormat: SimpleDateFormat
-        get() = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+    private val isoDateFormatter: DateTimeFormatter = DateTimeFormatter.ISO_LOCAL_DATE
+    private val isoTimestampFormatter: DateTimeFormatter =
+        DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS", Locale.US)
 
-    private val isoTimestampFormat: SimpleDateFormat
-        get() = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS", Locale.US)
+    private val numberFormatLocal: ThreadLocal<DecimalFormat> = ThreadLocal.withInitial {
+        DecimalFormat("#,##0", DecimalFormatSymbols(Locale.US))
+    }
 
-    private val numberFormat: DecimalFormat
-        get() = DecimalFormat("#,##0", DecimalFormatSymbols(Locale.US))
+    private val monthsSw = arrayOf("Jan", "Feb", "Mac", "Apr", "Mei", "Jun", "Jul", "Ago", "Sep", "Okt", "Nov", "Des")
+    private val monthsEn = arrayOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
-    fun todayIso(): String = isoFormat.format(Date())
+    fun todayIso(): String = LocalDate.now().format(isoDateFormatter)
 
-    fun nowIsoTimestamp(): String = isoTimestampFormat.format(Date())
+    fun nowIsoTimestamp(): String = LocalDateTime.now().format(isoTimestampFormatter)
 
     fun addDaysIso(baseIso: String, days: Int): String {
-        val cal = Calendar.getInstance()
-        val parsed = runCatching { isoFormat.parse(baseIso) }.getOrNull()
-        if (parsed != null) cal.time = parsed
-        cal.add(Calendar.DAY_OF_YEAR, days)
-        return isoFormat.format(cal.time)
+        val date = parseLocalDateFast(baseIso) ?: LocalDate.now()
+        return date.plusDays(days.toLong()).format(isoDateFormatter)
     }
 
     fun addMonthsIso(baseIso: String, months: Int): String {
-        val cal = Calendar.getInstance()
-        val parsed = runCatching { isoFormat.parse(baseIso) }.getOrNull()
-        if (parsed != null) cal.time = parsed
-        cal.add(Calendar.MONTH, months)
-        return isoFormat.format(cal.time)
+        val date = parseLocalDateFast(baseIso) ?: LocalDate.now()
+        return date.plusMonths(months.toLong()).format(isoDateFormatter)
     }
 
     fun monthKey(isoDate: String): String =
         if (isoDate.length >= 7) isoDate.substring(0, 7) else todayIso().substring(0, 7)
 
     fun shortMonthLabel(monthKey: String, lang: AppLanguage): String {
-        val monthNum = monthKey.takeLast(2).toIntOrNull() ?: return monthKey
-        val sw = listOf("Jan", "Feb", "Mac", "Apr", "Mei", "Jun", "Jul", "Ago", "Sep", "Okt", "Nov", "Des")
-        val en = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
-        val list = if (lang == AppLanguage.EN) en else sw
-        return list.getOrElse(monthNum - 1) { monthKey }
+        val monthNum = if (monthKey.length >= 2) monthKey.substring(monthKey.length - 2).toIntOrNull() else null
+        if (monthNum == null || monthNum !in 1..12) return monthKey
+        val arr = if (lang == AppLanguage.EN) monthsEn else monthsSw
+        return arr[monthNum - 1]
     }
 
     fun friendlyDateLabel(isoDate: String, lang: AppLanguage): String {
         val clean = isoDate.trim()
         if (clean.length < 10) return clean
-        val today = todayIso()
-        val yesterday = addDaysIso(today, -1)
-        val tomorrow = addDaysIso(today, 1)
-        val day = clean.substring(8, 10).toIntOrNull()
-        val monthShort = shortMonthLabel(clean.substring(0, 7), lang)
-        val year = clean.substring(0, 4)
+        val datePart = clean.substring(0, 10)
+        val today = LocalDate.now()
+        val todayStr = today.format(isoDateFormatter)
+        val day = datePart.substring(8, 10).toIntOrNull()
+        val monthShort = shortMonthLabel(datePart.substring(0, 7), lang)
+        val year = datePart.substring(0, 4)
         val compact = if (day != null) "$day $monthShort" else clean
-        return when (clean.substring(0, 10)) {
-            today -> "${tr(lang, "Leo", "Today")} · $compact"
-            yesterday -> "${tr(lang, "Jana", "Yesterday")} · $compact"
-            tomorrow -> "${tr(lang, "Kesho", "Tomorrow")} · $compact"
-            else -> if (year == today.substring(0, 4)) compact else "$compact $year"
+        return when (datePart) {
+            todayStr -> "${tr(lang, "Leo", "Today")} · $compact"
+            today.minusDays(1).format(isoDateFormatter) -> "${tr(lang, "Jana", "Yesterday")} · $compact"
+            today.plusDays(1).format(isoDateFormatter) -> "${tr(lang, "Kesho", "Tomorrow")} · $compact"
+            else -> if (year == todayStr.substring(0, 4)) compact else "$compact $year"
         }
     }
 
     fun formatMoney(amount: Double, currency: String = "TZS"): String {
         val rounded = amount.roundToLong()
         val prefix = if (rounded < 0) "-" else ""
-        return "$prefix$currency ${numberFormat.format(abs(rounded))}"
+        val formatted = numberFormatLocal.get()?.format(abs(rounded)) ?: abs(rounded).toString()
+        return "$prefix$currency $formatted"
     }
 
     fun formatCompactMoney(amount: Double, currency: String = "TZS"): String {
@@ -114,30 +110,18 @@ object FormatUtils {
 
     fun isDateInPeriod(isoDate: String, period: PeriodFilter): Boolean {
         if (period == PeriodFilter.ALL) return true
-        val parsed = runCatching { isoFormat.parse(isoDate) }.getOrNull() ?: return false
-        val today = Calendar.getInstance()
-        val target = Calendar.getInstance().apply { time = parsed }
-
+        if (isoDate.length < 10) return false
+        val datePart = isoDate.substring(0, 10)
+        val today = LocalDate.now()
         return when (period) {
-            PeriodFilter.DAY -> {
-                today.get(Calendar.YEAR) == target.get(Calendar.YEAR) &&
-                    today.get(Calendar.DAY_OF_YEAR) == target.get(Calendar.DAY_OF_YEAR)
-            }
-            PeriodFilter.WEEK -> {
-                val cutoff = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -7) }
-                !target.before(cutoff)
-            }
+            PeriodFilter.DAY -> datePart == today.format(isoDateFormatter)
+            PeriodFilter.WEEK -> datePart >= today.minusDays(7).format(isoDateFormatter)
             PeriodFilter.MONTH -> {
-                today.get(Calendar.YEAR) == target.get(Calendar.YEAR) &&
-                    today.get(Calendar.MONTH) == target.get(Calendar.MONTH)
+                val monthPrefix = today.format(isoDateFormatter).substring(0, 7)
+                datePart.startsWith(monthPrefix)
             }
-            PeriodFilter.MONTHS_6 -> {
-                val cutoff = Calendar.getInstance().apply { add(Calendar.MONTH, -6) }
-                !target.before(cutoff)
-            }
-            PeriodFilter.YEAR -> {
-                today.get(Calendar.YEAR) == target.get(Calendar.YEAR)
-            }
+            PeriodFilter.MONTHS_6 -> datePart >= today.minusMonths(6).format(isoDateFormatter)
+            PeriodFilter.YEAR -> datePart.startsWith(today.year.toString())
             PeriodFilter.ALL -> true
         }
     }
@@ -145,6 +129,11 @@ object FormatUtils {
     fun isOverdue(dueDateIso: String): Boolean {
         if (dueDateIso.isBlank()) return false
         return dueDateIso < todayIso()
+    }
+
+    private fun parseLocalDateFast(iso: String): LocalDate? {
+        if (iso.length < 10) return null
+        return runCatching { LocalDate.parse(iso.substring(0, 10), isoDateFormatter) }.getOrNull()
     }
 
     val incomeCategories = listOf(
@@ -158,64 +147,50 @@ object FormatUtils {
     val expenseCategories = listOf(
         "Manunuzi / stock",
         "Kodi ya pango",
-        "Mishahara",
         "Umeme & maji",
-        "Internet & simu",
+        "Mishahara",
         "Usafiri",
-        "Chakula",
-        "Matengenezo",
-        "Masoko & matangazo",
-        "Kodi & vibali",
-        "Afya & bima",
+        "Masoko",
+        "Bili za nyumbani",
         "Matumizi mengine"
     )
 
-    val paymentMethods = listOf(
-        "M-Pesa",
-        "Benki",
-        "Cash",
-        "Tigo Pesa",
-        "Airtel Money",
-        "HaloPesa"
-    )
+    val paymentMethods = listOf("cash", "mobile", "bank", "card")
 
-    fun localizedCategory(raw: String, lang: AppLanguage): String {
-        val clean = raw.trim()
-        if (clean.isEmpty()) return clean
-        return when (clean.lowercase(Locale.ROOT)) {
-            "mauzo ya bidhaa", "product sales" -> tr(lang, "Mauzo ya Bidhaa", "Product Sales")
-            "huduma", "services" -> tr(lang, "Huduma", "Services")
-            "ushauri", "consulting" -> tr(lang, "Ushauri", "Consulting")
-            "malipo ya ankara", "invoice payments" -> tr(lang, "Malipo ya Ankara", "Invoice Payments")
-            "kamisheni", "commission" -> tr(lang, "Kamisheni", "Commission")
-            "mapato mengine", "other income" -> tr(lang, "Mapato Mengine", "Other Income")
-            "manunuzi / stock", "manunuzi ya stock", "manunuzi ya bidhaa", "stock & purchases" -> tr(lang, "Manunuzi ya Bidhaa", "Stock & Purchases")
-            "kodi ya pango", "rent" -> tr(lang, "Kodi ya Pango", "Rent")
-            "mishahara", "payroll", "salaries" -> tr(lang, "Mishahara", "Payroll")
-            "umeme & maji", "umeme na maji", "electricity & water", "utilities" -> tr(lang, "Umeme na Maji", "Electricity & Water")
-            "internet & simu", "intaneti na simu", "internet & phone" -> tr(lang, "Intaneti na Simu", "Internet & Phone")
-            "usafiri", "transport" -> tr(lang, "Usafiri", "Transport")
-            "chakula", "food" -> tr(lang, "Chakula", "Food")
-            "matengenezo", "maintenance" -> tr(lang, "Matengenezo", "Maintenance")
-            "masoko & matangazo", "masoko na matangazo", "marketing & ads" -> tr(lang, "Masoko na Matangazo", "Marketing & Ads")
-            "kodi & vibali", "kodi na vibali", "taxes & permits" -> tr(lang, "Kodi na Vibali", "Taxes & Permits")
-            "afya & bima", "afya na bima", "health & insurance" -> tr(lang, "Afya na Bima", "Health & Insurance")
-            "bili", "bills", "bill" -> tr(lang, "Bili", "Bills")
-            "akiba", "savings" -> tr(lang, "Akiba", "Savings")
-            "household bill", "bili ya nyumbani" -> tr(lang, "Bili ya Nyumbani", "Household Bill")
-            "matumizi mengine", "other expenses" -> tr(lang, "Matumizi Mengine", "Other Expenses")
-            "mengineyo", "other" -> tr(lang, "Mengineyo", "Other")
-            else -> clean
+    fun localizedMethod(code: String, lang: AppLanguage): String = when (code.lowercase(Locale.ROOT)) {
+        "cash" -> tr(lang, "Taslimu", "Cash")
+        "mobile" -> tr(lang, "Simu (M-Pesa/Tigo/Airtel)", "Mobile Money")
+        "bank" -> tr(lang, "Benki", "Bank Transfer")
+        "card" -> tr(lang, "Kadi", "Card")
+        else -> code
+    }
+
+    fun localizedCategory(category: String, lang: AppLanguage): String {
+        if (lang == AppLanguage.SW) return category
+        return when (category) {
+            "Mauzo ya bidhaa" -> "Product Sales"
+            "Huduma" -> "Services"
+            "Ushauri" -> "Consulting"
+            "Malipo ya ankara" -> "Invoice Payment"
+            "Mapato mengine" -> "Other Income"
+            "Manunuzi / stock" -> "Inventory / Stock"
+            "Kodi ya pango" -> "Rent"
+            "Umeme & maji" -> "Utilities"
+            "Mishahara" -> "Salaries"
+            "Usafiri" -> "Transport"
+            "Masoko" -> "Marketing"
+            "Bili za nyumbani" -> "Household Bills"
+            "Akiba / Akiba Vault" -> "Savings Transfer"
+            "Matumizi mengine" -> "Other Expense"
+            else -> category
         }
     }
 
-    fun localizedMethod(raw: String, lang: AppLanguage): String {
-        val clean = raw.trim()
-        if (clean.isEmpty()) return clean
-        return when (clean.lowercase(Locale.ROOT)) {
-            "benki", "bank", "bank transfer", "uhamisho wa benki" -> tr(lang, "Benki", "Bank")
-            "cash", "taslimu" -> tr(lang, "Taslimu", "Cash")
-            else -> clean
-        }
+    fun localizedBillFrequency(freq: String, lang: AppLanguage): String = when (freq.lowercase(Locale.ROOT)) {
+        "weekly" -> tr(lang, "Kila wiki", "Weekly")
+        "monthly" -> tr(lang, "Kila mwezi", "Monthly")
+        "quarterly" -> tr(lang, "Kila robo mwaka", "Quarterly")
+        "yearly" -> tr(lang, "Kila mwaka", "Yearly")
+        else -> tr(lang, "Mara moja", "One-time")
     }
 }

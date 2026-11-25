@@ -84,9 +84,11 @@ import tz.mengidata.app.ui.components.PremiumReveal
 import tz.mengidata.app.ui.components.PulsingStatusDot
 import tz.mengidata.app.ui.components.SmartAutoEntrySheet
 import tz.mengidata.app.ui.components.SpendingTrendsChartCard
+import tz.mengidata.app.ui.components.DashboardUpdateCapsule
 import tz.mengidata.app.ui.components.StatusPill
 import tz.mengidata.app.ui.components.bucketVisualColors
 import tz.mengidata.app.ui.theme.LocalMengiColors
+import tz.mengidata.app.updater.UpdateInfo
 import tz.mengidata.app.updater.UpdateUiState
 import tz.mengidata.app.viewmodel.DashboardMetrics
 
@@ -118,7 +120,10 @@ fun DashboardScreen(
     onSaveSmartAutoEntry: (String, Double, String, String, String, AutoBucket?, Boolean) -> Unit,
     onReconcileLedger: () -> Unit,
     onExportColorExcel: () -> Unit,
-    onExportCategoryCsv: () -> Unit
+    onExportCategoryCsv: () -> Unit,
+    onDownloadUpdate: (UpdateInfo) -> Unit = {},
+    onCancelDownloadUpdate: () -> Unit = {},
+    onOpenInstallPermissionSettings: () -> Unit = {}
 ) {
     val colors = LocalMengiColors.current
     val currency = settings.currency.ifBlank { "TZS" }
@@ -135,49 +140,22 @@ fun DashboardScreen(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 112.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            // Update Available Pill Banner
-            if (updateState is UpdateUiState.Available) {
+            // Bespoke Floating Turbo Update Capsule
+            if (updateState is UpdateUiState.Available ||
+                updateState is UpdateUiState.Downloading ||
+                updateState is UpdateUiState.Verifying ||
+                updateState is UpdateUiState.Installing ||
+                updateState is UpdateUiState.PermissionRequired
+            ) {
                 item(key = "update_banner") {
-                    Surface(
-                        onClick = onOpenSettings,
-                        shape = MaterialTheme.shapes.large,
-                        color = colors.limeSoft,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("dashboard_update_banner")
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.SystemUpdate,
-                                contentDescription = tr(language, "Sasisho linapatikana", "Update available"),
-                                tint = colors.limeInk
-                            )
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = tr(
-                                        language,
-                                        "Toleo jipya ${updateState.info.version} linapatikana",
-                                        "Version ${updateState.info.version} available"
-                                    ),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    color = colors.limeInk
-                                )
-                                Text(
-                                    text = tr(
-                                        language,
-                                        "Gusa kufungua Mipangilio na kusakinisha kwa usalama.",
-                                        "Tap to open Settings and install securely."
-                                    ),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = colors.limeInk
-                                )
-                            }
-                        }
-                    }
+                    DashboardUpdateCapsule(
+                        updateState = updateState,
+                        language = language,
+                        onOpenSettings = onOpenSettings,
+                        onDownloadUpdate = onDownloadUpdate,
+                        onCancelDownload = onCancelDownloadUpdate,
+                        onOpenInstallPermissionSettings = onOpenInstallPermissionSettings
+                    )
                 }
             }
 

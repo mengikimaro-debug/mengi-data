@@ -2,8 +2,6 @@ package tz.mengidata.app.ui.theme
 
 import android.app.Activity
 import android.os.Build
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
@@ -19,7 +17,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
@@ -388,40 +385,6 @@ private fun deriveExtendedColors(
 }
 
 @Composable
-private fun animateColorScheme(target: ColorScheme): ColorScheme {
-    val spec = tween<Color>(durationMillis = 240)
-    val primary by animateColorAsState(target.primary, spec, label = "theme_primary")
-    val onPrimary by animateColorAsState(target.onPrimary, spec, label = "theme_onPrimary")
-    val primaryContainer by animateColorAsState(target.primaryContainer, spec, label = "theme_primaryContainer")
-    val onPrimaryContainer by animateColorAsState(target.onPrimaryContainer, spec, label = "theme_onPrimaryContainer")
-    val background by animateColorAsState(target.background, spec, label = "theme_background")
-    val onBackground by animateColorAsState(target.onBackground, spec, label = "theme_onBackground")
-    val surface by animateColorAsState(target.surface, spec, label = "theme_surface")
-    val onSurface by animateColorAsState(target.onSurface, spec, label = "theme_onSurface")
-    val surfaceVariant by animateColorAsState(target.surfaceVariant, spec, label = "theme_surfaceVariant")
-    val onSurfaceVariant by animateColorAsState(target.onSurfaceVariant, spec, label = "theme_onSurfaceVariant")
-    val outline by animateColorAsState(target.outline, spec, label = "theme_outline")
-
-    return target.copy(
-        primary = primary,
-        onPrimary = onPrimary,
-        primaryContainer = primaryContainer,
-        onPrimaryContainer = onPrimaryContainer,
-        background = background,
-        onBackground = onBackground,
-        surface = surface,
-        onSurface = onSurface,
-        surfaceVariant = surfaceVariant,
-        onSurfaceVariant = onSurfaceVariant,
-        outline = outline
-    )
-}
-
-/**
- * Dynamic One UI 8.5 Theme Provider supporting System, Light, and Dark modes,
- * optional Android 12+ Material You dynamic color, and WCAG AA/AAA contrast enforcement.
- */
-@Composable
 fun MengidataTheme(
     themeMode: ThemeMode = ThemeMode.SYSTEM,
     dynamicColorEnabled: Boolean = false,
@@ -431,21 +394,23 @@ fun MengidataTheme(
     onSetHighContrast: (Boolean) -> Unit = {},
     content: @Composable () -> Unit
 ) {
+    val systemDark = isSystemInDarkTheme()
     val isDark = when (themeMode) {
-        ThemeMode.SYSTEM -> isSystemInDarkTheme()
         ThemeMode.LIGHT -> false
         ThemeMode.DARK -> true
+        ThemeMode.SYSTEM -> systemDark
     }
 
     val context = LocalContext.current
     val dynamicSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     val useDynamic = dynamicColorEnabled && dynamicSupported
 
-    val baseScheme = remember(isDark, useDynamic, context) {
-        if (useDynamic && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            if (isDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        } else {
-            if (isDark) MengiDarkColorScheme else MengiLightColorScheme
+    val baseScheme = remember(isDark, useDynamic) {
+        when {
+            useDynamic && isDark -> dynamicDarkColorScheme(context)
+            useDynamic && !isDark -> dynamicLightColorScheme(context)
+            isDark -> MengiDarkColorScheme
+            else -> MengiLightColorScheme
         }
     }
 
@@ -456,8 +421,6 @@ fun MengidataTheme(
             highContrast = highContrastEnabled
         )
     }
-
-    val animatedScheme = animateColorScheme(accessibleScheme)
 
     val extended = remember(accessibleScheme, isDark, useDynamic, highContrastEnabled) {
         deriveExtendedColors(
@@ -505,7 +468,7 @@ fun MengidataTheme(
         LocalMengiThemeState provides themeState
     ) {
         MaterialTheme(
-            colorScheme = animatedScheme,
+            colorScheme = accessibleScheme,
             typography = MengiTypography,
             shapes = MengiShapes,
             content = content

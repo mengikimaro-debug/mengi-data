@@ -14,6 +14,7 @@ import android.media.AudioAttributes
 import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
+import android.os.Environment
 import android.provider.Settings
 import androidx.annotation.DrawableRes
 import androidx.core.app.NotificationCompat
@@ -32,11 +33,15 @@ data class PhonePermissionsSnapshot(
     val postNotificationsGranted: Boolean = false,
     val systemNotificationsEnabled: Boolean = false,
     val installPackagesGranted: Boolean = false,
+    val storageManagerGranted: Boolean = false,
     val storageVaultReady: Boolean = true,
     val channelsConfigured: Int = 5
 ) {
     val allRequiredGranted: Boolean
-        get() = postNotificationsGranted && systemNotificationsEnabled && installPackagesGranted
+        get() = postNotificationsGranted &&
+            systemNotificationsEnabled &&
+            installPackagesGranted &&
+            storageManagerGranted
 }
 
 /**
@@ -66,18 +71,20 @@ class MengiNotificationManager(private val context: Context) {
         }.getOrNull()
     }
 
-    init {
-        ensureNotificationChannels()
-    }
+    @Volatile
+    private var channelsInitialized: Boolean = false
 
     fun ensureNotificationChannels() {
+        if (channelsInitialized) return
         val manager = appContext.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
             ?: return
+        synchronized(this) {
+            if (channelsInitialized) return
 
-        // Clean up legacy v1 channels so updated importance & sound settings take effect immediately
-        LEGACY_CHANNELS.forEach { oldId ->
-            runCatching { manager.deleteNotificationChannel(oldId) }
-        }
+            // Clean up legacy v1 channels once per process
+            LEGACY_CHANNELS.forEach { oldId ->
+                runCatching { manager.deleteNotificationChannel(oldId) }
+            }
 
         val defaultSoundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
         val audioAttrs = AudioAttributes.Builder()
@@ -144,7 +151,9 @@ class MengiNotificationManager(private val context: Context) {
             }
         )
 
-        manager.createNotificationChannels(channels)
+            manager.createNotificationChannels(channels)
+            channelsInitialized = true
+        }
     }
 
     fun isPostNotificationsGranted(): Boolean {
@@ -170,12 +179,23 @@ class MengiNotificationManager(private val context: Context) {
         }
     }
 
+    fun isStorageManagerGranted(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Environment.isExternalStorageManager()
+        } else {
+            ContextCompat.checkSelfPermission(
+                appContext,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE
+            ) == PackageManager.PERMISSION_GRANTED
+        }
+    }
+
     fun getPermissionsSnapshot(storageVaultReady: Boolean = true): PhonePermissionsSnapshot {
-        ensureNotificationChannels()
         return PhonePermissionsSnapshot(
             postNotificationsGranted = isPostNotificationsGranted(),
             systemNotificationsEnabled = areSystemNotificationsEnabled(),
             installPackagesGranted = canRequestPackageInstalls(),
+            storageManagerGranted = isStorageManagerGranted(),
             storageVaultReady = storageVaultReady,
             channelsConfigured = 5
         )
@@ -200,6 +220,26 @@ class MengiNotificationManager(private val context: Context) {
             Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
             Uri.parse("package:${appContext.packageName}")
         ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+
+    fun buildManageStoragePermissionIntent(): Intent {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Intent(
+                Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                Uri.parse("package:${appContext.packageName}")
+            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        } else {
+            buildAppDetailsSettingsIntent()
+        }
+    }
+
+    fun buildManageAllFilesFallbackIntent(): Intent {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        } else {
+            buildAppDetailsSettingsIntent()
+        }
     }
 
     fun sendTestNotification(language: AppLanguage, businessName: String): Boolean {
@@ -482,6 +522,11 @@ class MengiNotificationManager(private val context: Context) {
             return false
         }
         ensureNotificationChannels()
+        val sysManager = appContext.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+        val channel = sysManager?.getNotificationChannel(channelId)
+        if (channel != null && channel.importance == NotificationManager.IMPORTANCE_NONE) {
+            return false
+        }
 
         val launchIntent = Intent(appContext, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP

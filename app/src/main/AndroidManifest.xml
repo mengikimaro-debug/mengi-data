@@ -8,6 +8,18 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Used strictly for direct GitHub Release APK self-updates (non-Play distribution). -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Allows Android 12+ (API 31+) frictionless self-updates when Mengidata is the update owner. -->
+    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
+    <!-- Allows one-tap uninstall prompt if an older build had a different signing key. -->
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+    <!-- Public device storage access (Documents/Mengidata & PDF Invoices) for direct APK distribution. -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
 
     <application
         android:allowBackup="true"

@@ -23,4 +23,9 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         viewModel.onResumeCheckInstallPermission()
     }
+
+    override fun onStop() {
+        super.onStop()
+        viewModel.autoBackupOnBackground()
+    }
 }

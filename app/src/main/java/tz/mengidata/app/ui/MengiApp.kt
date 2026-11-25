@@ -1,20 +1,20 @@
 package tz.mengidata.app.ui
 
 import android.Manifest
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContract
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.core.FastOutSlowInEasing
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
@@ -139,34 +139,10 @@ fun MengiApp(viewModel: MengiViewModel) {
     val dynamicColorEnabled by viewModel.dynamicColorEnabled.collectAsStateWithLifecycle()
     val highContrastEnabled by viewModel.highContrastEnabled.collectAsStateWithLifecycle()
     val language by viewModel.language.collectAsStateWithLifecycle()
-    val autoUpdateEnabled by viewModel.autoUpdateEnabled.collectAsStateWithLifecycle()
     val privacyMaskEnabled by viewModel.privacyMaskEnabled.collectAsStateWithLifecycle()
     val pinLockEnabled by viewModel.pinLockEnabled.collectAsStateWithLifecycle()
     val isAppUnlocked by viewModel.isAppUnlocked.collectAsStateWithLifecycle()
-    val phonePermissions by viewModel.phonePermissions.collectAsStateWithLifecycle()
-    val notificationsEnabled by viewModel.notificationsEnabled.collectAsStateWithLifecycle()
-    val billAlertsEnabled by viewModel.billAlertsEnabled.collectAsStateWithLifecycle()
-    val transactionAlertsEnabled by viewModel.transactionAlertsEnabled.collectAsStateWithLifecycle()
-    val savingsAlertsEnabled by viewModel.savingsAlertsEnabled.collectAsStateWithLifecycle()
-    val systemAlertsEnabled by viewModel.systemAlertsEnabled.collectAsStateWithLifecycle()
-    val largeBillThreshold by viewModel.largeBillThreshold.collectAsStateWithLifecycle()
-    val updateState by viewModel.updateState.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
-    val metrics by viewModel.dashboardMetrics.collectAsStateWithLifecycle()
-    val zeroLossLedger by viewModel.zeroLossLedger.collectAsStateWithLifecycle()
-    val businessHealth by viewModel.businessHealth.collectAsStateWithLifecycle()
-    val partyDirectory by viewModel.partyDirectory.collectAsStateWithLifecycle()
-    val hasSafetySnapshot by viewModel.hasSafetySnapshot.collectAsStateWithLifecycle()
-    val deletedRecords by viewModel.deletedRecords.collectAsStateWithLifecycle()
-    val phoneStorageStatus by viewModel.phoneStorageStatus.collectAsStateWithLifecycle()
-    val selectedPeriod by viewModel.selectedPeriod.collectAsStateWithLifecycle()
-    val transactions by viewModel.transactions.collectAsStateWithLifecycle()
-    val invoices by viewModel.invoices.collectAsStateWithLifecycle()
-    val bills by viewModel.bills.collectAsStateWithLifecycle()
-    val savingsGoals by viewModel.savingsGoals.collectAsStateWithLifecycle()
-    val savingsLogs by viewModel.savingsLogs.collectAsStateWithLifecycle()
-    val categories by viewModel.categories.collectAsStateWithLifecycle()
-    val categoryAnalytics by viewModel.categoryAnalytics.collectAsStateWithLifecycle()
 
     val navController = rememberNavController()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
@@ -185,26 +161,106 @@ fun MengiApp(viewModel: MengiViewModel) {
         viewModel.refreshPhonePermissions()
     }
 
+    val legacyWriteStoragePermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { _ ->
+        viewModel.refreshPhonePermissions()
+        viewModel.refreshStorageStatus()
+        viewModel.refreshSavedPublicPdfs()
+    }
+
+    val requestManageStoragePermission: () -> Unit = {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val openedPerApp = runCatching {
+                context.startActivity(viewModel.openManageStorageSettings())
+            }.isSuccess
+            if (!openedPerApp) {
+                runCatching {
+                    context.startActivity(viewModel.openManageStorageFallbackSettings())
+                }.onFailure {
+                    runCatching { context.startActivity(viewModel.openAppDetailsSettings()) }
+                }
+            }
+        } else {
+            runCatching {
+                legacyWriteStoragePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            }
+        }
+    }
+
     LaunchedEffect(Unit) {
         viewModel.refreshPhonePermissions()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            notificationsEnabled &&
-            !phonePermissions.postNotificationsGranted
-        ) {
+        val needsPostNotifications = withContext(Dispatchers.IO) {
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                !viewModel.notificationManager.isPostNotificationsGranted()
+        }
+        if (needsPostNotifications) {
             runCatching {
                 notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         }
     }
 
+    // Launch PackageInstaller confirmation & FileProvider APK install intents directly from the
+    // foreground Activity so Android 14/15/16 Background Activity Launch (BAL) never blocks them.
+    LaunchedEffect(Unit) {
+        viewModel.installLaunchRequests.collect { installIntent ->
+            val activity = context as? Activity
+            val launched = runCatching {
+                if (activity != null) {
+                    activity.startActivity(installIntent)
+                } else {
+                    installIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(installIntent)
+                }
+            }.isSuccess
+            if (!launched) {
+                viewModel.fallbackToDirectInstallIfAvailable()
+            }
+        }
+    }
+
     val createDocumentLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("*/*")
+        contract = CreateDocumentWithMimeContract()
     ) { uri: Uri? ->
         val export = pendingExport
         pendingExport = null
         if (uri != null && export != null) {
-            val saved = writeBytesToUri(context, uri, export.bytes)
-            if (saved) viewModel.notifyFileSaved() else viewModel.notifyFileError()
+            scope.launch {
+                val saved = withContext(Dispatchers.IO) {
+                    writeBytesToUri(context, uri, export.bytes)
+                }
+                if (saved) {
+                    if (export.mimeType == "application/pdf") {
+                        viewModel.savePublicPdfMirror(export.filename, export.bytes)
+                        viewModel.notifyPdfSaved {
+                            openPdfSafely(
+                                context = context,
+                                safUri = uri,
+                                filename = export.filename,
+                                pdfBytes = export.bytes,
+                                viewModel = viewModel
+                            )
+                        }
+                    } else {
+                        viewModel.notifyFileSaved()
+                    }
+                } else {
+                    viewModel.notifyFileError()
+                }
+            }
+        }
+    }
+
+    val openBackupFolderLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { treeUri: Uri? ->
+        if (treeUri != null) {
+            runCatching {
+                val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                context.contentResolver.takePersistableUriPermission(treeUri, flags)
+            }
+            viewModel.setCustomBackupFolderUri(treeUri.toString())
         }
     }
 
@@ -212,11 +268,15 @@ fun MengiApp(viewModel: MengiViewModel) {
         contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         if (uri != null) {
-            val text = readTextFromUri(context, uri)
-            if (text != null) {
-                viewModel.importBackupJson(text)
-            } else {
-                viewModel.notifyFileError()
+            scope.launch {
+                val text = withContext(Dispatchers.IO) {
+                    readTextFromUri(context, uri)
+                }
+                if (text != null) {
+                    viewModel.importBackupJson(text)
+                } else {
+                    viewModel.notifyFileError()
+                }
             }
         }
     }
@@ -237,7 +297,7 @@ fun MengiApp(viewModel: MengiViewModel) {
     LaunchedEffect(Unit) {
         viewModel.exportRequests.collect { export ->
             pendingExport = export
-            createDocumentLauncher.launch(export.filename)
+            createDocumentLauncher.launch(export)
         }
     }
 
@@ -288,13 +348,16 @@ fun MengiApp(viewModel: MengiViewModel) {
         ModalNavigationDrawer(
             drawerState = drawerState,
             drawerContent = {
+                val drawerLedger by viewModel.zeroLossLedger.collectAsStateWithLifecycle()
+                val drawerUpdateState by viewModel.updateState.collectAsStateWithLifecycle()
+                val drawerParties by viewModel.partyDirectory.collectAsStateWithLifecycle()
                 MengiSidebarSheet(
                     settings = settings,
-                    zeroLossLedger = zeroLossLedger,
+                    zeroLossLedger = drawerLedger,
                     language = language,
-                    updateState = updateState,
+                    updateState = drawerUpdateState,
                     privacyMaskEnabled = privacyMaskEnabled,
-                    partyCount = partyDirectory.size,
+                    partyCount = drawerParties.size,
                     selectedRouteMatch = { route -> currentDestination?.hasRoute(route::class) == true },
                     isSettingsSelected = isSettings,
                     onSelectDestination = { route ->
@@ -527,23 +590,20 @@ fun MengiApp(viewModel: MengiViewModel) {
                                 NavHost(
                                     navController = navController,
                                     startDestination = DashboardRoute,
-                                    enterTransition = {
-                                        fadeIn(tween(220, easing = FastOutSlowInEasing)) +
-                                            scaleIn(initialScale = 0.985f, animationSpec = tween(220, easing = FastOutSlowInEasing))
-                                    },
-                                    exitTransition = {
-                                        fadeOut(tween(160, easing = FastOutSlowInEasing))
-                                    },
-                                    popEnterTransition = {
-                                        fadeIn(tween(220, easing = FastOutSlowInEasing)) +
-                                            slideInHorizontally(tween(220, easing = FastOutSlowInEasing)) { -it / 16 }
-                                    },
-                                    popExitTransition = {
-                                        fadeOut(tween(180, easing = FastOutSlowInEasing)) +
-                                            slideOutHorizontally(tween(180, easing = FastOutSlowInEasing)) { it / 16 }
-                                    }
+                                    enterTransition = { fadeIn(tween(100)) },
+                                    exitTransition = { fadeOut(tween(80)) },
+                                    popEnterTransition = { fadeIn(tween(100)) },
+                                    popExitTransition = { fadeOut(tween(80)) }
                                 ) {
                                     composable<DashboardRoute> {
+                                        val metrics by viewModel.dashboardMetrics.collectAsStateWithLifecycle()
+                                        val zeroLossLedger by viewModel.zeroLossLedger.collectAsStateWithLifecycle()
+                                        val categoryAnalytics by viewModel.categoryAnalytics.collectAsStateWithLifecycle()
+                                        val businessHealth by viewModel.businessHealth.collectAsStateWithLifecycle()
+                                        val partyDirectory by viewModel.partyDirectory.collectAsStateWithLifecycle()
+                                        val deletedRecords by viewModel.deletedRecords.collectAsStateWithLifecycle()
+                                        val selectedPeriod by viewModel.selectedPeriod.collectAsStateWithLifecycle()
+                                        val updateState by viewModel.updateState.collectAsStateWithLifecycle()
                                         DashboardScreen(
                                             metrics = metrics,
                                             zeroLossLedger = zeroLossLedger,
@@ -574,11 +634,20 @@ fun MengiApp(viewModel: MengiViewModel) {
                                             onSaveSmartAutoEntry = viewModel::saveSmartAutoEntry,
                                             onReconcileLedger = viewModel::reconcileLedgerNow,
                                             onExportColorExcel = viewModel::exportColorExcelReport,
-                                            onExportCategoryCsv = { viewModel.exportCategoryAnalyticsCsv(selectedPeriod) }
+                                            onExportCategoryCsv = { viewModel.exportCategoryAnalyticsCsv(selectedPeriod) },
+                                            onDownloadUpdate = viewModel::startUpdateDownloadAndInstall,
+                                            onCancelDownloadUpdate = viewModel::cancelUpdateDownload,
+                                            onOpenInstallPermissionSettings = {
+                                                runCatching { context.startActivity(viewModel.openInstallPermissionSettings()) }
+                                            }
                                         )
                                     }
 
                                     composable<TransactionsRoute> {
+                                        val transactions by viewModel.transactions.collectAsStateWithLifecycle()
+                                        val categories by viewModel.categories.collectAsStateWithLifecycle()
+                                        val partyDirectory by viewModel.partyDirectory.collectAsStateWithLifecycle()
+                                        val selectedPeriod by viewModel.selectedPeriod.collectAsStateWithLifecycle()
                                         TransactionsScreen(
                                             transactions = transactions,
                                             categories = categories,
@@ -604,6 +673,10 @@ fun MengiApp(viewModel: MengiViewModel) {
                                     }
 
                                     composable<InvoicesRoute> {
+                                        val invoices by viewModel.invoices.collectAsStateWithLifecycle()
+                                        val partyDirectory by viewModel.partyDirectory.collectAsStateWithLifecycle()
+                                        val savedPublicPdfs by viewModel.savedPublicPdfs.collectAsStateWithLifecycle()
+                                        val phonePermissions by viewModel.phonePermissions.collectAsStateWithLifecycle()
                                         InvoicesScreen(
                                             invoices = invoices,
                                             knownParties = partyDirectory,
@@ -624,21 +697,65 @@ fun MengiApp(viewModel: MengiViewModel) {
                                                 runCatching { context.startActivity(Intent.createChooser(send, null)) }
                                             },
                                             onShareInvoicePdf = { inv ->
-                                                val pdfIntent = viewModel.buildShareInvoicePdfIntent(inv)
-                                                if (pdfIntent != null) {
-                                                    runCatching { context.startActivity(Intent.createChooser(pdfIntent, null)) }
-                                                } else {
-                                                    viewModel.exportInvoicePdf(inv)
+                                                scope.launch {
+                                                    val pdfIntent = withContext(Dispatchers.IO) {
+                                                        viewModel.buildShareInvoicePdfIntent(inv)
+                                                    }
+                                                    if (pdfIntent != null) {
+                                                        runCatching { context.startActivity(Intent.createChooser(pdfIntent, null)) }
+                                                    } else {
+                                                        viewModel.exportInvoicePdf(inv)
+                                                    }
                                                 }
                                             },
                                             onMarkUnpaid = viewModel::markInvoiceUnpaid,
                                             onDeleteInvoice = viewModel::deleteInvoice,
+                                            onOpenPdf = { inv ->
+                                                scope.launch {
+                                                    val viewIntent = withContext(Dispatchers.IO) {
+                                                        viewModel.buildViewInvoicePdfIntent(inv)
+                                                    }
+                                                    if (viewIntent != null) {
+                                                        val opened = runCatching {
+                                                            context.startActivity(Intent.createChooser(viewIntent, null))
+                                                        }.isSuccess
+                                                        if (!opened) viewModel.notifyNoPdfViewer()
+                                                    } else {
+                                                        viewModel.notifyNoPdfViewer()
+                                                    }
+                                                }
+                                            },
                                             onExportPdf = viewModel::exportInvoicePdf,
-                                            onPrintPdf = viewModel::printInvoicePdf
+                                            onPrintPdf = viewModel::printInvoicePdf,
+                                            savedPublicPdfs = savedPublicPdfs,
+                                            storageManagerGranted = phonePermissions.storageManagerGranted,
+                                            onRequestManageStoragePermission = requestManageStoragePermission,
+                                            onRefreshSavedPublicPdfs = viewModel::refreshSavedPublicPdfs,
+                                            onOpenSavedPublicPdf = { pdf ->
+                                                val viewIntent = viewModel.buildViewSavedPublicPdfIntent(pdf)
+                                                if (viewIntent != null) {
+                                                    val opened = runCatching {
+                                                        context.startActivity(Intent.createChooser(viewIntent, null))
+                                                    }.isSuccess
+                                                    if (!opened) viewModel.notifyNoPdfViewer()
+                                                } else {
+                                                    viewModel.notifyNoPdfViewer()
+                                                }
+                                            },
+                                            onShareSavedPublicPdf = { pdf ->
+                                                val shareIntent = viewModel.buildShareSavedPublicPdfIntent(pdf)
+                                                if (shareIntent != null) {
+                                                    runCatching { context.startActivity(Intent.createChooser(shareIntent, null)) }
+                                                }
+                                            },
+                                            onDeleteSavedPublicPdf = viewModel::deleteSavedPublicPdf
                                         )
                                     }
 
                                     composable<BillsRoute> {
+                                        val bills by viewModel.bills.collectAsStateWithLifecycle()
+                                        val zeroLossLedger by viewModel.zeroLossLedger.collectAsStateWithLifecycle()
+                                        val partyDirectory by viewModel.partyDirectory.collectAsStateWithLifecycle()
                                         BillsScreen(
                                             bills = bills,
                                             zeroLossLedger = zeroLossLedger,
@@ -656,6 +773,9 @@ fun MengiApp(viewModel: MengiViewModel) {
                                     }
 
                                     composable<HubRoute> {
+                                        val savingsGoals by viewModel.savingsGoals.collectAsStateWithLifecycle()
+                                        val savingsLogs by viewModel.savingsLogs.collectAsStateWithLifecycle()
+                                        val partyDirectory by viewModel.partyDirectory.collectAsStateWithLifecycle()
                                         HubScreen(
                                             savingsGoals = savingsGoals,
                                             savingsLogs = savingsLogs,
@@ -670,6 +790,17 @@ fun MengiApp(viewModel: MengiViewModel) {
                                     }
 
                                     composable<SettingsRoute> {
+                                        val autoUpdateEnabled by viewModel.autoUpdateEnabled.collectAsStateWithLifecycle()
+                                        val autoPhoneBackupEnabled by viewModel.autoPhoneBackupEnabled.collectAsStateWithLifecycle()
+                                        val phonePermissions by viewModel.phonePermissions.collectAsStateWithLifecycle()
+                                        val updateState by viewModel.updateState.collectAsStateWithLifecycle()
+                                        val hasSafetySnapshot by viewModel.hasSafetySnapshot.collectAsStateWithLifecycle()
+                                        val deletedRecords by viewModel.deletedRecords.collectAsStateWithLifecycle()
+                                        val phoneStorageStatus by viewModel.phoneStorageStatus.collectAsStateWithLifecycle()
+                                        val transactions by viewModel.transactions.collectAsStateWithLifecycle()
+                                        val invoices by viewModel.invoices.collectAsStateWithLifecycle()
+                                        val bills by viewModel.bills.collectAsStateWithLifecycle()
+                                        val savingsGoals by viewModel.savingsGoals.collectAsStateWithLifecycle()
                                         val summary = tr(
                                             language,
                                             "${transactions.size} miamala · ${invoices.size} ankara · ${bills.size} bili · ${savingsGoals.size} akiba",
@@ -680,15 +811,10 @@ fun MengiApp(viewModel: MengiViewModel) {
                                             themeMode = themeMode,
                                             language = language,
                                             autoUpdateEnabled = autoUpdateEnabled,
+                                            autoPhoneBackupEnabled = autoPhoneBackupEnabled,
                                             privacyMaskEnabled = privacyMaskEnabled,
                                             pinLockEnabled = pinLockEnabled,
                                             phonePermissions = phonePermissions,
-                                            notificationsEnabled = notificationsEnabled,
-                                            billAlertsEnabled = billAlertsEnabled,
-                                            transactionAlertsEnabled = transactionAlertsEnabled,
-                                            savingsAlertsEnabled = savingsAlertsEnabled,
-                                            systemAlertsEnabled = systemAlertsEnabled,
-                                            largeBillThreshold = largeBillThreshold,
                                             updateState = updateState,
                                             statsSummary = summary,
                                             hasSafetySnapshot = hasSafetySnapshot,
@@ -697,39 +823,27 @@ fun MengiApp(viewModel: MengiViewModel) {
                                             onSetThemeMode = viewModel::setThemeMode,
                                             onSetLanguage = viewModel::setLanguage,
                                             onSetAutoUpdate = viewModel::setAutoUpdateEnabled,
+                                            onSetAutoPhoneBackup = viewModel::setAutoPhoneBackupEnabled,
+                                            onPickCustomBackupFolder = {
+                                                runCatching { openBackupFolderLauncher.launch(null) }
+                                            },
                                             onSetPrivacyMask = viewModel::setPrivacyMaskEnabled,
                                             onSavePin = { pin -> viewModel.setupAppPin(pin) },
                                             onDisablePin = viewModel::disableAppPin,
                                             onLockNow = viewModel::lockAppNow,
-                                            onRequestPostNotificationsPermission = {
-                                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                                    runCatching {
-                                                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                                                    }
-                                                }
-                                            },
-                                            onOpenAppNotificationSettings = {
-                                                runCatching { context.startActivity(viewModel.openAppNotificationSettings()) }
-                                            },
-                                            onOpenAppDetailsSettings = {
-                                                runCatching { context.startActivity(viewModel.openAppDetailsSettings()) }
-                                            },
-                                            onSetNotificationsEnabled = viewModel::setNotificationsEnabled,
-                                            onSetBillAlertsEnabled = viewModel::setBillAlertsEnabled,
-                                            onSetTransactionAlertsEnabled = viewModel::setTransactionAlertsEnabled,
-                                            onSetSavingsAlertsEnabled = viewModel::setSavingsAlertsEnabled,
-                                            onSetSystemAlertsEnabled = viewModel::setSystemAlertsEnabled,
-                                            onSaveLargeBillThreshold = viewModel::setLargeBillThreshold,
-                                            onTestLargeBillWarningPopup = viewModel::sendTestLargeBillWarning,
-                                            onTestSystemNotification = viewModel::sendTestSystemNotification,
-                                            onSendDueRemindersNow = viewModel::runDueBillsAndInvoicesReminderNow,
+                                            onRequestManageStoragePermission = requestManageStoragePermission,
                                             onCheckUpdates = { viewModel.checkForUpdates(silentIfUpToDate = false) },
                                             onDownloadUpdate = viewModel::startUpdateDownloadAndInstall,
+                                            onCancelDownloadUpdate = viewModel::cancelUpdateDownload,
                                             onOpenInstallPermissionSettings = {
                                                 runCatching { context.startActivity(viewModel.openInstallPermissionSettings()) }
                                             },
                                             onOpenReleasesBrowser = {
                                                 runCatching { context.startActivity(viewModel.openReleasesInBrowser()) }
+                                            },
+                                            onDirectInstallApk = viewModel::launchDirectApkInstall,
+                                            onUninstallOldApp = {
+                                                runCatching { context.startActivity(viewModel.openUninstallOldApp()) }
                                             },
                                             onSaveSettings = viewModel::saveBusinessSettings,
                                             onExportColorExcel = viewModel::exportColorExcelReport,
@@ -776,6 +890,10 @@ fun MengiApp(viewModel: MengiViewModel) {
         }
 
         if (showGlobalSearch) {
+            val transactions by viewModel.transactions.collectAsStateWithLifecycle()
+            val invoices by viewModel.invoices.collectAsStateWithLifecycle()
+            val bills by viewModel.bills.collectAsStateWithLifecycle()
+            val savingsGoals by viewModel.savingsGoals.collectAsStateWithLifecycle()
             GlobalSearchSheet(
                 transactions = transactions,
                 invoices = invoices,
@@ -789,6 +907,7 @@ fun MengiApp(viewModel: MengiViewModel) {
         }
 
         if (showAutoAccountingSheet) {
+            val zeroLossLedger by viewModel.zeroLossLedger.collectAsStateWithLifecycle()
             AutoAccountingSheet(
                 ledger = zeroLossLedger,
                 currency = settings.currency.ifBlank { "TZS" },
@@ -800,6 +919,7 @@ fun MengiApp(viewModel: MengiViewModel) {
         }
 
         if (showPartyDirectory) {
+            val partyDirectory by viewModel.partyDirectory.collectAsStateWithLifecycle()
             PartyDirectorySheet(
                 parties = partyDirectory,
                 businessName = settings.businessName,
@@ -810,6 +930,7 @@ fun MengiApp(viewModel: MengiViewModel) {
         }
 
         if (showGlobalRecoveryVault) {
+            val deletedRecords by viewModel.deletedRecords.collectAsStateWithLifecycle()
             RecoveryVaultSheet(
                 deletedRecords = deletedRecords,
                 currency = settings.currency.ifBlank { "TZS" },
@@ -823,9 +944,58 @@ fun MengiApp(viewModel: MengiViewModel) {
     }
 }
 
+private class CreateDocumentWithMimeContract : ActivityResultContract<PendingFileExport, Uri?>() {
+    override fun createIntent(context: Context, input: PendingFileExport): Intent {
+        return Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = input.mimeType.ifBlank { "application/octet-stream" }
+            putExtra(Intent.EXTRA_TITLE, input.filename)
+        }
+    }
+
+    override fun parseResult(resultCode: Int, intent: Intent?): Uri? {
+        return if (resultCode == Activity.RESULT_OK) intent?.data else null
+    }
+}
+
+private fun openPdfSafely(
+    context: Context,
+    safUri: Uri,
+    filename: String,
+    pdfBytes: ByteArray,
+    viewModel: MengiViewModel
+) {
+    // 1. Prefer FileProvider URI with guaranteed application/pdf MIME & read permission
+    val fileProviderIntent = viewModel.buildViewPdfFileIntent(filename, pdfBytes)
+    if (fileProviderIntent != null) {
+        val opened = runCatching {
+            context.startActivity(Intent.createChooser(fileProviderIntent, null))
+        }.isSuccess
+        if (opened) return
+    }
+    // 2. Fallback to the SAF URI directly with explicit application/pdf MIME
+    val safIntent = Intent(Intent.ACTION_VIEW).apply {
+        setDataAndType(safUri, "application/pdf")
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    val openedSaf = runCatching {
+        context.startActivity(Intent.createChooser(safIntent, null))
+    }.isSuccess
+    if (!openedSaf) {
+        viewModel.notifyNoPdfViewer()
+    }
+}
+
 private fun writeBytesToUri(context: Context, uri: Uri, bytes: ByteArray): Boolean {
+    if (bytes.isEmpty()) return false
     return runCatching {
-        context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) } ?: return false
+        val stream = context.contentResolver.openOutputStream(uri, "wt")
+            ?: context.contentResolver.openOutputStream(uri)
+            ?: return false
+        stream.use { out ->
+            out.write(bytes)
+            out.flush()
+        }
         true
     }.getOrDefault(false)
 }
