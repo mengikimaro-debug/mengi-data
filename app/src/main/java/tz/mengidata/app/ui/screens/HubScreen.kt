@@ -169,8 +169,8 @@ fun HubScreen(
                             Surface(
                                 onClick = { goalFilter = key },
                                 shape = CircleShape,
-                                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
-                                border = if (selected) null else BorderStroke(1.dp, colors.cardBorder),
+                                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerLow,
+                                tonalElevation = if (selected) 2.dp else 0.dp,
                                 modifier = Modifier.testTag("savings_filter_$key")
                             ) {
                                 Text(
@@ -178,7 +178,7 @@ fun HubScreen(
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                                     color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp)
+                                    modifier = Modifier.padding(horizontal = 15.dp, vertical = 9.dp)
                                 )
                             }
                         }
@@ -315,11 +315,11 @@ private fun OneUiSavingsVaultSummaryCard(
     Surface(
         shape = MaterialTheme.shapes.extraLarge,
         color = colors.heroStart,
-        border = BorderStroke(1.2.dp, Color(0xFF394554)),
-        shadowElevation = if (colors.isDark) 0.dp else 8.dp,
+        border = BorderStroke(1.dp, Color(0xFF33453F)),
+        shadowElevation = if (colors.isDark) 0.dp else 4.dp,
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(
@@ -327,63 +327,66 @@ private fun OneUiSavingsVaultSummaryCard(
                         colors = listOf(colors.heroStart, colors.heroMid, colors.heroEnd)
                     )
                 )
-                .padding(22.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            Column(
+                modifier = Modifier.padding(22.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(
-                    text = tr(language, "JUMLA YA AKIBA", "TOTAL VAULT SAVINGS"),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = colors.lime
-                )
-                StatusPill(
-                    text = "$pct% · ${goals.size} ${tr(language, "malengo", "goals")}",
-                    containerColor = Color(0xFF2D3846),
-                    contentColor = Color(0xFFE6EAF0)
-                )
-            }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = tr(language, "JUMLA YA AKIBA", "TOTAL VAULT SAVINGS"),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.lime
+                    )
+                    StatusPill(
+                        text = "$pct% · ${goals.size} ${tr(language, "malengo", "goals")}",
+                        containerColor = Color(0xFF2D3E39),
+                        contentColor = Color(0xFFEBE9E3)
+                    )
+                }
 
-            AnimatedMoneyText(
-                amount = totalSaved,
-                currency = currency,
-                style = MaterialTheme.typography.displayLarge,
-                color = Color(0xFFE5EAF0)
-            )
+                AnimatedMoneyText(
+                    amount = totalSaved,
+                    currency = currency,
+                    style = MaterialTheme.typography.displayLarge,
+                    color = Color(0xFFEBE9E3)
+                )
 
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(9.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFF171D24))
-            ) {
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth(ratio.coerceAtLeast(if (totalSaved > 0) 0.03f else 0f))
-                        .fillMaxHeight()
+                        .fillMaxWidth()
+                        .height(9.dp)
                         .clip(CircleShape)
-                        .background(Color(0xFF7FA896))
-                )
-            }
+                        .background(Color(0xFF151E1B))
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(ratio.coerceAtLeast(if (totalSaved > 0) 0.03f else 0f))
+                            .fillMaxHeight()
+                            .clip(CircleShape)
+                            .background(Color(0xFF7BB597))
+                    )
+                }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = "${tr(language, "Lengo", "Target")}: $formattedTarget",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFFBDC7D4)
-                )
-                Text(
-                    text = "${tr(language, "Baki", "Remaining")}: $formattedRemaining",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFFBDC7D4)
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "${tr(language, "Lengo", "Target")}: $formattedTarget",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFFB8C4BF)
+                    )
+                    Text(
+                        text = "${tr(language, "Baki", "Remaining")}: $formattedRemaining",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFFB8C4BF)
+                    )
+                }
             }
         }
     }

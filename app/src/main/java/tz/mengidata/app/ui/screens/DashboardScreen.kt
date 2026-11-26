@@ -187,14 +187,14 @@ fun DashboardScreen(
                 )
             }
 
-            // 2026 Next-Gen Solid Expressive Bento Hero Balance Card (Zero Transparency)
+            // Matte Android 17 Bento Hero Balance Card (Zero Glow / Zero Glare)
             item(key = "hero_balance") {
                 PremiumReveal(delayMillis = 0) {
                     Surface(
                         shape = MaterialTheme.shapes.extraLarge,
                         color = colors.heroStart,
-                        border = BorderStroke(1.2.dp, Color(0xFF394554)),
-                        shadowElevation = if (colors.isDark) 0.dp else 8.dp,
+                        border = BorderStroke(1.dp, Color(0xFF33453F)),
+                        shadowElevation = if (colors.isDark) 0.dp else 4.dp,
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("dashboard_hero_card")
@@ -207,9 +207,11 @@ fun DashboardScreen(
                                         colors = listOf(colors.heroStart, colors.heroMid, colors.heroEnd)
                                     )
                                 )
-                                .padding(20.dp)
                         ) {
-                            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                            Column(
+                                modifier = Modifier.padding(22.dp),
+                                verticalArrangement = Arrangement.spacedBy(15.dp)
+                            ) {
                                 // Top Hero Status Header
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -220,7 +222,7 @@ fun DashboardScreen(
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
-                                        PulsingStatusDot(color = Color(0xFF7FA896), size = 7.dp)
+                                        PulsingStatusDot(color = Color(0xFF7BB597), size = 7.dp)
                                         Text(
                                             text = tr(language, "SALIO HALISI LA MFUMO", "SYSTEM NET BALANCE"),
                                             style = MaterialTheme.typography.labelSmall,
@@ -229,25 +231,25 @@ fun DashboardScreen(
                                     }
                                     StatusPill(
                                         text = if (language == AppLanguage.EN) selectedPeriod.labelEn else selectedPeriod.labelSw,
-                                        containerColor = Color(0xFF2D3846),
-                                        contentColor = Color(0xFFE6EAF0)
+                                        containerColor = Color(0xFF2D3E39),
+                                        contentColor = Color(0xFFEBE9E3)
                                     )
                                 }
 
-                                // Bold 2026 Expressive Balance Display (Calm Matte Alabaster — Zero Glare)
+                                // Calm Matte Balance Display
                                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                     if (privacyMaskEnabled) {
                                         Text(
                                             text = "••••••",
                                             style = MaterialTheme.typography.displayLarge,
-                                            color = Color(0xFFE5EAF0)
+                                            color = Color(0xFFEBE9E3)
                                         )
                                     } else {
                                         AnimatedMoneyText(
                                             amount = metrics.netProfit,
                                             currency = currency,
                                             style = MaterialTheme.typography.displayLarge,
-                                            color = Color(0xFFE5EAF0)
+                                            color = Color(0xFFEBE9E3)
                                         )
                                     }
                                     Text(
@@ -257,11 +259,11 @@ fun DashboardScreen(
                                             "Income after deducting Expenses, Household Bill & Savings"
                                         ),
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = Color(0xFFBDC7D4)
+                                        color = Color(0xFFB8C4BF)
                                     )
                                 }
 
-                                // Calm Matte 4-Segment Cashflow Proportion Bar
+                                // Matte 4-Segment Cashflow Proportion Track
                                 val flowBase = (metrics.periodIncome.coerceAtLeast(metrics.periodTotalOutflow)).coerceAtLeast(1.0)
                                 val personalShare = ((metrics.periodExpense / flowBase).toFloat()).coerceIn(0f, 1f)
                                 val householdShare = ((metrics.periodHouseholdBills / flowBase).toFloat()).coerceIn(0f, 1f - personalShare)
@@ -269,7 +271,7 @@ fun DashboardScreen(
                                 val keptShare = (1f - personalShare - householdShare - savingsShare).coerceAtLeast(0f)
                                 Surface(
                                     shape = CircleShape,
-                                    color = Color(0xFF171D24),
+                                    color = Color(0xFF151E1B),
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(9.dp)
@@ -284,7 +286,7 @@ fun DashboardScreen(
                                                     .weight(keptShare)
                                                     .fillMaxHeight()
                                                     .clip(CircleShape)
-                                                    .background(Color(0xFF7FA896))
+                                                    .background(Color(0xFF7BB597))
                                             )
                                         }
                                         if (personalShare > 0.01f) {
@@ -293,7 +295,7 @@ fun DashboardScreen(
                                                     .weight(personalShare)
                                                     .fillMaxHeight()
                                                     .clip(CircleShape)
-                                                    .background(Color(0xFFA99EB9))
+                                                    .background(Color(0xFFC9959A))
                                             )
                                         }
                                         if (householdShare > 0.01f) {
@@ -302,7 +304,7 @@ fun DashboardScreen(
                                                     .weight(householdShare)
                                                     .fillMaxHeight()
                                                     .clip(CircleShape)
-                                                    .background(Color(0xFF7EA2AD))
+                                                    .background(Color(0xFF83AEB8))
                                             )
                                         }
                                         if (savingsShare > 0.01f) {
@@ -311,13 +313,13 @@ fun DashboardScreen(
                                                     .weight(savingsShare)
                                                     .fillMaxHeight()
                                                     .clip(CircleShape)
-                                                    .background(Color(0xFF939DB8))
+                                                    .background(Color(0xFFA9A3C4))
                                             )
                                         }
                                     }
                                 }
 
-                                // Calm Matte 2x2 Bento Stat Grid
+                                // Matte 2x2 Bento Stat Grid
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -325,10 +327,8 @@ fun DashboardScreen(
                                     HeroStatChip(
                                         modifier = Modifier.weight(1f),
                                         icon = Icons.Rounded.ArrowDownward,
-                                        iconTint = Color(0xFF9EC2B2),
-                                        containerColor = Color(0xFF242E38),
-                                        borderColor = Color(0xFF394754),
-                                        iconBg = Color(0xFF233831),
+                                        iconTint = Color(0xFF9ACAB2),
+                                        iconBg = Color(0xFF233A31),
                                         label = tr(language, "Mapato Yote", "Total Income"),
                                         amount = metrics.periodIncome,
                                         currency = currency,
@@ -337,10 +337,8 @@ fun DashboardScreen(
                                     HeroStatChip(
                                         modifier = Modifier.weight(1f),
                                         icon = Icons.Rounded.ArrowUpward,
-                                        iconTint = Color(0xFFC2B8D1),
-                                        containerColor = Color(0xFF282B38),
-                                        borderColor = Color(0xFF3E4254),
-                                        iconBg = Color(0xFF342E42),
+                                        iconTint = Color(0xFFD6B0B4),
+                                        iconBg = Color(0xFF392B2E),
                                         label = tr(language, "Matumizi Yangu", "My Expenses"),
                                         amount = metrics.periodExpense,
                                         currency = currency,
@@ -355,10 +353,8 @@ fun DashboardScreen(
                                     HeroStatChip(
                                         modifier = Modifier.weight(1f),
                                         icon = Icons.Rounded.Home,
-                                        iconTint = Color(0xFFA3C0C9),
-                                        containerColor = Color(0xFF222F36),
-                                        borderColor = Color(0xFF374A54),
-                                        iconBg = Color(0xFF283D47),
+                                        iconTint = Color(0xFFA2C4CC),
+                                        iconBg = Color(0xFF26383E),
                                         label = tr(language, "Bili ya Nyumbani", "Household Bill"),
                                         amount = metrics.periodHouseholdBills,
                                         currency = currency,
@@ -367,10 +363,8 @@ fun DashboardScreen(
                                     HeroStatChip(
                                         modifier = Modifier.weight(1f),
                                         icon = Icons.Rounded.Savings,
-                                        iconTint = Color(0xFFB4BDD4),
-                                        containerColor = Color(0xFF262B38),
-                                        borderColor = Color(0xFF3D4457),
-                                        iconBg = Color(0xFF31384D),
+                                        iconTint = Color(0xFFC2BDD6),
+                                        iconBg = Color(0xFF302E40),
                                         label = tr(language, "Akiba (Imekatwa)", "Savings (Deducted)"),
                                         amount = metrics.periodSavingsOutflow,
                                         currency = currency,
@@ -378,7 +372,7 @@ fun DashboardScreen(
                                     )
                                 }
 
-                                // Calm Matte Quick-Action Dock inside Hero
+                                // Matte Quick-Action Pill Dock inside Hero
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -387,8 +381,8 @@ fun DashboardScreen(
                                         onClick = onQuickAddTransaction,
                                         shape = CircleShape,
                                         colors = ButtonDefaults.buttonColors(
-                                            containerColor = Color(0xFFE6EAF0),
-                                            contentColor = Color(0xFF1A222B)
+                                            containerColor = Color(0xFFEAE7DF),
+                                            contentColor = Color(0xFF192622)
                                         ),
                                         contentPadding = PaddingValues(horizontal = 14.dp),
                                         modifier = Modifier
@@ -404,8 +398,8 @@ fun DashboardScreen(
                                         onClick = { showSmartEntry = true },
                                         shape = CircleShape,
                                         colors = ButtonDefaults.filledTonalButtonColors(
-                                            containerColor = Color(0xFF3D5266),
-                                            contentColor = Color(0xFFEDF1F5)
+                                            containerColor = Color(0xFF344C45),
+                                            contentColor = Color(0xFFEBE9E3)
                                         ),
                                         contentPadding = PaddingValues(horizontal = 12.dp),
                                         modifier = Modifier
@@ -421,8 +415,8 @@ fun DashboardScreen(
                                         onClick = onOpenInvoices,
                                         shape = CircleShape,
                                         colors = ButtonDefaults.filledTonalButtonColors(
-                                            containerColor = Color(0xFF2F3B4A),
-                                            contentColor = Color(0xFFE6EAF0)
+                                            containerColor = Color(0xFF2B3B36),
+                                            contentColor = Color(0xFFEBE9E3)
                                         ),
                                         contentPadding = PaddingValues(horizontal = 12.dp),
                                         modifier = Modifier
@@ -782,15 +776,15 @@ private fun HeroStatChip(
     currency: String,
     masked: Boolean = false,
     compact: Boolean = true,
-    containerColor: Color = Color(0xFF252F3A),
-    borderColor: Color = Color(0xFF394654),
-    iconBg: Color = Color(0xFF303D4B)
+    containerColor: Color = Color(0xFF283733),
+    borderColor: Color = Color(0xFF394D47),
+    iconBg: Color = Color(0xFF30433E)
 ) {
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(22.dp),
         color = containerColor,
-        border = BorderStroke(1.dp, borderColor)
+        border = BorderStroke(0.8.dp, borderColor)
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 13.dp, vertical = 11.dp),
@@ -799,18 +793,18 @@ private fun HeroStatChip(
         ) {
             Box(
                 modifier = Modifier
-                    .size(30.dp)
-                    .clip(RoundedCornerShape(10.dp))
+                    .size(32.dp)
+                    .clip(RoundedCornerShape(11.dp))
                     .background(iconBg),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(16.dp))
+                Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(17.dp))
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = label,
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFFC2CCD8),
+                    color = Color(0xFFB8C4BF),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -818,7 +812,7 @@ private fun HeroStatChip(
                     Text(
                         text = "••••",
                         style = MaterialTheme.typography.titleSmall,
-                        color = Color(0xFFE5EAF0)
+                        color = Color(0xFFEBE9E3)
                     )
                 } else {
                     AnimatedMoneyText(
@@ -826,7 +820,7 @@ private fun HeroStatChip(
                         currency = currency,
                         compact = compact,
                         style = if (compact) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium,
-                        color = Color(0xFFE5EAF0)
+                        color = Color(0xFFEBE9E3)
                     )
                 }
             }
@@ -983,25 +977,24 @@ private fun ServiceQuickTile(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val colors = LocalMengiColors.current
     Surface(
         onClick = onClick,
-        shape = RoundedCornerShape(18.dp),
-        color = colors.subtleSurface,
-        border = BorderStroke(1.dp, colors.cardBorder),
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        tonalElevation = 1.dp,
         modifier = modifier
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 12.dp),
+                .padding(horizontal = 8.dp, vertical = 13.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Box(
                 modifier = Modifier
-                    .size(38.dp)
-                    .clip(RoundedCornerShape(13.dp))
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(14.dp))
                     .background(iconBg),
                 contentAlignment = Alignment.Center
             ) {
@@ -1009,7 +1002,7 @@ private fun ServiceQuickTile(
                     imageVector = icon,
                     contentDescription = label,
                     tint = iconTint,
-                    modifier = Modifier.size(19.dp)
+                    modifier = Modifier.size(20.dp)
                 )
             }
             Text(

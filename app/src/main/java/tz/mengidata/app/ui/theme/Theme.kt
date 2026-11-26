@@ -33,67 +33,92 @@ import androidx.core.view.WindowCompat
 import tz.mengidata.app.R
 import tz.mengidata.app.i18n.ThemeMode
 
-// Samsung One UI 8.5 Geometric Sans-Serif Typography Pairing
-val OneUiDisplayFamily = FontFamily(
-    Font(R.font.outfit, FontWeight.Normal),
-    Font(R.font.outfit, FontWeight.Medium),
-    Font(R.font.outfit, FontWeight.SemiBold),
-    Font(R.font.outfit, FontWeight.Bold)
+// Android 17 Material 3 Expressive Typography Pairing:
+// Space Grotesk (geometric expressive display & figures) + DM Sans (crisp humanist UI body & labels)
+val ExpressiveDisplayFamily = FontFamily(
+    Font(R.font.space_grotesk, FontWeight.Normal),
+    Font(R.font.space_grotesk, FontWeight.Medium),
+    Font(R.font.space_grotesk, FontWeight.SemiBold),
+    Font(R.font.space_grotesk, FontWeight.Bold)
 )
 
-val PlusJakartaSansFamily = FontFamily(
-    Font(R.font.plus_jakarta_sans, FontWeight.Normal),
-    Font(R.font.plus_jakarta_sans, FontWeight.Medium),
-    Font(R.font.plus_jakarta_sans, FontWeight.SemiBold),
-    Font(R.font.plus_jakarta_sans, FontWeight.Bold)
+val ExpressiveBodyFamily = FontFamily(
+    Font(R.font.dm_sans, FontWeight.Normal),
+    Font(R.font.dm_sans, FontWeight.Medium),
+    Font(R.font.dm_sans, FontWeight.SemiBold),
+    Font(R.font.dm_sans, FontWeight.Bold)
 )
 
-// Calm Matte Solid Palette (Zero Glare, Zero Neon, Zero Transparency — WCAG AA/AAA Verified)
-// Light: Warm Matte Stone Canvas (#EDEFF2), Soft Matte Paper Cards (#F8F9FA), Muted Slate Navy (#334B63)
-// Dark: Calm Matte Deep Slate Canvas (#0E1216), Sculpted Matte Graphite Cards (#181E25), Elevated Slate (#232B35), Crisp Matte Divider (#384452)
+// Android 17 Matte Material 3 Expressive Tonal Palette (Zero Glare / Zero Glow, WCAG AA/AAA Verified)
+private val M3LightCanvas = Color(0xFFF3F2EE)          // Warm Matte Stone
+private val M3LightSurface = Color(0xFFFAF9F6)         // Soft Matte Paper
+private val M3LightContainerLow = Color(0xFFECEAE3)    // Matte Stone Container Low
+private val M3LightContainer = Color(0xFFE4E1D9)       // Matte Container
+private val M3LightContainerHigh = Color(0xFFDCD8CF)   // Matte Container High
+private val M3LightContainerHighest = Color(0xFFD2CEC4)
+private val M3LightOutline = Color(0xFFB7B2A8)
+private val M3LightOutlineVariant = Color(0xFFD5D1C8)
 
-private val OneUiDarkCanvas = Color(0xFF0E1216)
-private val OneUiDarkCard = Color(0xFF181E25)
-private val OneUiDarkElevated = Color(0xFF232B35)
-private val OneUiDarkBorder = Color(0xFF384452)
+private val M3DarkCanvas = Color(0xFF111413)           // Deep Matte Charcoal
+private val M3DarkSurface = Color(0xFF181C1A)          // Matte Dark Slate-Pine
+private val M3DarkContainerLow = Color(0xFF1D2220)
+private val M3DarkContainer = Color(0xFF222825)
+private val M3DarkContainerHigh = Color(0xFF2A312D)
+private val M3DarkContainerHighest = Color(0xFF323B36)
+private val M3DarkOutline = Color(0xFF424B46)
+private val M3DarkOutlineVariant = Color(0xFF2C332F)
 
-private val OneUiLightCanvas = Color(0xFFEDEFF2)
-private val OneUiPureWhite = Color(0xFFF8F9FA)
-private val OneUiLightPill = Color(0xFFE2E6EC)
-private val OneUiLightBorder = Color(0xFFD1D7E0)
+private val InkDark = Color(0xFF191D1B)
+private val InkMutedLight = Color(0xFF4E5652)
+private val InkSnow = Color(0xFFEBE9E3)
+private val InkMutedDark = Color(0xFFB3BCB7)
 
-private val DeepInk = Color(0xFF131920)
-private val SlateInk = Color(0xFF1C232C)
-private val SlateMutedAccessible = Color(0xFF4F5A68) // >= 6.4:1 on Light Canvas & Pill
-private val SnowInk = Color(0xFFE5EAF0) // Soft Matte Alabaster (zero glare on dark)
-private val SilverMutedAccessible = Color(0xFFAAB4C2) // >= 7.8:1 on Dark Card & Elevated
+private val PinePrimaryLight = Color(0xFF2A5248)         // Matte Deep Forest Sage
+private val PineContainerLight = Color(0xFFCFE0DB)
+private val PineOnContainerLight = Color(0xFF122924)
 
-private val OneUiBlueLight = Color(0xFF334B63) // Calm Matte Slate Navy (>= 8.2:1 on Soft Paper)
-private val OneUiBlueDark = Color(0xFF7D95AB) // Calm Matte Steel Blue (zero glare)
-private val OneUiBlueSoftLight = Color(0xFFDEE5ED)
-private val OneUiBlueInkLight = Color(0xFF24384B)
-private val OneUiBlueSoftDark = Color(0xFF24313E)
-private val OneUiBlueInkDark = Color(0xFFD5E0EB)
+private val PinePrimaryDark = Color(0xFF9AC2B6)          // Matte Soft Sage
+private val PineOnPrimaryDark = Color(0xFF0E2922)
+private val PineContainerDark = Color(0xFF23473E)
+private val PineOnContainerDark = Color(0xFFCFE0DB)
 
-private val GalaxyIndigoLight = Color(0xFF4E5975) // Calm Matte Slate Indigo
-private val GalaxyIndigoDark = Color(0xFF8C97B0)
-private val GalaxyIndigoSoft = Color(0xFFE4E7F0)
-private val GalaxyIndigoInk = Color(0xFF343D54)
+private val SlateSecondaryLight = Color(0xFF4B5966)      // Matte Cool Slate
+private val SlateContainerLight = Color(0xFFD7DFE6)
+private val SlateOnContainerLight = Color(0xFF1D2730)
 
-private val Amber700 = Color(0xFF7D5D3B) // Calm Matte Warm Ochre
-private val AmberSoft = Color(0xFFF0EAE1)
-private val Amber400 = Color(0xFFB59A7B) // Calm Matte Sand Ochre on Dark
-private val AmberDarkSoft = Color(0xFF2C251D)
+private val SlateSecondaryDark = Color(0xFFB2C2CF)
+private val SlateOnSecondaryDark = Color(0xFF1D2933)
+private val SlateContainerDark = Color(0xFF34424E)
+private val SlateOnContainerDark = Color(0xFFD7DFE6)
 
-private val EmeraldIncomeLight = Color(0xFF346352) // Calm Matte Forest Sage
-private val EmeraldIncomeSoftLight = Color(0xFFE2ECE8)
-private val EmeraldIncomeDark = Color(0xFF759F8E) // Calm Matte Sage on Dark (zero glare)
-private val EmeraldIncomeSoftDark = Color(0xFF1D2C26)
+private val ClayTertiaryLight = Color(0xFF73513E)        // Matte Warm Terracotta Clay
+private val ClayContainerLight = Color(0xFFEBDDD4)
+private val ClayOnContainerLight = Color(0xFF331E14)
 
-private val SoftPlumLight = Color(0xFF5D526E) // Calm Matte Dusty Mauve
-private val SoftPlumBgLight = Color(0xFFEBE8F0)
-private val SoftPlumDark = Color(0xFF9E92B0) // Calm Matte Lavender-Slate on Dark
-private val SoftPlumBgDark = Color(0xFF282331)
+private val ClayTertiaryDark = Color(0xFFCFA994)
+private val ClayOnTertiaryDark = Color(0xFF382115)
+private val ClayContainerDark = Color(0xFF54392B)
+private val ClayOnContainerDark = Color(0xFFEBDDD4)
+
+private val OchreWarningLight = Color(0xFF8A5318)
+private val OchreWarningSoftLight = Color(0xFFF3E6D6)
+private val OchreWarningDark = Color(0xFFDFB17A)
+private val OchreWarningSoftDark = Color(0xFF342717)
+
+private val SageIncomeLight = Color(0xFF1F684A)
+private val SageIncomeSoftLight = Color(0xFFD7EAE0)
+private val SageIncomeDark = Color(0xFF7DC29E)
+private val SageIncomeSoftDark = Color(0xFF183024)
+
+private val TerraExpenseLight = Color(0xFF983942)
+private val TerraExpenseSoftLight = Color(0xFFF4DFE1)
+private val TerraExpenseDark = Color(0xFFDF9EA4)
+private val TerraExpenseSoftDark = Color(0xFF361E21)
+
+private val MatteSavingsLight = Color(0xFF514C78)
+private val MatteSavingsSoftLight = Color(0xFFE2E0ED)
+private val MatteSavingsDark = Color(0xFFB9B4D8)
+private val MatteSavingsSoftDark = Color(0xFF252338)
 
 @Stable
 data class MengiThemeState(
@@ -137,199 +162,209 @@ data class MengiExtendedColors(
 
 private val LightExtendedColors = MengiExtendedColors(
     isDark = false,
-    heroStart = Color(0xFF1D242C),
-    heroMid = Color(0xFF252F3A),
-    heroEnd = Color(0xFF2F3C4B),
-    heroAccentGlow = Color(0xFF8BA2B8),
-    heroGoldGlow = Color(0xFFA6AFC2),
-    lime = Color(0xFFB8C7D6),
-    limeSoft = OneUiBlueSoftLight,
-    limeInk = OneUiBlueInkLight,
-    income = EmeraldIncomeLight,
-    incomeSoft = EmeraldIncomeSoftLight,
-    expense = SoftPlumLight,
-    expenseSoft = SoftPlumBgLight,
-    warning = Amber700,
-    warningSoft = AmberSoft,
-    savings = GalaxyIndigoLight,
-    savingsSoft = GalaxyIndigoSoft,
-    cardBorder = OneUiLightBorder,
-    subtleSurface = OneUiLightPill,
-    glassHighlight = Color(0xFFE6EAEF),
-    dockSurface = Color(0xFFF5F6F8),
-    dockBorder = Color(0xFFCFD6DF)
+    heroStart = Color(0xFF1E2B27),
+    heroMid = Color(0xFF23322E),
+    heroEnd = Color(0xFF273833),
+    heroAccentGlow = Color(0xFF23322E),
+    heroGoldGlow = Color(0xFF273833),
+    lime = Color(0xFFC4DDD5),
+    limeSoft = PineContainerLight,
+    limeInk = PineOnContainerLight,
+    income = SageIncomeLight,
+    incomeSoft = SageIncomeSoftLight,
+    expense = TerraExpenseLight,
+    expenseSoft = TerraExpenseSoftLight,
+    warning = OchreWarningLight,
+    warningSoft = OchreWarningSoftLight,
+    savings = MatteSavingsLight,
+    savingsSoft = MatteSavingsSoftLight,
+    cardBorder = M3LightOutlineVariant,
+    subtleSurface = M3LightContainerLow,
+    glassHighlight = M3LightContainerHigh,
+    dockSurface = M3LightSurface,
+    dockBorder = M3LightOutlineVariant
 )
 
 private val DarkExtendedColors = MengiExtendedColors(
     isDark = true,
-    heroStart = Color(0xFF1D252E),
-    heroMid = Color(0xFF232C37),
-    heroEnd = Color(0xFF2A3542),
-    heroAccentGlow = Color(0xFF7D95AB),
-    heroGoldGlow = Color(0xFF8C97B0),
-    lime = Color(0xFFB2C1D0),
-    limeSoft = OneUiBlueSoftDark,
-    limeInk = OneUiBlueInkDark,
-    income = EmeraldIncomeDark,
-    incomeSoft = EmeraldIncomeSoftDark,
-    expense = SoftPlumDark,
-    expenseSoft = SoftPlumBgDark,
-    warning = Amber400,
-    warningSoft = AmberDarkSoft,
-    savings = GalaxyIndigoDark,
-    savingsSoft = Color(0xFF232938),
-    cardBorder = OneUiDarkBorder,
-    subtleSurface = OneUiDarkElevated,
-    glassHighlight = Color(0xFF28313B),
-    dockSurface = Color(0xFF1D242D),
-    dockBorder = Color(0xFF3E4B5B)
+    heroStart = Color(0xFF1C2623),
+    heroMid = Color(0xFF202C28),
+    heroEnd = Color(0xFF24322E),
+    heroAccentGlow = Color(0xFF202C28),
+    heroGoldGlow = Color(0xFF24322E),
+    lime = Color(0xFFC4DDD5),
+    limeSoft = PineContainerDark,
+    limeInk = PineOnContainerDark,
+    income = SageIncomeDark,
+    incomeSoft = SageIncomeSoftDark,
+    expense = TerraExpenseDark,
+    expenseSoft = TerraExpenseSoftDark,
+    warning = OchreWarningDark,
+    warningSoft = OchreWarningSoftDark,
+    savings = MatteSavingsDark,
+    savingsSoft = MatteSavingsSoftDark,
+    cardBorder = M3DarkOutlineVariant,
+    subtleSurface = M3DarkContainerHigh,
+    glassHighlight = M3DarkContainerHighest,
+    dockSurface = M3DarkContainer,
+    dockBorder = M3DarkOutline
 )
 
 val LocalMengiColors = staticCompositionLocalOf { LightExtendedColors }
 
 internal val MengiLightColorScheme = lightColorScheme(
-    primary = OneUiBlueLight,
-    onPrimary = Color(0xFFF5F7FA),
-    primaryContainer = OneUiBlueSoftLight,
-    onPrimaryContainer = OneUiBlueInkLight,
-    secondary = GalaxyIndigoLight,
-    onSecondary = Color(0xFFF5F7FA),
-    secondaryContainer = GalaxyIndigoSoft,
-    onSecondaryContainer = GalaxyIndigoInk,
-    tertiary = Amber700,
-    onTertiary = Color(0xFFF5F7FA),
-    tertiaryContainer = AmberSoft,
-    onTertiaryContainer = Color(0xFF5A4229),
-    background = OneUiLightCanvas,
-    onBackground = SlateInk,
-    surface = OneUiPureWhite,
-    onSurface = SlateInk,
-    surfaceVariant = OneUiLightPill,
-    onSurfaceVariant = SlateMutedAccessible,
-    outline = OneUiLightBorder,
-    outlineVariant = Color(0xFFDFE3EA),
-    error = SoftPlumLight,
-    onError = Color(0xFFF5F7FA),
-    errorContainer = SoftPlumBgLight,
-    onErrorContainer = Color(0xFF423952)
+    primary = PinePrimaryLight,
+    onPrimary = Color(0xFFF7F7F4),
+    primaryContainer = PineContainerLight,
+    onPrimaryContainer = PineOnContainerLight,
+    secondary = SlateSecondaryLight,
+    onSecondary = Color(0xFFF7F7F4),
+    secondaryContainer = SlateContainerLight,
+    onSecondaryContainer = SlateOnContainerLight,
+    tertiary = ClayTertiaryLight,
+    onTertiary = Color(0xFFF7F7F4),
+    tertiaryContainer = ClayContainerLight,
+    onTertiaryContainer = ClayOnContainerLight,
+    background = M3LightCanvas,
+    onBackground = InkDark,
+    surface = M3LightSurface,
+    onSurface = InkDark,
+    surfaceVariant = M3LightContainerHigh,
+    onSurfaceVariant = InkMutedLight,
+    surfaceContainerLowest = M3LightSurface,
+    surfaceContainerLow = M3LightContainerLow,
+    surfaceContainer = M3LightContainer,
+    surfaceContainerHigh = M3LightContainerHigh,
+    surfaceContainerHighest = M3LightContainerHighest,
+    outline = M3LightOutline,
+    outlineVariant = M3LightOutlineVariant,
+    error = TerraExpenseLight,
+    onError = Color(0xFFFDFBFA),
+    errorContainer = TerraExpenseSoftLight,
+    onErrorContainer = Color(0xFF531A20)
 )
 
 internal val MengiDarkColorScheme = darkColorScheme(
-    primary = OneUiBlueDark,
-    onPrimary = DeepInk,
-    primaryContainer = OneUiBlueSoftDark,
-    onPrimaryContainer = OneUiBlueInkDark,
-    secondary = GalaxyIndigoDark,
-    onSecondary = DeepInk,
-    secondaryContainer = OneUiDarkElevated,
-    onSecondaryContainer = SnowInk,
-    tertiary = Amber400,
-    onTertiary = DeepInk,
-    tertiaryContainer = AmberDarkSoft,
-    onTertiaryContainer = Color(0xFFDFCEB8),
-    background = OneUiDarkCanvas,
-    onBackground = SnowInk,
-    surface = OneUiDarkCard,
-    onSurface = SnowInk,
-    surfaceVariant = OneUiDarkElevated,
-    onSurfaceVariant = SilverMutedAccessible,
-    outline = OneUiDarkBorder,
-    outlineVariant = Color(0xFF2C3642),
-    error = SoftPlumDark,
-    onError = DeepInk,
-    errorContainer = SoftPlumBgDark,
-    onErrorContainer = Color(0xFFDBD3E6)
+    primary = PinePrimaryDark,
+    onPrimary = PineOnPrimaryDark,
+    primaryContainer = PineContainerDark,
+    onPrimaryContainer = PineOnContainerDark,
+    secondary = SlateSecondaryDark,
+    onSecondary = SlateOnSecondaryDark,
+    secondaryContainer = SlateContainerDark,
+    onSecondaryContainer = SlateOnContainerDark,
+    tertiary = ClayTertiaryDark,
+    onTertiary = ClayOnTertiaryDark,
+    tertiaryContainer = ClayContainerDark,
+    onTertiaryContainer = ClayOnContainerDark,
+    background = M3DarkCanvas,
+    onBackground = InkSnow,
+    surface = M3DarkSurface,
+    onSurface = InkSnow,
+    surfaceVariant = M3DarkContainerHigh,
+    onSurfaceVariant = InkMutedDark,
+    surfaceContainerLowest = Color(0xFF141816),
+    surfaceContainerLow = M3DarkContainerLow,
+    surfaceContainer = M3DarkContainer,
+    surfaceContainerHigh = M3DarkContainerHigh,
+    surfaceContainerHighest = M3DarkContainerHighest,
+    outline = M3DarkOutline,
+    outlineVariant = M3DarkOutlineVariant,
+    error = TerraExpenseDark,
+    onError = Color(0xFF47161B),
+    errorContainer = TerraExpenseSoftDark,
+    onErrorContainer = Color(0xFFF7DCDF)
 )
 
 val MengiTypography = Typography(
     displayLarge = TextStyle(
-        fontFamily = OneUiDisplayFamily,
-        fontWeight = FontWeight.ExtraBold,
-        fontSize = 38.sp,
-        lineHeight = 44.sp,
+        fontFamily = ExpressiveDisplayFamily,
+        fontWeight = FontWeight.Bold,
+        fontSize = 37.sp,
+        lineHeight = 43.sp,
         letterSpacing = (-1.1).sp
     ),
     displaySmall = TextStyle(
-        fontFamily = OneUiDisplayFamily,
+        fontFamily = ExpressiveDisplayFamily,
         fontWeight = FontWeight.Bold,
-        fontSize = 31.sp,
-        lineHeight = 37.sp,
+        fontSize = 30.sp,
+        lineHeight = 36.sp,
         letterSpacing = (-0.75).sp
     ),
     headlineMedium = TextStyle(
-        fontFamily = OneUiDisplayFamily,
+        fontFamily = ExpressiveDisplayFamily,
         fontWeight = FontWeight.Bold,
         fontSize = 24.sp,
         lineHeight = 30.sp,
         letterSpacing = (-0.4).sp
     ),
     headlineSmall = TextStyle(
-        fontFamily = OneUiDisplayFamily,
+        fontFamily = ExpressiveDisplayFamily,
         fontWeight = FontWeight.SemiBold,
         fontSize = 20.sp,
         lineHeight = 26.sp,
-        letterSpacing = (-0.2).sp
+        letterSpacing = (-0.25).sp
     ),
     titleLarge = TextStyle(
-        fontFamily = OneUiDisplayFamily,
+        fontFamily = ExpressiveDisplayFamily,
         fontWeight = FontWeight.SemiBold,
         fontSize = 18.sp,
         lineHeight = 24.sp,
         letterSpacing = (-0.15).sp
     ),
     titleMedium = TextStyle(
-        fontFamily = PlusJakartaSansFamily,
+        fontFamily = ExpressiveBodyFamily,
         fontWeight = FontWeight.SemiBold,
         fontSize = 15.5.sp,
         lineHeight = 21.sp
     ),
     titleSmall = TextStyle(
-        fontFamily = PlusJakartaSansFamily,
+        fontFamily = ExpressiveBodyFamily,
         fontWeight = FontWeight.SemiBold,
         fontSize = 13.5.sp,
         lineHeight = 18.sp
     ),
     bodyLarge = TextStyle(
-        fontFamily = PlusJakartaSansFamily,
+        fontFamily = ExpressiveBodyFamily,
         fontWeight = FontWeight.Normal,
         fontSize = 15.sp,
         lineHeight = 22.sp
     ),
     bodyMedium = TextStyle(
-        fontFamily = PlusJakartaSansFamily,
+        fontFamily = ExpressiveBodyFamily,
         fontWeight = FontWeight.Normal,
         fontSize = 13.5.sp,
         lineHeight = 19.sp
     ),
     bodySmall = TextStyle(
-        fontFamily = PlusJakartaSansFamily,
+        fontFamily = ExpressiveBodyFamily,
         fontWeight = FontWeight.Normal,
         fontSize = 12.sp,
         lineHeight = 17.sp
     ),
     labelLarge = TextStyle(
-        fontFamily = PlusJakartaSansFamily,
+        fontFamily = ExpressiveBodyFamily,
         fontWeight = FontWeight.SemiBold,
         fontSize = 13.sp,
         lineHeight = 18.sp
     ),
     labelMedium = TextStyle(
-        fontFamily = PlusJakartaSansFamily,
+        fontFamily = ExpressiveBodyFamily,
         fontWeight = FontWeight.SemiBold,
         fontSize = 11.5.sp,
         lineHeight = 16.sp,
-        letterSpacing = 0.25.sp
+        letterSpacing = 0.2.sp
     ),
     labelSmall = TextStyle(
-        fontFamily = PlusJakartaSansFamily,
+        fontFamily = ExpressiveBodyFamily,
         fontWeight = FontWeight.Bold,
         fontSize = 10.5.sp,
         lineHeight = 14.sp,
-        letterSpacing = 0.8.sp
+        letterSpacing = 0.7.sp
     )
 )
 
-// 2026 Current-Generation Expressive Squircle Radius System
+// Android 17 Material 3 Expressive Shape Tokens
 val MengiShapes = Shapes(
     small = RoundedCornerShape(16.dp),
     medium = RoundedCornerShape(22.dp),
@@ -357,21 +392,33 @@ private fun deriveExtendedColors(
             expense = expense,
             warning = warning,
             savings = savings,
-            cardBorder = scheme.outline,
-            subtleSurface = scheme.surfaceVariant
+            cardBorder = scheme.outlineVariant,
+            subtleSurface = scheme.surfaceContainerLow
         )
     }
 
-    val heroStart = lerp(Color(0xFF0A0F1D), scheme.primary, 0.22f)
-    val heroMid = lerp(Color(0xFF10192D), scheme.primary, 0.42f)
-    val heroEnd = lerp(Color(0xFF162440), scheme.primary, 0.68f)
+    val heroStart = if (isDark) {
+        lerp(Color(0xFF141816), scheme.primaryContainer, 0.30f)
+    } else {
+        lerp(Color(0xFF1E2623), scheme.primary, 0.42f)
+    }
+    val heroMid = if (isDark) {
+        lerp(Color(0xFF181E1B), scheme.primary, 0.22f)
+    } else {
+        lerp(Color(0xFF222D29), scheme.primary, 0.48f)
+    }
+    val heroEnd = if (isDark) {
+        lerp(Color(0xFF1A2220), scheme.secondary, 0.22f)
+    } else {
+        lerp(Color(0xFF25322F), scheme.secondary, 0.40f)
+    }
 
     return base.copy(
         heroStart = heroStart,
         heroMid = heroMid,
         heroEnd = heroEnd,
-        heroAccentGlow = scheme.primaryContainer,
-        heroGoldGlow = scheme.secondaryContainer,
+        heroAccentGlow = heroMid,
+        heroGoldGlow = heroEnd,
         lime = ContrastAccessibility.ensureAccessibleForeground(scheme.primaryContainer, heroStart, 4.5f),
         limeSoft = scheme.primaryContainer,
         limeInk = scheme.onPrimaryContainer,
@@ -379,8 +426,11 @@ private fun deriveExtendedColors(
         expense = expense,
         warning = warning,
         savings = savings,
-        cardBorder = scheme.outline,
-        subtleSurface = scheme.surfaceVariant
+        cardBorder = scheme.outlineVariant,
+        subtleSurface = scheme.surfaceContainerLow,
+        glassHighlight = scheme.surfaceContainerHigh,
+        dockSurface = scheme.surfaceContainer,
+        dockBorder = scheme.outlineVariant
     )
 }
 

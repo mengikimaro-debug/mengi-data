@@ -216,10 +216,10 @@ fun TransactionsScreen(
                                 showCategoryManager = true
                             },
                             shape = CircleShape,
-                            color = MaterialTheme.colorScheme.surface,
-                            border = BorderStroke(1.dp, colors.cardBorder),
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            tonalElevation = 1.dp,
                             modifier = Modifier
-                                .size(42.dp)
+                                .size(44.dp)
                                 .testTag("txns_manage_categories_btn")
                         ) {
                             Box(contentAlignment = Alignment.Center) {
@@ -234,10 +234,10 @@ fun TransactionsScreen(
                         Surface(
                             onClick = { onExportStatementPdf(selectedPeriod) },
                             shape = CircleShape,
-                            color = MaterialTheme.colorScheme.surface,
-                            border = BorderStroke(1.dp, colors.cardBorder),
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            tonalElevation = 1.dp,
                             modifier = Modifier
-                                .size(42.dp)
+                                .size(44.dp)
                                 .testTag("txns_export_statement_pdf_btn")
                         ) {
                             Box(contentAlignment = Alignment.Center) {
@@ -437,9 +437,8 @@ fun TransactionsScreen(
                                 color = if (showCategoryStrip || categoryFilter != null) {
                                     MaterialTheme.colorScheme.secondaryContainer
                                 } else {
-                                    MaterialTheme.colorScheme.surface
+                                    MaterialTheme.colorScheme.surfaceContainerLow
                                 },
-                                border = BorderStroke(1.dp, colors.cardBorder),
                                 modifier = Modifier.heightIn(min = 38.dp)
                             ) {
                                 Row(
@@ -694,11 +693,9 @@ private fun LedgerMetricTile(
     accentColor: androidx.compose.ui.graphics.Color,
     modifier: Modifier = Modifier
 ) {
-    val colors = LocalMengiColors.current
     Surface(
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(20.dp),
         color = containerColor,
-        border = BorderStroke(1.dp, colors.cardBorder),
         modifier = modifier
     ) {
         Column(
@@ -731,20 +728,18 @@ private fun LedgerSolidFilterPill(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val colors = LocalMengiColors.current
-    val bg = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface
+    val bg = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerLow
     val fg = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
     Surface(
         onClick = onClick,
         shape = CircleShape,
         color = bg,
-        border = if (selected) null else BorderStroke(1.dp, colors.cardBorder),
-        shadowElevation = 0.dp,
+        tonalElevation = if (selected) 2.dp else 0.dp,
         modifier = modifier.heightIn(min = 38.dp)
     ) {
         Box(
             contentAlignment = Alignment.Center,
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+            modifier = Modifier.padding(horizontal = 15.dp, vertical = 8.dp)
         ) {
             Text(
                 text = label,
@@ -818,12 +813,11 @@ private fun LedgerTransactionRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Left: Crisp 44dp Squircle Icon Badge with subtle border
+        // Left: Android 17 Tonal Squircle Icon Badge
         Surface(
-            shape = RoundedCornerShape(14.dp),
+            shape = RoundedCornerShape(16.dp),
             color = iconBg,
-            border = BorderStroke(0.8.dp, bColors.border),
-            modifier = Modifier.size(44.dp)
+            modifier = Modifier.size(46.dp)
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
@@ -868,9 +862,8 @@ private fun LedgerTransactionRow(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = bColors.softBg,
-                    border = BorderStroke(0.75.dp, bColors.border)
+                    shape = CircleShape,
+                    color = bColors.softBg
                 ) {
                     Text(
                         text = bucket.label(language),
@@ -878,14 +871,13 @@ private fun LedgerTransactionRow(
                         color = bColors.ink,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.5.dp)
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp)
                     )
                 }
                 if (localizedMethod.isNotBlank()) {
                     Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = colors.subtleSurface,
-                        border = BorderStroke(0.75.dp, colors.cardBorder)
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.surfaceContainerLow
                     ) {
                         Text(
                             text = localizedMethod,
@@ -893,7 +885,7 @@ private fun LedgerTransactionRow(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.5.dp)
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp)
                         )
                     }
                 }

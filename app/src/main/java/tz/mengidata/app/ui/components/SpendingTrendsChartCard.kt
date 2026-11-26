@@ -25,11 +25,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ShowChart
 import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Savings
-import androidx.compose.material.icons.rounded.ShowChart
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -167,15 +167,14 @@ fun SpendingTrendsChartCard(
 
             Surface(
                 shape = CircleShape,
-                color = colors.subtleSurface,
-                border = BorderStroke(1.dp, colors.cardBorder)
+                color = MaterialTheme.colorScheme.surfaceContainerHigh
             ) {
                 Row(
                     modifier = Modifier.padding(3.dp),
                     horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     ChartModeToggleButton(
-                        icon = Icons.Rounded.ShowChart,
+                        icon = Icons.AutoMirrored.Rounded.ShowChart,
                         contentDescription = tr(language, "Chati ya mistari", "Line chart"),
                         selected = chartMode == "line",
                         onClick = { chartMode = "line" },

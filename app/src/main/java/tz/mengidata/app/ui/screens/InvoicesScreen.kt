@@ -234,23 +234,21 @@ fun InvoicesScreen(
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Surface(
-                            shape = RoundedCornerShape(16.dp),
+                            shape = RoundedCornerShape(20.dp),
                             color = colors.incomeSoft,
-                            border = BorderStroke(1.dp, colors.cardBorder),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
+                            Column(modifier = Modifier.padding(14.dp)) {
                                 Text(tr(language, "Zilizopokelewa", "Collected"), style = MaterialTheme.typography.labelSmall, color = colors.income)
                                 Text(FormatUtils.formatCompactMoney(totalReceived, currency), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = colors.income)
                             }
                         }
                         Surface(
-                            shape = RoundedCornerShape(16.dp),
+                            shape = RoundedCornerShape(20.dp),
                             color = colors.warningSoft,
-                            border = BorderStroke(1.dp, colors.cardBorder),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
+                            Column(modifier = Modifier.padding(14.dp)) {
                                 Text(tr(language, "Salio Linalodaiwa", "Balance Due"), style = MaterialTheme.typography.labelSmall, color = colors.warning)
                                 Text(FormatUtils.formatCompactMoney(totalReceivables, currency), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = colors.warning)
                             }
@@ -261,9 +259,9 @@ fun InvoicesScreen(
 
             item(key = "public_pdf_archive") {
                 Surface(
-                    shape = RoundedCornerShape(18.dp),
-                    color = colors.subtleSurface,
-                    border = BorderStroke(1.dp, colors.cardBorder),
+                    shape = RoundedCornerShape(24.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    tonalElevation = 1.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
@@ -371,8 +369,8 @@ fun InvoicesScreen(
                             Surface(
                                 onClick = { filter = key },
                                 shape = CircleShape,
-                                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
-                                border = if (selected) null else BorderStroke(1.dp, colors.cardBorder),
+                                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerLow,
+                                tonalElevation = if (selected) 2.dp else 0.dp,
                                 modifier = Modifier.testTag("inv_filter_$key")
                             ) {
                                 Text(
@@ -380,7 +378,7 @@ fun InvoicesScreen(
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                                     color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp)
+                                    modifier = Modifier.padding(horizontal = 15.dp, vertical = 9.dp)
                                 )
                             }
                         }

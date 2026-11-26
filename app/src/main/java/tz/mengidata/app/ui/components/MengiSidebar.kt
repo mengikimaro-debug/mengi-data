@@ -125,11 +125,12 @@ fun MengiSidebarSheet(
                 .padding(horizontal = 14.dp, vertical = 14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Solid Calm Matte Slate Header Card (No Transparency)
+            // Matte Android 17 Header Card (Zero Glow / Zero Glare)
             Surface(
-                shape = RoundedCornerShape(28.dp),
+                shape = RoundedCornerShape(30.dp),
                 color = colors.heroStart,
-                border = BorderStroke(1.dp, Color(0xFF394654)),
+                border = BorderStroke(1.dp, Color(0xFF33453F)),
+                shadowElevation = if (colors.isDark) 0.dp else 3.dp,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Box(
@@ -140,9 +141,11 @@ fun MengiSidebarSheet(
                                 colors = listOf(colors.heroStart, colors.heroMid, colors.heroEnd)
                             )
                         )
-                        .padding(18.dp)
                 ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Column(
+                        modifier = Modifier.padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -154,9 +157,9 @@ fun MengiSidebarSheet(
                                 horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
                                 Surface(
-                                    shape = RoundedCornerShape(14.dp),
-                                    color = Color(0xFF2B3745),
-                                    border = BorderStroke(1.5.dp, Color(0xFF56687A)),
+                                    shape = RoundedCornerShape(16.dp),
+                                    color = Color(0xFF2B3C37),
+                                    border = BorderStroke(1.dp, Color(0xFF425952)),
                                     modifier = Modifier.size(44.dp)
                                 ) {
                                     Image(
@@ -170,7 +173,7 @@ fun MengiSidebarSheet(
                                     Text(
                                         text = settings.businessName.ifBlank { "Mengidata" },
                                         style = MaterialTheme.typography.titleLarge,
-                                        color = Color(0xFFEFF2F6),
+                                        color = Color(0xFFEBE9E3),
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
@@ -182,7 +185,7 @@ fun MengiSidebarSheet(
                                     Text(
                                         text = subtitle,
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = Color(0xFFC2CCD8),
+                                        color = Color(0xFFB8C4BF),
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
@@ -198,7 +201,7 @@ fun MengiSidebarSheet(
                                         themeState.onSetThemeMode(next)
                                     },
                                     shape = CircleShape,
-                                    color = Color(0xFF2D3846),
+                                    color = Color(0xFF2C3D38),
                                     modifier = Modifier
                                         .size(40.dp)
                                         .testTag("sidebar_theme_toggle_btn")
@@ -211,7 +214,7 @@ fun MengiSidebarSheet(
                                                 if (themeState.isDark) "Badili kwenda Mwanga" else "Badili kwenda Giza",
                                                 if (themeState.isDark) "Switch to Light Mode" else "Switch to Dark Mode"
                                             ),
-                                            tint = Color(0xFFE6EAF0),
+                                            tint = Color(0xFFEBE9E3),
                                             modifier = Modifier.size(18.dp)
                                         )
                                     }
@@ -219,7 +222,7 @@ fun MengiSidebarSheet(
                                 Surface(
                                     onClick = onCloseDrawer,
                                     shape = CircleShape,
-                                    color = Color(0xFF2D3846),
+                                    color = Color(0xFF2C3D38),
                                     modifier = Modifier
                                         .size(40.dp)
                                         .testTag("close_sidebar_btn")
@@ -228,7 +231,7 @@ fun MengiSidebarSheet(
                                         Icon(
                                             imageVector = Icons.Rounded.Close,
                                             contentDescription = tr(language, "Funga menyu", "Close menu"),
-                                            tint = Color(0xFFE6EAF0),
+                                            tint = Color(0xFFEBE9E3),
                                             modifier = Modifier.size(18.dp)
                                         )
                                     }
@@ -236,10 +239,10 @@ fun MengiSidebarSheet(
                             }
                         }
 
-                        // Calm Matte Slate Balance Pill
+                        // Matte Balance Pill
                         Surface(
-                            color = Color(0xFF26303B),
-                            border = BorderStroke(1.dp, Color(0xFF394654)),
+                            color = Color(0xFF273631),
+                            border = BorderStroke(0.8.dp, Color(0xFF394D47)),
                             shape = RoundedCornerShape(20.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
@@ -258,19 +261,19 @@ fun MengiSidebarSheet(
                                         text = if (privacyMaskEnabled) "••••••" else FormatUtils.formatMoney(zeroLossLedger.verifiedCashBalance, currency),
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.Bold,
-                                        color = Color(0xFFEFF2F6),
+                                        color = Color(0xFFEBE9E3),
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
                                 }
                                 Surface(
-                                    color = Color(0xFF364454),
+                                    color = Color(0xFF334740),
                                     shape = CircleShape
                                 ) {
                                     Text(
                                         text = "v${BuildConfig.VERSION_NAME}",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = Color(0xFFE6EAF0),
+                                        color = Color(0xFFEBE9E3),
                                         modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
                                     )
                                 }
@@ -468,9 +471,9 @@ fun MengiSidebarSheet(
 
             // Zero-Loss Integrity Footer Pill
             Surface(
-                color = MaterialTheme.colorScheme.surface,
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
                 shape = CircleShape,
-                border = BorderStroke(1.dp, colors.cardBorder),
+                tonalElevation = 1.dp,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(

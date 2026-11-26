@@ -400,9 +400,9 @@ fun MengiApp(viewModel: MengiViewModel) {
                                 Snackbar(
                                     snackbarData = data,
                                     shape = CircleShape,
-                                    containerColor = if (colors.isDark) Color(0xFF262832) else Color(0xFF141B2D),
-                                    contentColor = Color.White,
-                                    actionColor = MaterialTheme.colorScheme.primary
+                                    containerColor = MaterialTheme.colorScheme.inverseSurface,
+                                    contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+                                    actionColor = MaterialTheme.colorScheme.inversePrimary
                                 )
                             }
                         },
@@ -423,11 +423,8 @@ fun MengiApp(viewModel: MengiViewModel) {
                                                 }
                                             },
                                             shape = CircleShape,
-                                            color = MaterialTheme.colorScheme.surface,
-                                            border = BorderStroke(
-                                                1.dp,
-                                                colors.cardBorder
-                                            ),
+                                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                            tonalElevation = 2.dp,
                                             modifier = Modifier
                                                 .size(44.dp)
                                                 .testTag(if (isSettings) "settings_back_btn" else "open_sidebar_btn")
@@ -461,10 +458,9 @@ fun MengiApp(viewModel: MengiViewModel) {
                                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                                         ) {
                                             Surface(
-                                                shape = RoundedCornerShape(10.dp),
-                                                color = Color(0xFF242E38),
-                                                border = BorderStroke(1.dp, Color(0xFF56687A)),
-                                                modifier = Modifier.size(30.dp)
+                                                shape = RoundedCornerShape(12.dp),
+                                                color = MaterialTheme.colorScheme.primaryContainer,
+                                                modifier = Modifier.size(32.dp)
                                             ) {
                                                 Image(
                                                     painter = painterResource(id = R.drawable.mengidata_oneui_icon_1795525888393),
@@ -492,11 +488,12 @@ fun MengiApp(viewModel: MengiViewModel) {
                                             Surface(
                                                 onClick = { viewModel.togglePrivacyMask() },
                                                 shape = CircleShape,
-                                                color = MaterialTheme.colorScheme.surface,
-                                                border = BorderStroke(
-                                                    1.dp,
-                                                    colors.cardBorder
-                                                ),
+                                                color = if (privacyMaskEnabled) {
+                                                    MaterialTheme.colorScheme.primaryContainer
+                                                } else {
+                                                    MaterialTheme.colorScheme.surfaceContainerHigh
+                                                },
+                                                tonalElevation = 2.dp,
                                                 modifier = Modifier
                                                     .size(44.dp)
                                                     .testTag("topbar_privacy_toggle_btn")
@@ -505,7 +502,7 @@ fun MengiApp(viewModel: MengiViewModel) {
                                                     Icon(
                                                         imageVector = if (privacyMaskEnabled) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
                                                         contentDescription = tr(language, "Ficha au onyesha salio", "Toggle balance visibility"),
-                                                        tint = if (privacyMaskEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                                        tint = if (privacyMaskEnabled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
                                                         modifier = Modifier.size(20.dp)
                                                     )
                                                 }
@@ -513,11 +510,8 @@ fun MengiApp(viewModel: MengiViewModel) {
                                             Surface(
                                                 onClick = { showGlobalSearch = true },
                                                 shape = CircleShape,
-                                                color = MaterialTheme.colorScheme.surface,
-                                                border = BorderStroke(
-                                                    1.dp,
-                                                    colors.cardBorder
-                                                ),
+                                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                                tonalElevation = 2.dp,
                                                 modifier = Modifier
                                                     .size(44.dp)
                                                     .testTag("topbar_global_search_btn")
@@ -545,7 +539,7 @@ fun MengiApp(viewModel: MengiViewModel) {
                             if (useNavRail && !isSettings) {
                                 NavigationRail(
                                     modifier = Modifier.fillMaxHeight(),
-                                    containerColor = MaterialTheme.colorScheme.surface
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
                                 ) {
                                     PrimaryDestinations.forEach { dest ->
                                         val selected = currentDestination?.hasRoute(dest.route::class) == true

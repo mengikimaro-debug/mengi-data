@@ -68,25 +68,26 @@ import tz.mengidata.app.i18n.PeriodFilter
 import tz.mengidata.app.i18n.tr
 import tz.mengidata.app.ui.theme.LocalMengiColors
 
-// Samsung One UI 8.5 Shared Shape Tokens
+import tz.mengidata.app.ui.theme.LocalMengiThemeState
+
+// Android 17 Material 3 Expressive Shared Shape Tokens
 val OneUiSheetShape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp)
 val OneUiDialogShape = RoundedCornerShape(28.dp)
 val OneUiFieldShape = RoundedCornerShape(18.dp)
 
 @Composable
 fun oneUiTextFieldColors(): TextFieldColors {
-    val colors = LocalMengiColors.current
     return OutlinedTextFieldDefaults.colors(
-        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+        focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         focusedBorderColor = MaterialTheme.colorScheme.primary,
-        unfocusedBorderColor = colors.cardBorder
+        unfocusedBorderColor = Color.Transparent
     )
 }
 
 /**
- * Samsung One UI 8.5 Signature 26dp Squircle Grouped Surface Card.
- * Relies on crisp surface contrast over Frost Light / AMOLED Black canvas with a whisper-thin specular rim.
+ * Android 17 Material 3 Expressive Tonal Container Card.
+ * Uses surfaceContainerLowest / surface layering over tonal canvas instead of boxy dark borders.
  */
 @Composable
 fun MengiCard(
@@ -98,9 +99,17 @@ fun MengiCard(
     content: @Composable ColumnScope.() -> Unit
 ) {
     val colors = LocalMengiColors.current
-    val resolvedBorder = borderColor ?: colors.cardBorder
-    val border = remember(resolvedBorder) { BorderStroke(1.dp, resolvedBorder) }
-    val shape = MaterialTheme.shapes.large // 26.dp One UI squircle
+    val highContrast = LocalMengiThemeState.current.highContrastEnabled
+    val border = remember(borderColor, highContrast, colors.cardBorder, colors.isDark) {
+        when {
+            borderColor != null -> BorderStroke(1.dp, borderColor)
+            highContrast -> BorderStroke(1.2.dp, colors.cardBorder)
+            colors.isDark -> BorderStroke(0.6.dp, colors.cardBorder)
+            else -> null
+        }
+    }
+    val shape = MaterialTheme.shapes.large // 28.dp Android 17 expressive rounded container
+    val shadow = if (colors.isDark || highContrast) 0.dp else 1.5.dp
 
     if (onClick != null) {
         Surface(
@@ -109,8 +118,8 @@ fun MengiCard(
             shape = shape,
             color = containerColor,
             border = border,
-            tonalElevation = 0.dp,
-            shadowElevation = 0.dp
+            tonalElevation = 1.dp,
+            shadowElevation = shadow
         ) {
             Column(modifier = Modifier.padding(contentPadding), content = content)
         }
@@ -120,8 +129,8 @@ fun MengiCard(
             shape = shape,
             color = containerColor,
             border = border,
-            tonalElevation = 0.dp,
-            shadowElevation = 0.dp
+            tonalElevation = 1.dp,
+            shadowElevation = shadow
         ) {
             Column(modifier = Modifier.padding(contentPadding), content = content)
         }
@@ -129,8 +138,7 @@ fun MengiCard(
 }
 
 /**
- * Samsung One UI 8.5 Spacious Viewing Area Header.
- * Clean geometric title with optional eyebrow pill, subtitle, and trailing pill actions.
+ * Android 17 Material 3 Expressive Screen Header.
  */
 @Composable
 fun OneUiScreenHeader(
@@ -143,7 +151,7 @@ fun OneUiScreenHeader(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(top = 6.dp, bottom = 4.dp),
+            .padding(top = 4.dp, bottom = 4.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         if (!eyebrow.isNullOrBlank()) {
@@ -185,8 +193,7 @@ fun OneUiScreenHeader(
 }
 
 /**
- * Samsung One UI 8.5 Pill-in-Pill Segmented Tab Switcher.
- * Replaces boxy Material outlined segmented buttons with a soft rounded capsule track & elevated active pill.
+ * Android 17 Material 3 Expressive Connected Pill-Track Segmented Switcher.
  */
 @Composable
 fun OneUiSegmentedTabs(
@@ -199,12 +206,8 @@ fun OneUiSegmentedTabs(
     val colors = LocalMengiColors.current
     Surface(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        color = colors.subtleSurface,
-        border = BorderStroke(
-            width = 1.dp,
-            color = colors.cardBorder
-        )
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh
     ) {
         Row(
             modifier = Modifier
@@ -219,9 +222,9 @@ fun OneUiSegmentedTabs(
                     targetValue = if (selected) {
                         MaterialTheme.colorScheme.primary
                     } else {
-                        colors.subtleSurface
+                        Color.Transparent
                     },
-                    animationSpec = tween(200),
+                    animationSpec = tween(220),
                     label = "seg_pill_bg"
                 )
                 val textColor by animateColorAsState(
@@ -236,12 +239,12 @@ fun OneUiSegmentedTabs(
                 val tag = testTags.getOrNull(idx)
                 Surface(
                     onClick = { onSelect(idx) },
-                    shape = RoundedCornerShape(18.dp),
+                    shape = CircleShape,
                     color = pillBg,
                     shadowElevation = if (selected && !colors.isDark) 2.dp else 0.dp,
                     modifier = Modifier
                         .weight(1f)
-                        .heightIn(min = 44.dp)
+                        .heightIn(min = 42.dp)
                         .then(if (tag != null) Modifier.testTag(tag) else Modifier)
                 ) {
                     Box(
@@ -267,9 +270,8 @@ fun OneUiSegmentedTabs(
 }
 
 /**
- * Samsung One UI 8.5 Floating Frosted-Glass Capsule Bottom Navigation Dock.
- * Hovers cleanly above the gesture/navigation bar with proper insets, specular glass rim,
- * and spring-animated active pill capsule indicators.
+ * Android 17 Material 3 Expressive Floating Pill Navigation Toolbar.
+ * Uses tonal surfaceContainerHigh dock with bouncy primaryContainer active capsule indicator.
  */
 data class OneUiNavTab(
     val label: String,
@@ -289,14 +291,15 @@ fun OneUiFloatingNavBar(
         modifier = modifier
             .fillMaxWidth()
             .navigationBarsPadding()
-            .padding(horizontal = 14.dp, vertical = 10.dp),
+            .padding(horizontal = 16.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center
     ) {
         Surface(
             shape = CircleShape,
             color = colors.dockSurface,
-            border = BorderStroke(1.2.dp, colors.dockBorder),
-            shadowElevation = if (colors.isDark) 6.dp else 14.dp,
+            tonalElevation = 4.dp,
+            border = if (colors.isDark) BorderStroke(0.8.dp, colors.dockBorder) else BorderStroke(0.6.dp, colors.dockBorder),
+            shadowElevation = if (colors.isDark) 8.dp else 12.dp,
             modifier = Modifier
                 .fillMaxWidth()
                 .widthIn(max = 520.dp)
@@ -311,16 +314,19 @@ fun OneUiFloatingNavBar(
                 tabs.forEach { tab ->
                     val pillColor by animateColorAsState(
                         targetValue = if (tab.selected) {
-                            MaterialTheme.colorScheme.primary
+                            MaterialTheme.colorScheme.primaryContainer
                         } else {
-                            colors.dockSurface
+                            Color.Transparent
                         },
-                        animationSpec = tween(220),
+                        animationSpec = spring(
+                            dampingRatio = 0.78f,
+                            stiffness = Spring.StiffnessMediumLow
+                        ),
                         label = "dock_pill"
                     )
                     val contentColor by animateColorAsState(
                         targetValue = if (tab.selected) {
-                            MaterialTheme.colorScheme.onPrimary
+                            MaterialTheme.colorScheme.onPrimaryContainer
                         } else {
                             MaterialTheme.colorScheme.onSurfaceVariant
                         },
@@ -328,7 +334,7 @@ fun OneUiFloatingNavBar(
                         label = "dock_fg"
                     )
                     val iconScale by animateFloatAsState(
-                        targetValue = if (tab.selected) 1.1f else 1f,
+                        targetValue = if (tab.selected) 1.12f else 1f,
                         animationSpec = spring(
                             dampingRatio = Spring.DampingRatioMediumBouncy,
                             stiffness = Spring.StiffnessMedium
@@ -356,7 +362,7 @@ fun OneUiFloatingNavBar(
                                 contentDescription = tab.label,
                                 tint = contentColor,
                                 modifier = Modifier
-                                    .size(20.dp)
+                                    .size(21.dp)
                                     .scale(iconScale)
                             )
                             Text(
@@ -381,7 +387,7 @@ fun OneUiFloatingNavBar(
 }
 
 /**
- * Samsung One UI 8.5 Signature Floating Squircle Action Button.
+ * Android 17 Material 3 Expressive Squircle FAB with tactile spring physics.
  */
 @Composable
 fun OneUiFloatingFab(
@@ -393,22 +399,22 @@ fun OneUiFloatingFab(
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.92f else 1f,
+        targetValue = if (isPressed) 0.90f else 1f,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
             stiffness = Spring.StiffnessMedium
         ),
-        label = "oneui_fab_scale"
+        label = "m3_expressive_fab_scale"
     )
 
     Surface(
         onClick = onClick,
         interactionSource = interactionSource,
-        shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.primary,
-        contentColor = MaterialTheme.colorScheme.onPrimary,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primaryContainer),
-        shadowElevation = 8.dp,
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        tonalElevation = 6.dp,
+        shadowElevation = 6.dp,
         modifier = modifier
             .size(58.dp)
             .scale(scale)
@@ -428,23 +434,28 @@ fun SectionEyebrow(
     text: String,
     modifier: Modifier = Modifier
 ) {
-    Row(
+    Surface(
         modifier = modifier,
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(7.dp)
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.primaryContainer
     ) {
-        Box(
-            modifier = Modifier
-                .width(16.dp)
-                .height(5.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary)
-        )
-        Text(
-            text = text.uppercase(),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.primary
-        )
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary)
+            )
+            Text(
+                text = text.uppercase(),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+        }
     }
 }
 
@@ -472,7 +483,7 @@ fun StatusPill(
 }
 
 /**
- * Samsung One UI 8.5 Borderless Full-Pill Period Filter Strip.
+ * Android 17 Material 3 Expressive Tonal Filter Pill Strip.
  */
 @Composable
 fun PeriodSelectorRow(
@@ -491,7 +502,7 @@ fun PeriodSelectorRow(
         PeriodFilter.entries.forEach { period ->
             val isSelected = period == selected
             val bg by animateColorAsState(
-                targetValue = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
+                targetValue = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerLow,
                 animationSpec = tween(180),
                 label = "period_bg"
             )
@@ -504,11 +515,8 @@ fun PeriodSelectorRow(
                 onClick = { onSelect(period) },
                 shape = CircleShape,
                 color = bg,
-                border = if (isSelected) null else BorderStroke(
-                    1.dp,
-                    colors.cardBorder
-                ),
-                shadowElevation = if (isSelected && !colors.isDark) 3.dp else 0.dp,
+                tonalElevation = if (isSelected) 2.dp else 0.dp,
+                shadowElevation = if (isSelected && !colors.isDark) 2.dp else 0.dp,
                 modifier = Modifier
                     .heightIn(min = 38.dp)
                     .testTag("period_chip_${period.key}")

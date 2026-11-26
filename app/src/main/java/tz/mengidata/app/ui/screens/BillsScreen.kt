@@ -262,9 +262,8 @@ fun BillsScreen(
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Surface(
-                            shape = RoundedCornerShape(18.dp),
+                            shape = RoundedCornerShape(20.dp),
                             color = householdColors.softBg,
-                            border = BorderStroke(1.dp, householdColors.border),
                             modifier = Modifier.weight(1f)
                         ) {
                             Row(
@@ -306,9 +305,8 @@ fun BillsScreen(
                         }
 
                         Surface(
-                            shape = RoundedCornerShape(18.dp),
-                            color = if (overdueCount > 0) colors.warningSoft else colors.subtleSurface,
-                            border = BorderStroke(1.dp, colors.cardBorder),
+                            shape = RoundedCornerShape(20.dp),
+                            color = if (overdueCount > 0) colors.warningSoft else MaterialTheme.colorScheme.surfaceContainerLow,
                             modifier = Modifier.weight(1f)
                         ) {
                             Row(
@@ -583,15 +581,13 @@ private fun BillsSolidFilterPill(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val colors = LocalMengiColors.current
-    val bg = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface
+    val bg = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerLow
     val fg = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
     Surface(
         onClick = onClick,
         shape = CircleShape,
         color = bg,
-        border = if (selected) null else BorderStroke(1.dp, colors.cardBorder),
-        shadowElevation = 0.dp,
+        tonalElevation = if (selected) 2.dp else 0.dp,
         modifier = modifier.heightIn(min = 38.dp)
     ) {
         Box(
