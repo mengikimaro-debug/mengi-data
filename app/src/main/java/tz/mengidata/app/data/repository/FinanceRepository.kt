@@ -17,6 +17,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import tz.mengidata.app.backup.AndroidSystemBackupScheduler
 import tz.mengidata.app.data.accounting.AutoAccountingEngine
 import tz.mengidata.app.data.accounting.AutoBucket
 import tz.mengidata.app.data.accounting.CategoryAnalyticsEngine
@@ -101,42 +102,70 @@ class FinanceRepository(
 
     suspend fun ensureInitialized(): Boolean = withContext(Dispatchers.IO) {
         ensureDefaultCategoriesSeeded()
+        AndroidSystemBackupScheduler.ensurePeriodicBackupScheduled(appContext)
         var autoRestored = false
-        if (!prefs.isSeeded()) {
-            val existing = settingsDao.getSettings()
-            val existingTxns = txnDao.getAll()
-            if (existing == null && existingTxns.isEmpty()) {
-                // Auto-recover REAL user data from phone storage if readable immediately!
-                val recovered = runCatching {
-                    val savedJson = storageVault.readBestAvailableSnapshot(requireRealUserData = true)
-                    if (!savedJson.isNullOrBlank()) {
-                        importBackupJson(savedJson)
-                        true
-                    } else {
-                        false
-                    }
-                }.getOrDefault(false)
-                if (recovered) {
-                    autoRestored = true
-                    prefs.setPendingReinstallRestore(false)
+
+        val existing = settingsDao.getSettings()
+        val isRoomEmpty = existing == null &&
+            txnDao.getAll().isEmpty() &&
+            invoiceDao.getAllWithItems().isEmpty() &&
+            billDao.getAll().isEmpty() &&
+            savingsDao.getGoals().isEmpty() &&
+            pendingTxnDao.getAll().isEmpty()
+
+        // CRITICAL: Always inspect the ACTUAL Room database (never trust prefs.isSeeded() blindly,
+        // because Android Cloud Backup may restore SharedPreferences before or without Room DB).
+        val isDemoOrEmpty = isRoomEmpty || isDatabaseOnlyDemoOrEmpty()
+        if (isDemoOrEmpty) {
+            // Try immediate automatic recovery of REAL user data from ANY readable source
+            // (including Android System BackupAgent snapshot, Documents/Mengidata, History, Download/VaultLedger, MediaStore, SAF)
+            val recovered = runCatching {
+                val savedJson = storageVault.readBestAvailableSnapshot(requireRealUserData = true)
+                if (!savedJson.isNullOrBlank()) {
+                    importBackupJson(savedJson)
+                    true
                 } else {
-                    // On Android 11–16 reinstall, MANAGE_EXTERNAL_STORAGE is reset by OS so Documents/Mengidata
-                    // cannot be read until All Files Access is granted. Flag pending restore and NEVER overwrite public backups!
-                    if (!storageVault.hasAllFilesAccess()) {
-                        prefs.setPendingReinstallRestore(true)
-                    }
-                    loadDemoData()
+                    false
+                }
+            }.getOrDefault(false)
+
+            if (recovered) {
+                autoRestored = true
+                prefs.markSeeded()
+                prefs.setPendingReinstallRestore(false)
+                prefs.setRestorePromptDismissed(true)
+            } else if (isRoomEmpty) {
+                // Fresh empty install/reinstall: if Android revoked All Files Access, flag pending restore
+                // and reset prompt dismissal so the 1-tap Allow & Restore prompt appears immediately.
+                if (!storageVault.hasAllFilesAccess()) {
+                    prefs.setPendingReinstallRestore(true)
+                    prefs.setRestorePromptDismissed(false)
+                }
+                loadDemoData()
+                prefs.markSeeded()
+            } else {
+                // Currently showing unmodified demo data; keep pending restore armed until storage granted or real data added
+                if (!storageVault.hasAllFilesAccess()) {
+                    prefs.setPendingReinstallRestore(true)
+                }
+                if (!prefs.isSeeded()) {
+                    prefs.markSeeded()
                 }
             }
-            prefs.markSeeded()
-        } else if (prefs.pendingReinstallRestore.value && storageVault.hasAllFilesAccess()) {
-            autoRestored = tryAutoRestoreAfterStorageAccessGranted()
+        } else {
+            if (!prefs.isSeeded()) {
+                prefs.markSeeded()
+            }
+            if (prefs.pendingReinstallRestore.value) {
+                prefs.setPendingReinstallRestore(false)
+            }
         }
+
         reconcileLedgerIntegrity()
         storageVault.refreshStatus()
         // Only schedule public auto-backup if database actually contains real user data (not untouched demo!)
         if (!isDatabaseOnlyDemoOrEmpty()) {
-            scheduleAutoBackup()
+            scheduleAutoBackup(delayMs = 300L)
         }
         autoRestored
     }
@@ -1757,13 +1786,19 @@ class FinanceRepository(
      * Lets every UI save/edit/delete return in milliseconds while safely mirroring to
      * Documents/Mengidata, daily history, and custom SAF folder off the main thread.
      */
-    fun scheduleAutoBackup(delayMs: Long = 600L) {
+    fun scheduleAutoBackup(delayMs: Long = 250L) {
         if (!prefs.autoPhoneBackupEnabled.value) return
+        // Immediately arm native Android System JobScheduler so backup completes even if app is swiped closed!
+        AndroidSystemBackupScheduler.scheduleImmediateBackup(appContext, delayMs = 1_200L)
         scheduledBackupJob?.cancel()
         scheduledBackupJob = autoBackupScope.launch {
             if (delayMs > 0L) delay(delayMs)
             persistSafetySnapshot(force = false)
         }
+    }
+
+    suspend fun hasExistingRealPublicBackup(): Boolean = withContext(Dispatchers.IO) {
+        storageVault.hasReadableRealPublicBackup()
     }
 
     suspend fun persistSafetySnapshot(force: Boolean = false): Boolean = withContext(Dispatchers.IO) {
@@ -1773,6 +1808,8 @@ class FinanceRepository(
         scheduledBackupJob?.cancel()
         backupMutex.withLock {
             runCatching {
+                // Flush SQLite WAL so Android System BackupAgent always captures a consistent DB
+                db.checkpointWal()
                 val demoOnly = isDatabaseOnlyDemoOrEmpty()
                 if (!demoOnly) {
                     // Clear legacy demo flag so real data is permanently recognized as owner data
@@ -1786,7 +1823,15 @@ class FinanceRepository(
                 }
                 val json = exportBackupJson()
                 // CRITICAL: Never let untouched demo data overwrite a real user backup in Documents/Mengidata!
-                storageVault.saveAutoSnapshot(json, allowPublicOverwrite = !demoOnly)
+                val saved = storageVault.saveAutoSnapshot(
+                    json = json,
+                    allowPublicOverwrite = !demoOnly,
+                    forcePublicWriteIfNoRealBackup = force
+                )
+                if (saved && (!demoOnly || force)) {
+                    AndroidSystemBackupScheduler.notifyAndroidBackupManager(appContext)
+                }
+                saved
             }.getOrDefault(false)
         }
     }

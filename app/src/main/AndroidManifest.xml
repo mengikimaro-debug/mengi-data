@@ -27,6 +27,9 @@
 
     <application
         android:allowBackup="true"
+        android:backupAgent=".backup.VaultAndroidBackupAgent"
+        android:fullBackupOnly="true"
+        android:restoreAnyVersion="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:hardwareAccelerated="true"
@@ -103,6 +106,12 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/vault_uninstall_accessibility_config" />
         </service>
+
+        <!-- Native Android System JobService for guaranteed background & reboot-persistent auto-backups -->
+        <service
+            android:name=".backup.VaultAutoBackupJobService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

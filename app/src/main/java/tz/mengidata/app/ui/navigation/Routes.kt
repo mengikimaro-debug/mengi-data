@@ -18,4 +18,7 @@ data object BillsRoute
 data object HubRoute
 
 @Serializable
+data object UpdateRoute
+
+@Serializable
 data object SettingsRoute

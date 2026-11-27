@@ -13,8 +13,8 @@ android {
         applicationId = "tz.mengidata.app"
         minSdk = 33
         targetSdk = 36
-        versionCode = 32
-        versionName = "3.3.3"
+        versionCode = 33
+        versionName = "3.3.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

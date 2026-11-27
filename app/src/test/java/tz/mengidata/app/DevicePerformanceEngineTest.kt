@@ -30,8 +30,10 @@ class DevicePerformanceEngineTest {
         assertEquals(0, profile.navTransitionMs)
         assertFalse(profile.enableChartAnimations)
         assertFalse(profile.enableSpringMotion)
-        assertEquals(2, profile.downloadParallelStreams)
-        assertEquals(64 * 1024, profile.downloadBufferBytes)
+        assertEquals(8, profile.downloadParallelStreams)
+        assertEquals(512 * 1024, profile.downloadBufferBytes)
+        assertEquals(60, profile.targetRefreshRateHz)
+        assertEquals(2048, profile.sqliteCacheKb)
         assertEquals(4, profile.recentItemsLimit)
         assertTrue(profile.isCompactScreen)
         assertEquals("TECNO POP 8", budgetPhone.deviceDisplayName)
@@ -51,12 +53,13 @@ class DevicePerformanceEngineTest {
         val profile = DevicePerformanceEngine.resolveProfile(midRangePhone, PerformanceModePreference.AUTO)
 
         assertEquals(DevicePerformanceTier.BALANCED, profile.resolvedTier)
-        assertEquals(0.7f, profile.animationScale, 0.001f)
+        assertEquals(0.65f, profile.animationScale, 0.001f)
         assertEquals(110, profile.navTransitionMs)
         assertTrue(profile.enableChartAnimations)
         assertFalse(profile.enableSpringMotion)
-        assertEquals(3, profile.downloadParallelStreams)
-        assertEquals(128 * 1024, profile.downloadBufferBytes)
+        assertEquals(12, profile.downloadParallelStreams)
+        assertEquals(1024 * 1024, profile.downloadBufferBytes)
+        assertEquals(6144, profile.sqliteCacheKb)
         assertFalse(profile.isCompactScreen)
         assertEquals("Samsung SM-A256E", midRangePhone.deviceDisplayName)
     }
@@ -70,14 +73,17 @@ class DevicePerformanceEngineTest {
             availableRamMb = 5200L,
             cpuCores = 8,
             refreshRateHz = 120,
+            maxRefreshRateHz = 120,
             smallestWidthDp = 412
         )
 
         val normalProfile = DevicePerformanceEngine.resolveProfile(flagship, PerformanceModePreference.AUTO)
         assertEquals(DevicePerformanceTier.HIGH, normalProfile.resolvedTier)
         assertTrue(normalProfile.enableSpringMotion)
-        assertEquals(4, normalProfile.downloadParallelStreams)
-        assertEquals(6, normalProfile.recentItemsLimit)
+        assertEquals(16, normalProfile.downloadParallelStreams)
+        assertEquals(120, normalProfile.targetRefreshRateHz)
+        assertEquals(16384, normalProfile.sqliteCacheKb)
+        assertEquals(7, normalProfile.recentItemsLimit)
 
         // Power Saver active -> auto-downgrades to ECO
         val batterySaverProfile = DevicePerformanceEngine.resolveProfile(
@@ -106,7 +112,7 @@ class DevicePerformanceEngineTest {
         val budgetPhone = DeviceHardwareSnapshot(totalRamMb = 2048L, cpuCores = 4)
         val forcedHigh = DevicePerformanceEngine.resolveProfile(budgetPhone, PerformanceModePreference.HIGH)
         assertEquals(DevicePerformanceTier.HIGH, forcedHigh.resolvedTier)
-        assertEquals(4, forcedHigh.downloadParallelStreams)
+        assertEquals(16, forcedHigh.downloadParallelStreams)
 
         val flagship = DeviceHardwareSnapshot(totalRamMb = 12288L, availableRamMb = 6000L, cpuCores = 8)
         val forcedEco = DevicePerformanceEngine.resolveProfile(flagship, PerformanceModePreference.ECO)

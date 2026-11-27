@@ -412,14 +412,19 @@ fun OneUiFloatingFab(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val perf = LocalDevicePerformance.current
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
         targetValue = if (isPressed) 0.90f else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium
-        ),
+        animationSpec = when {
+            perf.animationScale <= 0.01f -> snap()
+            perf.enableSpringMotion -> spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessMedium
+            )
+            else -> tween(perf.scaledDuration(110))
+        },
         label = "m3_expressive_fab_scale"
     )
 
@@ -627,14 +632,21 @@ fun IncomeExpenseBarChart(
     val expenseColor = colors.expense
     val expenseSoftTop = colors.warning
 
-    var animateChart by remember(points) { mutableStateOf(false) }
-    LaunchedEffect(points) { animateChart = true }
+    val perf = LocalDevicePerformance.current
+    var animateChart by remember(points, perf.enableChartAnimations) {
+        mutableStateOf(!perf.enableChartAnimations)
+    }
+    LaunchedEffect(points, perf.enableChartAnimations) { animateChart = true }
     val growth by animateFloatAsState(
-        targetValue = if (animateChart) 1f else 0.08f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioLowBouncy,
-            stiffness = Spring.StiffnessLow
-        ),
+        targetValue = if (animateChart || !perf.enableChartAnimations) 1f else 0.08f,
+        animationSpec = when {
+            !perf.enableChartAnimations -> snap()
+            perf.enableSpringMotion -> spring(
+                dampingRatio = Spring.DampingRatioLowBouncy,
+                stiffness = Spring.StiffnessLow
+            )
+            else -> tween(perf.scaledDuration(240))
+        },
         label = "chart_bar_growth"
     )
 

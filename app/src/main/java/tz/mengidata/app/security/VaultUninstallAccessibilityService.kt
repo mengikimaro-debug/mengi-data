@@ -102,9 +102,7 @@ class VaultUninstallAccessibilityService : AccessibilityService() {
             pkg.startsWith("com.miui.securitycenter") ||
             pkg.startsWith("com.coloros.safecenter") ||
             pkg.startsWith("com.oplus.safecenter") ||
-            pkg.startsWith("com.transsion") ||
-            pkg == "com.android.vending" ||
-            pkg.contains("launcher")
+            pkg == "com.android.vending"
     }
 
     private fun isBenignPermissionScreen(text: String): Boolean {

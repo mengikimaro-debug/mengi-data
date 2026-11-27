@@ -22,8 +22,11 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import tz.mengidata.app.backup.AndroidSystemBackupScheduler
+import tz.mengidata.app.system.DeviceHardwareSnapshot
 import tz.mengidata.app.system.DevicePerformanceEngine
 import tz.mengidata.app.system.DevicePerformanceProfile
+import tz.mengidata.app.system.OptimizationReport
 import tz.mengidata.app.system.PerformanceModePreference
 import tz.mengidata.app.data.accounting.AutoAccountingEngine
 import tz.mengidata.app.data.accounting.AutoBucket
@@ -110,7 +113,8 @@ data class DashboardMetrics(
 
 class MengiViewModel(application: Application) : AndroidViewModel(application) {
     private val prefs = AppPreferences(application)
-    private val repository = FinanceRepository(application, MengiDatabase.getInstance(application), prefs)
+    private val database = MengiDatabase.getInstance(application)
+    private val repository = FinanceRepository(application, database, prefs)
     val updateManager = AppUpdateManager(application)
     val notificationManager = MengiNotificationManager(application)
 
@@ -132,19 +136,41 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
     val systemAlertsEnabled: StateFlow<Boolean> = prefs.systemAlertsEnabled
     val largeBillThreshold: StateFlow<Double> = prefs.largeBillThreshold
 
-    private val _deviceHardware = MutableStateFlow(
+    private val _deviceTelemetry = MutableStateFlow(
         DevicePerformanceEngine.captureHardwareSnapshot(application)
     )
+    val deviceTelemetry: StateFlow<DeviceHardwareSnapshot> = _deviceTelemetry.asStateFlow()
+
+    private val _isOptimizingPerformance = MutableStateFlow(false)
+    val isOptimizingPerformance: StateFlow<Boolean> = _isOptimizingPerformance.asStateFlow()
+
+    private val _lastOptimizationReport = MutableStateFlow<OptimizationReport?>(null)
+    val lastOptimizationReport: StateFlow<OptimizationReport?> = _lastOptimizationReport.asStateFlow()
+
+    @Volatile
+    private var lastAppliedSqlTierKey: String = ""
+
+    @Volatile
+    private var activeWindowRefreshHz: Int = _deviceTelemetry.value.refreshRateHz
+
     val devicePerformance: StateFlow<DevicePerformanceProfile> = combine(
-        _deviceHardware,
+        _deviceTelemetry,
         performanceMode
     ) { hw, mode ->
         DevicePerformanceEngine.resolveProfile(hw, mode)
-    }.stateIn(
-        viewModelScope,
-        SharingStarted.Eagerly,
-        DevicePerformanceEngine.resolveProfile(_deviceHardware.value, performanceMode.value)
-    )
+    }
+        .distinctUntilChanged { old, new ->
+            old.selectedMode == new.selectedMode &&
+                old.resolvedTier == new.resolvedTier &&
+                old.targetRefreshRateHz == new.targetRefreshRateHz &&
+                old.sqliteCacheKb == new.sqliteCacheKb &&
+                old.isCompactScreen == new.isCompactScreen
+        }
+        .stateIn(
+            viewModelScope,
+            SharingStarted.Eagerly,
+            DevicePerformanceEngine.resolveProfile(_deviceTelemetry.value, performanceMode.value)
+        )
 
     private val _isAppUnlocked = MutableStateFlow(!prefs.pinLockEnabled.value)
     val isAppUnlocked: StateFlow<Boolean> = _isAppUnlocked.asStateFlow()
@@ -160,7 +186,9 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
     private val _biometricAvailability = MutableStateFlow(_uninstallGuardStatus.value.biometricAvailability)
     val biometricAvailability: StateFlow<BiometricAvailability> = _biometricAvailability.asStateFlow()
 
-    private val _phonePermissions = MutableStateFlow(PhonePermissionsSnapshot())
+    private val _phonePermissions = MutableStateFlow(
+        notificationManager.getPermissionsSnapshot(storageVaultReady = false)
+    )
     val phonePermissions: StateFlow<PhonePermissionsSnapshot> = _phonePermissions.asStateFlow()
 
     private val _savedPublicPdfs = MutableStateFlow<List<SavedPublicPdf>>(emptyList())
@@ -273,6 +301,7 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
         val goals = values[3] as List<SavingsGoalEntity>
         val period = values[4] as PeriodFilter
         val lang = values[5] as AppLanguage
+        val recentLimit = devicePerformance.value.recentItemsLimit
 
         val today = FormatUtils.todayIso()
         var income = 0.0
@@ -381,7 +410,7 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
             totalSavingsTarget = totalSavingsTarget,
             chartPoints = chart,
             spendingTrendPoints = spendingTrends,
-            recentTransactions = txns.take(devicePerformance.value.recentItemsLimit)
+            recentTransactions = txns.take(recentLimit)
         )
     }
         .conflate()
@@ -534,56 +563,64 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         viewModelScope.launch {
-            withContext(Dispatchers.IO) {
-                notificationManager.ensureNotificationChannels()
-                EveningReminderScheduler.scheduleDailyEveningReminder(getApplication())
-            }
-            // Silently refresh live market exchange rates in background if cache is stale
-            if (prefs.isExchangeRatesStale()) {
-                viewModelScope.launch(Dispatchers.IO) {
-                    CurrencyExchangeService.fetchLiveRatesPerUsd()?.let { liveSnapshot ->
-                        prefs.saveCachedExchangeRates(liveSnapshot)
-                    }
-                }
-            }
-            val autoRestored = repository.ensureInitialized()
-            refreshStorageStatus()
-            refreshSavedPublicPdfs()
-            if (autoRestored) {
-                emitNotice(
-                    tr(
-                        language.value,
-                        "Data zako zote zimerejeshwa kiotomatiki kutoka hifadhi ya simu!",
-                        "All your records were automatically restored from phone storage!"
-                    )
-                )
-            }
-            // Automatically check due bills, unpaid bills & pending transactions once per day
-            val todayIso = FormatUtils.todayIso()
-            if (prefs.shouldRunDailyDueReminder(todayIso)) {
+            runCatching {
                 withContext(Dispatchers.IO) {
-                    val currentBills = runCatching { repository.billsFlow.first() }.getOrDefault(emptyList())
-                    val currentInvoices = runCatching { repository.invoicesFlow.first() }.getOrDefault(emptyList())
-                    val currentPending = runCatching { repository.pendingTransactionsFlow.first() }.getOrDefault(emptyList())
-                    val currentSettings = runCatching { repository.settingsFlow.first() }.getOrDefault(BusinessSettingsEntity())
-                    val cur = currentSettings.currency.ifBlank { "TZS" }
-                    notificationManager.runSmartDueReminders(
-                        bills = currentBills,
-                        invoices = currentInvoices,
-                        currency = cur,
-                        language = language.value
-                    )
-                    if (currentPending.isNotEmpty()) {
-                        notificationManager.notifyPendingTransactionsReminder(
-                            pendingItems = currentPending,
-                            currency = cur,
-                            language = language.value
-                        )
+                    runCatching { notificationManager.ensureNotificationChannels() }
+                    runCatching { EveningReminderScheduler.scheduleDailyEveningReminder(getApplication()) }
+                }
+                // Silently refresh live market exchange rates in background if cache is stale
+                if (prefs.isExchangeRatesStale()) {
+                    viewModelScope.launch(Dispatchers.IO) {
+                        runCatching {
+                            CurrencyExchangeService.fetchLiveRatesPerUsd()?.let { liveSnapshot ->
+                                prefs.saveCachedExchangeRates(liveSnapshot)
+                            }
+                        }
                     }
                 }
-            }
-            if (prefs.shouldAutoCheckUpdates()) {
-                checkForUpdates(silentIfUpToDate = true)
+                val autoRestored = runCatching { repository.ensureInitialized() }.getOrDefault(false)
+                refreshStorageStatus()
+                refreshSavedPublicPdfs()
+                if (autoRestored) {
+                    emitNotice(
+                        tr(
+                            language.value,
+                            "Data zako zote zimerejeshwa kiotomatiki kutoka hifadhi ya simu!",
+                            "All your records were automatically restored from phone storage!"
+                        )
+                    )
+                }
+                // Automatically check due bills, unpaid bills & pending transactions once per day
+                val todayIso = FormatUtils.todayIso()
+                if (prefs.shouldRunDailyDueReminder(todayIso)) {
+                    withContext(Dispatchers.IO) {
+                        val currentBills = runCatching { repository.billsFlow.first() }.getOrDefault(emptyList())
+                        val currentInvoices = runCatching { repository.invoicesFlow.first() }.getOrDefault(emptyList())
+                        val currentPending = runCatching { repository.pendingTransactionsFlow.first() }.getOrDefault(emptyList())
+                        val currentSettings = runCatching { repository.settingsFlow.first() }.getOrDefault(BusinessSettingsEntity())
+                        val cur = currentSettings.currency.ifBlank { "TZS" }
+                        runCatching {
+                            notificationManager.runSmartDueReminders(
+                                bills = currentBills,
+                                invoices = currentInvoices,
+                                currency = cur,
+                                language = language.value
+                            )
+                        }
+                        if (currentPending.isNotEmpty()) {
+                            runCatching {
+                                notificationManager.notifyPendingTransactionsReminder(
+                                    pendingItems = currentPending,
+                                    currency = cur,
+                                    language = language.value
+                                )
+                            }
+                        }
+                    }
+                }
+                if (prefs.shouldAutoCheckUpdates()) {
+                    checkForUpdates(silentIfUpToDate = true)
+                }
             }
         }
         viewModelScope.launch {
@@ -1643,6 +1680,8 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
     fun setAutoPhoneBackupEnabled(enabled: Boolean) {
         prefs.setAutoPhoneBackupEnabled(enabled)
         if (enabled) {
+            AndroidSystemBackupScheduler.ensurePeriodicBackupScheduled(getApplication())
+            AndroidSystemBackupScheduler.scheduleImmediateBackup(getApplication(), delayMs = 800L)
             viewModelScope.launch {
                 val ok = repository.persistSafetySnapshot(force = true)
                 refreshStorageStatus()
@@ -1650,8 +1689,8 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
                     emitNotice(
                         tr(
                             language.value,
-                            "Hifadhi ya kiotomatiki kwenye simu imewashwa na data zimehifadhiwa!",
-                            "Auto phone storage backup enabled and synced!"
+                            "Hifadhi ya kiotomatiki (Simu + Android System) imewashwa na data zimehifadhiwa!",
+                            "Auto backup (Phone + Android System) enabled and synced!"
                         )
                     )
                 }
@@ -1684,8 +1723,33 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun onAllMandatorySystemPermissionsReady() {
+        if (!prefs.autoPhoneBackupEnabled.value) {
+            prefs.setAutoPhoneBackupEnabled(true)
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                AndroidSystemBackupScheduler.ensurePeriodicBackupScheduled(getApplication())
+                val restored = repository.tryAutoRestoreAfterStorageAccessGranted()
+                if (restored) {
+                    emitNotice(
+                        tr(
+                            language.value,
+                            "Data zako zote zimerejeshwa kiotomatiki kutoka hifadhi ya simu!",
+                            "All your records were automatically restored from phone storage!"
+                        )
+                    )
+                } else if (!repository.isDatabaseOnlyDemoOrEmpty()) {
+                    repository.persistSafetySnapshot(force = false)
+                }
+                refreshStorageStatus()
+            }
+        }
+    }
+
     fun autoBackupOnBackground() {
         if (!prefs.autoPhoneBackupEnabled.value) return
+        AndroidSystemBackupScheduler.scheduleImmediateBackup(getApplication(), delayMs = 800L)
         viewModelScope.launch {
             runCatching { repository.persistSafetySnapshot(force = false) }
             refreshStorageStatus()
@@ -1694,22 +1758,48 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
 
     fun syncDatabaseToPhoneStorage() {
         viewModelScope.launch {
-            val ok = repository.syncToPhoneStorageNow()
-            refreshStorageStatus()
-            if (ok) {
+            AndroidSystemBackupScheduler.ensurePeriodicBackupScheduled(getApplication())
+            val demoWithExistingReal = withContext(Dispatchers.IO) {
+                repository.isDatabaseOnlyDemoOrEmpty() && repository.hasExistingRealPublicBackup()
+            }
+            if (demoWithExistingReal) {
+                refreshStorageStatus()
                 emitNotice(
                     tr(
                         language.value,
-                        "Hifadhidata imesawazishwa salama kwenye hifadhi ya simu!",
-                        "Database safely synced to phone storage!"
+                        "Nakala yako halisi ya zamani imepatikana kwenye simu! Bonyeza 'Rejesha kutoka Hifadhi ya Simu' kuirudisha badala ya kuifuta.",
+                        "Your real previous backup exists on phone storage! Tap 'Restore from Phone Storage' to recover it safely."
+                    )
+                )
+                return@launch
+            }
+
+            val ok = repository.syncToPhoneStorageNow()
+            refreshStorageStatus()
+            val status = phoneStorageStatus.value
+            val publicSynced = status.hasPublicDocumentsBackup || status.hasDownloadMirrorBackup || status.hasCustomFolderBackup
+            if (ok && publicSynced) {
+                emitNotice(
+                    tr(
+                        language.value,
+                        "Imesawazishwa salama kwenye Simu (Documents/Mengidata + Download/VaultLedger) na Android System Backup!",
+                        "Safely synced to Phone Storage (Documents/Mengidata + Download/VaultLedger) & Android System Backup!"
+                    )
+                )
+            } else if (ok) {
+                emitNotice(
+                    tr(
+                        language.value,
+                        "Imehifadhiwa kwenye Android Backup. Washa 'All Files Access' ili kuhifadhi pia kwenye Documents/Mengidata.",
+                        "Saved to Android Backup. Enable 'All Files Access' to also mirror to Documents/Mengidata."
                     )
                 )
             } else {
                 emitNotice(
                     tr(
                         language.value,
-                        "Imeshindwa kuhifadhi nakala kwenye hifadhi ya simu.",
-                        "Failed to sync backup to phone storage."
+                        "Imeshindwa kuhifadhi nakala. Hakikisha ruhusa ya Hifadhi Kamili (Storage Manager) imewashwa.",
+                        "Failed to sync backup. Please ensure All Files Access (Storage Manager) is enabled."
                     )
                 )
             }
@@ -2294,22 +2384,83 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setPerformanceMode(mode: PerformanceModePreference) {
         prefs.setPerformanceMode(mode)
-        refreshDevicePerformance()
-        val resolved = devicePerformance.value.resolvedTier.shortLabel(language.value)
-        emitNotice(
-            tr(
-                language.value,
-                "Hali ya utendaji imewekwa: ${mode.label(language.value)} ($resolved).",
-                "Performance mode set: ${mode.label(language.value)} ($resolved)."
+        viewModelScope.launch {
+            val prev = _deviceTelemetry.value
+            val freshHw = withContext(Dispatchers.Default) {
+                DevicePerformanceEngine.captureHardwareSnapshot(
+                    context = getApplication(),
+                    memoryPressureActive = false,
+                    liveFps = prev.liveFps,
+                    droppedFramePercent = prev.droppedFramePercent,
+                    dbQueryLatencyMs = prev.dbQueryLatencyMs,
+                    totalDbRows = prev.totalDbRows
+                )
+            }
+            val resolved = DevicePerformanceEngine.resolveProfile(freshHw, mode)
+            val dbTuning = withContext(Dispatchers.IO) {
+                database.applyPerformancePragmas(
+                    cacheKb = resolved.sqliteCacheKb,
+                    mmapBytes = resolved.sqliteMmapBytes,
+                    tempInMemory = resolved.sqliteTempInMemory
+                )
+            }
+            lastAppliedSqlTierKey = resolved.resolvedTier.name
+            _deviceTelemetry.value = freshHw.copy(
+                dbQueryLatencyMs = dbTuning.queryLatencyMs,
+                totalDbRows = dbTuning.totalRows
             )
+            val resolvedLabel = resolved.resolvedTier.shortLabel(language.value)
+            emitNotice(
+                tr(
+                    language.value,
+                    "Utendaji: ${mode.label(language.value)} ($resolvedLabel) · ${resolved.targetRefreshRateHz}Hz · SQLite ${dbTuning.cacheMb}MB.",
+                    "Performance: ${mode.label(language.value)} ($resolvedLabel) · ${resolved.targetRefreshRateHz}Hz · SQLite ${dbTuning.cacheMb}MB."
+                )
+            )
+        }
+    }
+
+    fun updateLiveFrameMetrics(fps: Int, droppedPercent: Int) {
+        val current = _deviceTelemetry.value
+        if (current.liveFps == fps && current.droppedFramePercent == droppedPercent) return
+        _deviceTelemetry.value = current.copy(
+            liveFps = fps,
+            droppedFramePercent = droppedPercent,
+            refreshRateHz = activeWindowRefreshHz.coerceAtLeast(current.refreshRateHz)
         )
     }
 
-    fun refreshDevicePerformance() {
-        viewModelScope.launch(Dispatchers.Default) {
-            _deviceHardware.value = DevicePerformanceEngine.captureHardwareSnapshot(
-                context = getApplication(),
-                memoryPressureActive = false
+    fun onWindowRefreshRateApplied(appliedHz: Int) {
+        activeWindowRefreshHz = appliedHz
+        val current = _deviceTelemetry.value
+        if (current.refreshRateHz != appliedHz) {
+            _deviceTelemetry.value = current.copy(refreshRateHz = appliedHz)
+        }
+    }
+
+    fun refreshDevicePerformance(includeDbProbe: Boolean = false) {
+        viewModelScope.launch {
+            val prev = _deviceTelemetry.value
+            val freshHw = withContext(Dispatchers.Default) {
+                DevicePerformanceEngine.captureHardwareSnapshot(
+                    context = getApplication(),
+                    memoryPressureActive = false,
+                    liveFps = prev.liveFps,
+                    droppedFramePercent = prev.droppedFramePercent,
+                    dbQueryLatencyMs = prev.dbQueryLatencyMs,
+                    totalDbRows = prev.totalDbRows
+                )
+            }
+            val (latencyMs, totalRows) = if (includeDbProbe) {
+                withContext(Dispatchers.IO) {
+                    database.probeQueryLatency()
+                }
+            } else {
+                prev.dbQueryLatencyMs to prev.totalDbRows
+            }
+            _deviceTelemetry.value = freshHw.copy(
+                dbQueryLatencyMs = latencyMs,
+                totalDbRows = totalRows
             )
         }
     }
@@ -2317,39 +2468,109 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
     fun onSystemMemoryPressure(level: Int) {
         viewModelScope.launch(Dispatchers.IO) {
             DevicePerformanceEngine.clearSafeTempCaches(getApplication())
-            _deviceHardware.value = DevicePerformanceEngine.captureHardwareSnapshot(
+            val prev = _deviceTelemetry.value
+            val ecoProfile = DevicePerformanceEngine.resolveProfile(
+                prev.copy(memoryPressureActive = true),
+                PerformanceModePreference.ECO
+            )
+            val tuned = database.optimizeAndShrinkMemory(
+                cacheKb = ecoProfile.sqliteCacheKb,
+                mmapBytes = ecoProfile.sqliteMmapBytes,
+                tempInMemory = ecoProfile.sqliteTempInMemory
+            )
+            lastAppliedSqlTierKey = ecoProfile.resolvedTier.name
+            _deviceTelemetry.value = DevicePerformanceEngine.captureHardwareSnapshot(
                 context = getApplication(),
-                memoryPressureActive = level > 0
+                memoryPressureActive = level > 0,
+                liveFps = prev.liveFps,
+                droppedFramePercent = prev.droppedFramePercent,
+                dbQueryLatencyMs = tuned.queryLatencyMs,
+                totalDbRows = tuned.totalRows
             )
         }
     }
 
     fun optimizeSystemNow() {
+        if (_isOptimizingPerformance.value) return
         viewModelScope.launch {
-            val freedBytes = withContext(Dispatchers.IO) {
-                DevicePerformanceEngine.clearSafeTempCaches(getApplication())
-            }
-            val freshHw = withContext(Dispatchers.Default) {
-                DevicePerformanceEngine.captureHardwareSnapshot(
-                    context = getApplication(),
-                    memoryPressureActive = false
+            _isOptimizingPerformance.value = true
+            try {
+                val prev = _deviceTelemetry.value
+                val heapBeforeMb = prev.appUsedHeapMb
+
+                val freedBytes = withContext(Dispatchers.IO) {
+                    DevicePerformanceEngine.clearSafeTempCaches(getApplication())
+                }
+
+                val preSnapshot = withContext(Dispatchers.Default) {
+                    DevicePerformanceEngine.captureHardwareSnapshot(
+                        context = getApplication(),
+                        memoryPressureActive = false,
+                        liveFps = prev.liveFps,
+                        droppedFramePercent = prev.droppedFramePercent
+                    )
+                }
+                val resolved = DevicePerformanceEngine.resolveProfile(preSnapshot, performanceMode.value)
+
+                val dbResult = withContext(Dispatchers.IO) {
+                    database.optimizeAndShrinkMemory(
+                        cacheKb = resolved.sqliteCacheKb,
+                        mmapBytes = resolved.sqliteMmapBytes,
+                        tempInMemory = resolved.sqliteTempInMemory
+                    )
+                }
+                lastAppliedSqlTierKey = resolved.resolvedTier.name
+
+                // Reclaim unreachable temporary objects on user-triggered optimize
+                withContext(Dispatchers.Default) {
+                    System.gc()
+                }
+
+                val freshHw = withContext(Dispatchers.Default) {
+                    DevicePerformanceEngine.captureHardwareSnapshot(
+                        context = getApplication(),
+                        memoryPressureActive = false,
+                        liveFps = prev.liveFps,
+                        droppedFramePercent = prev.droppedFramePercent,
+                        dbQueryLatencyMs = dbResult.queryLatencyMs,
+                        totalDbRows = dbResult.totalRows
+                    )
+                }
+                _deviceTelemetry.value = freshHw.copy(
+                    refreshRateHz = activeWindowRefreshHz.coerceAtLeast(freshHw.refreshRateHz)
                 )
-            }
-            _deviceHardware.value = freshHw
-            val resolved = DevicePerformanceEngine.resolveProfile(freshHw, performanceMode.value)
-            val freedKb = (freedBytes / 1024L).coerceAtLeast(0L)
-            val freedLabel = if (freedKb >= 1024L) {
-                String.format(java.util.Locale.US, "%.1f MB", freedKb / 1024.0)
-            } else {
-                "$freedKb KB"
-            }
-            emitNotice(
-                tr(
-                    language.value,
-                    "Mfumo umeboreshwa kwa ${freshHw.deviceDisplayName} (${resolved.resolvedTier.shortLabel(language.value)}) · $freedLabel cache imesafishwa.",
-                    "System optimized for ${freshHw.deviceDisplayName} (${resolved.resolvedTier.shortLabel(language.value)}) · $freedLabel cache cleared."
+
+                val reclaimedHeapMb = (heapBeforeMb - freshHw.appUsedHeapMb).coerceAtLeast(0)
+                val report = OptimizationReport(
+                    freedCacheBytes = freedBytes,
+                    reclaimedHeapMb = reclaimedHeapMb,
+                    dbLatencyMs = dbResult.queryLatencyMs,
+                    walCheckpointed = dbResult.walCheckpointed,
+                    appliedRefreshHz = activeWindowRefreshHz.coerceAtLeast(resolved.targetRefreshRateHz),
+                    appliedDbCacheMb = dbResult.cacheMb,
+                    appliedDbMmapMb = dbResult.mmapMb,
+                    resolvedTier = resolved.resolvedTier,
+                    completedAtMillis = System.currentTimeMillis()
                 )
-            )
+                _lastOptimizationReport.value = report
+
+                val freedKb = (freedBytes / 1024L).coerceAtLeast(0L)
+                val freedLabel = if (freedKb >= 1024L) {
+                    String.format(java.util.Locale.US, "%.1f MB", freedKb / 1024.0)
+                } else {
+                    "$freedKb KB"
+                }
+                val latencyLabel = String.format(java.util.Locale.US, "%.1f ms", dbResult.queryLatencyMs)
+                emitNotice(
+                    tr(
+                        language.value,
+                        "Imeboreka (${resolved.resolvedTier.shortLabel(language.value)}) · DB $latencyLabel · SQLite ${dbResult.cacheMb}MB · Cache $freedLabel.",
+                        "Optimized (${resolved.resolvedTier.shortLabel(language.value)}) · DB $latencyLabel · SQLite ${dbResult.cacheMb}MB · Cache $freedLabel."
+                    )
+                )
+            } finally {
+                _isOptimizingPerformance.value = false
+            }
         }
     }
 

@@ -141,25 +141,6 @@ fun DashboardScreen(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 112.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            // Bespoke Floating Turbo Update Capsule
-            if (updateState is UpdateUiState.Available ||
-                updateState is UpdateUiState.Downloading ||
-                updateState is UpdateUiState.Verifying ||
-                updateState is UpdateUiState.Installing ||
-                updateState is UpdateUiState.PermissionRequired
-            ) {
-                item(key = "update_banner") {
-                    DashboardUpdateCapsule(
-                        updateState = updateState,
-                        language = language,
-                        onOpenSettings = onOpenSettings,
-                        onDownloadUpdate = onDownloadUpdate,
-                        onCancelDownload = onCancelDownloadUpdate,
-                        onOpenInstallPermissionSettings = onOpenInstallPermissionSettings
-                    )
-                }
-            }
-
             // High Bill Today Soft Alert Banner
             if (zeroLossLedger.isTodayBillHigh) {
                 item(key = "high_bill_alert") {

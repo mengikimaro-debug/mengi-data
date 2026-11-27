@@ -32,6 +32,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Business
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CurrencyExchange
@@ -89,6 +90,7 @@ import tz.mengidata.app.ui.navigation.InvoicesRoute
 import tz.mengidata.app.ui.navigation.TransactionsRoute
 import tz.mengidata.app.ui.theme.LocalMengiColors
 import tz.mengidata.app.ui.theme.LocalMengiThemeState
+import tz.mengidata.app.updater.UpdateInfo
 import tz.mengidata.app.updater.UpdateUiState
 
 private data class SidebarNavItem(
@@ -117,11 +119,14 @@ fun MengiSidebarSheet(
     isConvertingCurrency: Boolean = false,
     partyCount: Int = 0,
     selectedRouteMatch: (Any) -> Boolean,
+    isUpdateSelected: Boolean = false,
     isSettingsSelected: Boolean,
     onSelectDestination: (Any) -> Unit,
     onSelectCurrency: (String) -> Unit = {},
     onOpenAutoAccounting: () -> Unit = {},
     onOpenPartyDirectory: () -> Unit = {},
+    onOpenBusinessProfile: () -> Unit = {},
+    onOpenUpdateScreen: () -> Unit = {},
     onOpenSettings: () -> Unit,
     onOpenAboutApp: () -> Unit = {},
     onCloseDrawer: () -> Unit
@@ -130,7 +135,6 @@ fun MengiSidebarSheet(
     val themeState = LocalMengiThemeState.current
     val currency = FormatUtils.normalizeCurrencyCode(settings.currency)
     val activeCurrencyOption = FormatUtils.findCurrency(currency)
-    val hasUpdate = updateState is UpdateUiState.Available
     var currencyListExpanded by remember { mutableStateOf(false) }
 
     ModalDrawerSheet(
@@ -612,6 +616,40 @@ fun MengiSidebarSheet(
                 NavigationDrawerItem(
                     label = {
                         Text(
+                            text = tr(language, "Taarifa za Biashara & Ankara", "Business & Invoices"),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
+                    selected = false,
+                    onClick = onOpenBusinessProfile,
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Rounded.Business,
+                            contentDescription = tr(language, "Taarifa za Biashara & Ankara", "Business & Invoices")
+                        )
+                    },
+                    shape = CircleShape,
+                    colors = itemColors,
+                    modifier = Modifier
+                        .padding(vertical = 2.dp)
+                        .testTag("drawer_business_profile_item")
+                )
+
+                // Native One UI 8.5 Sidebar Update Item placed directly above Settings -> opens Full-Screen UpdateScreen
+                SidebarUpdateNavItem(
+                    language = language,
+                    updateState = updateState,
+                    selected = isUpdateSelected,
+                    itemColors = itemColors,
+                    onClick = onOpenUpdateScreen
+                )
+
+                NavigationDrawerItem(
+                    label = {
+                        Text(
                             text = tr(language, "Mipangilio", "Settings"),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = if (isSettingsSelected) FontWeight.Bold else FontWeight.SemiBold
@@ -625,16 +663,6 @@ fun MengiSidebarSheet(
                             contentDescription = tr(language, "Mipangilio", "Settings")
                         )
                     },
-                    badge = if (hasUpdate) {
-                        {
-                            Box(
-                                modifier = Modifier
-                                    .size(10.dp)
-                                    .clip(CircleShape)
-                                    .background(colors.income)
-                            )
-                        }
-                    } else null,
                     shape = CircleShape,
                     colors = itemColors,
                     modifier = Modifier

@@ -33,6 +33,100 @@ abstract class MengiDatabase : RoomDatabase() {
     abstract fun deletedRecordDao(): DeletedRecordDao
     abstract fun pendingTransactionDao(): PendingTransactionDao
 
+    /**
+     * Flushes SQLite Write-Ahead Log frames cleanly into `mengidata_room.db`
+     * so Android System Backup & phone mirrors always capture every committed transaction.
+     */
+    fun checkpointWal() {
+        runCatching {
+            openHelper.writableDatabase.query("PRAGMA wal_checkpoint(TRUNCATE)").use { cursor ->
+                cursor.moveToFirst()
+            }
+        }
+    }
+
+    data class DbTuningResult(
+        val cacheMb: Int = 6,
+        val mmapMb: Int = 16,
+        val queryLatencyMs: Double = 0.0,
+        val walCheckpointed: Boolean = false,
+        val totalRows: Int = 0
+    )
+
+    /**
+     * Safely measures database read latency and returns the active tier's SQLite memory budget.
+     * Avoids mutating connection-level PRAGMAs (temp_store, synchronous, mmap_size) that throw
+     * SQLiteException when Room is concurrently executing a transaction on startup.
+     */
+    fun applyPerformancePragmas(
+        cacheKb: Int,
+        mmapBytes: Long,
+        @Suppress("UNUSED_PARAMETER") tempInMemory: Boolean
+    ): DbTuningResult {
+        val safeCacheKb = cacheKb.coerceIn(1024, 32768)
+        val safeMmap = mmapBytes.coerceIn(0L, 128L * 1024L * 1024L)
+        val (latencyMs, rows) = probeQueryLatency()
+        return DbTuningResult(
+            cacheMb = (safeCacheKb / 1024).coerceAtLeast(1),
+            mmapMb = (safeMmap / (1024L * 1024L)).toInt(),
+            queryLatencyMs = latencyMs,
+            walCheckpointed = false,
+            totalRows = rows
+        )
+    }
+
+    /**
+     * Performs safe, non-blocking SQLite WAL checkpoint and measures database query latency.
+     */
+    fun optimizeAndShrinkMemory(
+        cacheKb: Int,
+        mmapBytes: Long,
+        tempInMemory: Boolean
+    ): DbTuningResult {
+        val walOk = runCatching {
+            val db = openHelper.writableDatabase
+            if (!db.inTransaction()) {
+                db.query("PRAGMA wal_checkpoint(PASSIVE)").use { it.moveToFirst() }
+                true
+            } else {
+                false
+            }
+        }.getOrDefault(false)
+        val tuned = applyPerformancePragmas(cacheKb, mmapBytes, tempInMemory)
+        return tuned.copy(walCheckpointed = walOk)
+    }
+
+    fun probeQueryLatency(): Pair<Double, Int> {
+        return runCatching {
+            val db = openHelper.readableDatabase
+            if (db.inTransaction()) {
+                0.4 to 0
+            } else {
+                measureQueryLatency(db)
+            }
+        }.getOrDefault(0.4 to 0)
+    }
+
+    private fun measureQueryLatency(db: SupportSQLiteDatabase): Pair<Double, Int> {
+        val startNs = System.nanoTime()
+        var totalRows = 0
+        db.query(
+            """
+            SELECT
+                (SELECT COUNT(*) FROM transactions) +
+                (SELECT COUNT(*) FROM invoices) +
+                (SELECT COUNT(*) FROM bills) +
+                (SELECT COUNT(*) FROM savings_goals)
+            """.trimIndent()
+        ).use { cursor ->
+            if (cursor.moveToFirst()) {
+                totalRows = cursor.getInt(0)
+            }
+        }
+        val elapsedMs = ((System.nanoTime() - startNs) / 1_000_000.0).coerceAtLeast(0.05)
+        return elapsedMs to totalRows
+    }
+
     companion object {
         private const val DB_NAME = "mengidata_room.db"
 
@@ -142,6 +236,8 @@ abstract class MengiDatabase : RoomDatabase() {
                     DB_NAME
                 )
                     .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                    .fallbackToDestructiveMigration(dropAllTables = true)
+                    .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
                     .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
                     .build()
                     .also { INSTANCE = it }

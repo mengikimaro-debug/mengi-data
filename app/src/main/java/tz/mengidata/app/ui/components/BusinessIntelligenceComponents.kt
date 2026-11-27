@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -82,6 +83,7 @@ import tz.mengidata.app.data.accounting.PartySummary
 import tz.mengidata.app.i18n.AppLanguage
 import tz.mengidata.app.i18n.FormatUtils
 import tz.mengidata.app.i18n.tr
+import tz.mengidata.app.system.LocalDevicePerformance
 import tz.mengidata.app.ui.theme.LocalMengiColors
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -95,9 +97,14 @@ fun BusinessHealthScoreCard(
     modifier: Modifier = Modifier
 ) {
     val colors = LocalMengiColors.current
+    val perf = LocalDevicePerformance.current
     val animatedProgress by animateFloatAsState(
         targetValue = (report.score / 100f).coerceIn(0f, 1f),
-        animationSpec = tween(durationMillis = 700, easing = FastOutSlowInEasing),
+        animationSpec = if (!perf.enableChartAnimations || perf.animationScale <= 0.01f) {
+            snap()
+        } else {
+            tween(durationMillis = perf.scaledDuration(620), easing = FastOutSlowInEasing)
+        },
         label = "health_gauge"
     )
     val (gradeColor, gradeSoft) = when (report.grade) {

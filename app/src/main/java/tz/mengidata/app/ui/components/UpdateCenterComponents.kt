@@ -815,8 +815,8 @@ fun UpdateCenterCard(
                             Text(
                                 text = tr(
                                     language,
-                                    "• Mfumo ulioboreshwa wa Kuhifadhi na Kurejesha Data Kiotomatiki baada ya kufuta na kuweka upya app (nakala mbili Documents/Mengidata + Download/VaultLedger + ulinzi wa kuzuia data za mfano kufunika backup)\n• Ulinzi thabiti wa Kuondoa App kwa Alama ya Kidole (Android System Accessibility + Device Admin Fingerprint Guard)\n• Usaidizi kamili wa Android Enterprise Device Owner (MDM/Kiosk) wa kuzuia ku-uninstall kabisa\n• Orodha mpya ya Malipo Yanayosubiri yenye mtindo wa mazungumzo + dirisha dogo la maelezo (Pop View)",
-                                    "• Upgraded Auto-Backup & Auto-Restore across uninstall/reinstall (dual public mirrors in Documents/Mengidata + Download/VaultLedger + protection against demo-data overwrite)\n• Enhanced Android System Fingerprint Uninstall Guard (Accessibility Service + Device Admin BiometricPrompt)\n• Full Android Enterprise Device Owner (MDM/Kiosk) uninstall blocking with ready-to-copy ADB setup\n• Conversation-style Pending Payments list in Ledger with sleek compact detail Pop View"
+                                    "• Mfumo kamili wa Android System Auto-Backup (BackupAgent + JobScheduler ya saa 6 + BackupManager) unaohifadhi hifadhidata kiotomatiki hata ukifunga app au kuwasha simu upya\n• Nakala mbili za simu (Documents/Mengidata + Download/VaultLedger) + ulinzi kamili wa kurejesha data zote kiotomatiki baada ya kufuta na kuweka upya app\n• Ulinzi thabiti wa Kuondoa App kwa Alama ya Kidole (Android System Accessibility + Device Admin + Enterprise Device Owner)\n• Orodha mpya ya Malipo Yanayosubiri yenye mtindo wa mazungumzo + dirisha dogo la maelezo (Pop View)",
+                                    "• Full native Android System Auto-Backup (BackupAgent with WAL checkpoint + reboot-persistent JobScheduler + BackupManager sync)\n• Dual surviving phone mirrors (Documents/Mengidata + Download/VaultLedger) with bulletproof automatic restore after uninstall/reinstall\n• Enhanced Android System Fingerprint Uninstall Guard (Accessibility + Device Admin + Enterprise Device Owner)\n• Conversation-style Pending Payments list in Ledger with sleek compact detail Pop View"
                                 ),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = VaultTextMuted,
@@ -1314,8 +1314,8 @@ private fun TurboDownloadTelemetryPanel(
                     Text(
                         text = tr(
                             language,
-                            "Inapakua v${state.info.version} (${state.activeStreams}× Turbo)",
-                            "Turbo Downloading v${state.info.version} (${state.activeStreams}×)"
+                            "Inapakua v${state.info.version} (${state.activeStreams}× Hyper-Turbo · hadi 80 MB/s)",
+                            "Hyper-Turbo v${state.info.version} (${state.activeStreams}× · up to 80 MB/s)"
                         ),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
@@ -1418,7 +1418,7 @@ private fun UpdatePipelineStepper(
     language: AppLanguage
 ) {
     val steps = listOf(
-        1 to tr(language, "1. Turbo 4×", "1. Turbo 4×"),
+        1 to tr(language, "1. Turbo 16× (80 MB/s)", "1. Turbo 16× (80 MB/s)"),
         2 to tr(language, "2. SHA-256", "2. SHA-256"),
         3 to tr(language, "3. Sakinisha", "3. Install")
     )

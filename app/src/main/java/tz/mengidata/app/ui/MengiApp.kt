@@ -20,6 +20,7 @@ import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
@@ -97,6 +98,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.launch
 import tz.mengidata.app.R
+import tz.mengidata.app.backup.AndroidSystemBackupScheduler
 import tz.mengidata.app.i18n.AppLanguage
 import tz.mengidata.app.i18n.tr
 import tz.mengidata.app.ui.components.AboutAppSheet
@@ -108,12 +110,14 @@ import tz.mengidata.app.ui.components.OneUiNavTab
 import tz.mengidata.app.ui.components.PartyDirectorySheet
 import tz.mengidata.app.ui.components.PinLockScreen
 import tz.mengidata.app.ui.components.RecoveryVaultSheet
+import tz.mengidata.app.ui.components.UpdateScreen
 import tz.mengidata.app.ui.navigation.BillsRoute
 import tz.mengidata.app.ui.navigation.DashboardRoute
 import tz.mengidata.app.ui.navigation.HubRoute
 import tz.mengidata.app.ui.navigation.InvoicesRoute
 import tz.mengidata.app.ui.navigation.SettingsRoute
 import tz.mengidata.app.ui.navigation.TransactionsRoute
+import tz.mengidata.app.ui.navigation.UpdateRoute
 import tz.mengidata.app.ui.screens.BillsScreen
 import tz.mengidata.app.ui.screens.DashboardScreen
 import tz.mengidata.app.ui.screens.HubScreen
@@ -124,6 +128,7 @@ import tz.mengidata.app.security.BiometricAvailability
 import tz.mengidata.app.security.UninstallGuardSession
 import tz.mengidata.app.security.UninstallProtectionManager
 import tz.mengidata.app.system.LocalDevicePerformance
+import tz.mengidata.app.ui.components.BusinessProfileSheet
 import tz.mengidata.app.ui.theme.LocalMengiColors
 import tz.mengidata.app.ui.theme.MengidataTheme
 import tz.mengidata.app.viewmodel.MengiViewModel
@@ -158,9 +163,6 @@ fun MengiApp(viewModel: MengiViewModel) {
     val isAppUnlocked by viewModel.isAppUnlocked.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val devicePerformance by viewModel.devicePerformance.collectAsStateWithLifecycle()
-    val pendingReinstallRestore by viewModel.pendingReinstallRestore.collectAsStateWithLifecycle()
-    val restorePromptDismissed by viewModel.restorePromptDismissed.collectAsStateWithLifecycle()
-    val rootPhonePermissions by viewModel.phonePermissions.collectAsStateWithLifecycle()
 
     val navController = rememberNavController()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
@@ -173,6 +175,7 @@ fun MengiApp(viewModel: MengiViewModel) {
     var showPartyDirectory by remember { mutableStateOf(false) }
     var showGlobalRecoveryVault by remember { mutableStateOf(false) }
     var showAboutApp by remember { mutableStateOf(false) }
+    var showBusinessProfileSheet by remember { mutableStateOf(false) }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -455,6 +458,8 @@ fun MengiApp(viewModel: MengiViewModel) {
 
     LaunchedEffect(Unit) {
         viewModel.refreshPhonePermissions()
+        viewModel.refreshUninstallProtectionStatus()
+        viewModel.onAllMandatorySystemPermissionsReady()
         val needsPostNotifications = withContext(Dispatchers.IO) {
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                 !viewModel.notificationManager.isPostNotificationsGranted()
@@ -579,6 +584,8 @@ fun MengiApp(viewModel: MengiViewModel) {
         val navBackStackEntry by navController.currentBackStackEntryAsState()
         val currentDestination = navBackStackEntry?.destination
         val isSettings = currentDestination?.hasRoute(SettingsRoute::class) == true
+        val isUpdateScreen = currentDestination?.hasRoute(UpdateRoute::class) == true
+        val isSecondaryFullScreen = isSettings || isUpdateScreen
 
         fun navigateTopLevel(route: Any) {
             navController.navigate(route) {
@@ -593,6 +600,14 @@ fun MengiApp(viewModel: MengiViewModel) {
         fun openSettings() {
             if (!isSettings) {
                 navController.navigate(SettingsRoute) {
+                    launchSingleTop = true
+                }
+            }
+        }
+
+        fun openUpdateScreen() {
+            if (!isUpdateScreen) {
+                navController.navigate(UpdateRoute) {
                     launchSingleTop = true
                 }
             }
@@ -627,6 +642,7 @@ fun MengiApp(viewModel: MengiViewModel) {
                     isConvertingCurrency = isConvertingCurrency,
                     partyCount = drawerParties.size,
                     selectedRouteMatch = { route -> currentDestination?.hasRoute(route::class) == true },
+                    isUpdateSelected = isUpdateScreen,
                     isSettingsSelected = isSettings,
                     onSelectDestination = { route ->
                         scope.launch { drawerState.close() }
@@ -642,6 +658,14 @@ fun MengiApp(viewModel: MengiViewModel) {
                     onOpenPartyDirectory = {
                         scope.launch { drawerState.close() }
                         showPartyDirectory = true
+                    },
+                    onOpenBusinessProfile = {
+                        scope.launch { drawerState.close() }
+                        showBusinessProfileSheet = true
+                    },
+                    onOpenUpdateScreen = {
+                        scope.launch { drawerState.close() }
+                        openUpdateScreen()
                     },
                     onOpenSettings = {
                         scope.launch { drawerState.close() }
@@ -659,7 +683,7 @@ fun MengiApp(viewModel: MengiViewModel) {
         ) {
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                 val useNavRail = maxWidth >= 680.dp
-                val showFloatingDock = !useNavRail && !isSettings
+                val showFloatingDock = !useNavRail && !isSecondaryFullScreen
 
                 Box(modifier = Modifier.fillMaxSize()) {
                     Scaffold(
@@ -691,7 +715,7 @@ fun MengiApp(viewModel: MengiViewModel) {
                                     Box(modifier = Modifier.padding(start = 10.dp)) {
                                         Surface(
                                             onClick = {
-                                                if (isSettings) {
+                                                if (isSecondaryFullScreen) {
                                                     navController.popBackStack()
                                                 } else {
                                                     scope.launch { drawerState.open() }
@@ -702,12 +726,12 @@ fun MengiApp(viewModel: MengiViewModel) {
                                             tonalElevation = 2.dp,
                                             modifier = Modifier
                                                 .size(44.dp)
-                                                .testTag(if (isSettings) "settings_back_btn" else "open_sidebar_btn")
+                                                .testTag(if (isSecondaryFullScreen) "settings_back_btn" else "open_sidebar_btn")
                                         ) {
                                             Box(contentAlignment = Alignment.Center) {
                                                 Icon(
-                                                    imageVector = if (isSettings) Icons.AutoMirrored.Rounded.ArrowBack else Icons.Rounded.Menu,
-                                                    contentDescription = if (isSettings) {
+                                                    imageVector = if (isSecondaryFullScreen) Icons.AutoMirrored.Rounded.ArrowBack else Icons.Rounded.Menu,
+                                                    contentDescription = if (isSecondaryFullScreen) {
                                                         tr(language, "Rudi", "Back")
                                                     } else {
                                                         tr(language, "Fungua menyu", "Open menu")
@@ -720,41 +744,52 @@ fun MengiApp(viewModel: MengiViewModel) {
                                     }
                                 },
                                 title = {
-                                    if (isSettings) {
-                                        Text(
-                                            text = tr(language, "Mipangilio", "Settings"),
-                                            style = MaterialTheme.typography.titleLarge,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    } else {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                        ) {
-                                            Surface(
-                                                shape = RoundedCornerShape(12.dp),
-                                                color = MaterialTheme.colorScheme.primaryContainer,
-                                                modifier = Modifier.size(32.dp)
-                                            ) {
-                                                Image(
-                                                    painter = painterResource(id = R.drawable.mengidata_oneui_icon_1795525888393),
-                                                    contentDescription = "VaultLedger",
-                                                    contentScale = ContentScale.Crop,
-                                                    modifier = Modifier.fillMaxSize()
-                                                )
-                                            }
+                                    when {
+                                        isSettings -> {
                                             Text(
-                                                text = settings.businessName.ifBlank { "VaultLedger" },
+                                                text = tr(language, "Mipangilio", "Settings"),
                                                 style = MaterialTheme.typography.titleLarge,
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis
                                             )
                                         }
+                                        isUpdateScreen -> {
+                                            Text(
+                                                text = tr(language, "Masasisho ya App", "Software Update"),
+                                                style = MaterialTheme.typography.titleLarge,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                        else -> {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                Surface(
+                                                    shape = RoundedCornerShape(12.dp),
+                                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                                    modifier = Modifier.size(32.dp)
+                                                ) {
+                                                    Image(
+                                                        painter = painterResource(id = R.drawable.mengidata_oneui_icon_1795525888393),
+                                                        contentDescription = "VaultLedger",
+                                                        contentScale = ContentScale.Crop,
+                                                        modifier = Modifier.fillMaxSize()
+                                                    )
+                                                }
+                                                Text(
+                                                    text = settings.businessName.ifBlank { "VaultLedger" },
+                                                    style = MaterialTheme.typography.titleLarge,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                        }
                                     }
                                 },
                                 actions = {
-                                    if (!isSettings) {
+                                    if (!isSecondaryFullScreen) {
                                         Row(
                                             modifier = Modifier.padding(end = 10.dp),
                                             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -858,10 +893,20 @@ fun MengiApp(viewModel: MengiViewModel) {
                             ) {
                                 val navMs = devicePerformance.navTransitionMs
                                 val navExitMs = (navMs * 0.75f).toInt()
+                                val useExpressiveScale = devicePerformance.enableSpringMotion && navMs > 0
                                 NavHost(
                                     navController = navController,
                                     startDestination = DashboardRoute,
-                                    enterTransition = { if (navMs <= 0) EnterTransition.None else fadeIn(tween(navMs)) },
+                                    enterTransition = {
+                                        when {
+                                            navMs <= 0 -> EnterTransition.None
+                                            useExpressiveScale -> fadeIn(tween(navMs)) + scaleIn(
+                                                initialScale = 0.965f,
+                                                animationSpec = tween(navMs)
+                                            )
+                                            else -> fadeIn(tween(navMs))
+                                        }
+                                    },
                                     exitTransition = { if (navExitMs <= 0) ExitTransition.None else fadeOut(tween(navExitMs)) },
                                     popEnterTransition = { if (navMs <= 0) EnterTransition.None else fadeIn(tween(navMs)) },
                                     popExitTransition = { if (navExitMs <= 0) ExitTransition.None else fadeOut(tween(navExitMs)) }
@@ -1068,6 +1113,29 @@ fun MengiApp(viewModel: MengiViewModel) {
                                         )
                                     }
 
+                                    composable<UpdateRoute> {
+                                        val autoUpdateEnabled by viewModel.autoUpdateEnabled.collectAsStateWithLifecycle()
+                                        val updateState by viewModel.updateState.collectAsStateWithLifecycle()
+                                        UpdateScreen(
+                                            language = language,
+                                            autoUpdateEnabled = autoUpdateEnabled,
+                                            updateState = updateState,
+                                            devicePerformance = devicePerformance,
+                                            onSetAutoUpdate = viewModel::setAutoUpdateEnabled,
+                                            onCheckUpdates = { viewModel.checkForUpdates(silentIfUpToDate = false) },
+                                            onDownloadUpdate = viewModel::startUpdateDownloadAndInstall,
+                                            onCancelDownload = viewModel::cancelUpdateDownload,
+                                            onOpenInstallPermissionSettings = {
+                                                runCatching { context.startActivity(viewModel.openInstallPermissionSettings()) }
+                                            },
+                                            onOpenReleasesBrowser = {
+                                                runCatching { context.startActivity(viewModel.openReleasesInBrowser()) }
+                                            },
+                                            onDirectInstallApk = viewModel::launchDirectApkInstall,
+                                            onUninstallOldApp = handleFingerprintGuidedUninstall
+                                        )
+                                    }
+
                                     composable<SettingsRoute> {
                                         val autoUpdateEnabled by viewModel.autoUpdateEnabled.collectAsStateWithLifecycle()
                                         val autoPhoneBackupEnabled by viewModel.autoPhoneBackupEnabled.collectAsStateWithLifecycle()
@@ -1081,6 +1149,9 @@ fun MengiApp(viewModel: MengiViewModel) {
                                         val invoices by viewModel.invoices.collectAsStateWithLifecycle()
                                         val bills by viewModel.bills.collectAsStateWithLifecycle()
                                         val savingsGoals by viewModel.savingsGoals.collectAsStateWithLifecycle()
+                                        val deviceTelemetry by viewModel.deviceTelemetry.collectAsStateWithLifecycle()
+                                        val isOptimizingPerformance by viewModel.isOptimizingPerformance.collectAsStateWithLifecycle()
+                                        val lastOptimizationReport by viewModel.lastOptimizationReport.collectAsStateWithLifecycle()
                                         val summary = tr(
                                             language,
                                             "${transactions.size} miamala · ${invoices.size} ankara · ${bills.size} bili · ${savingsGoals.size} akiba",
@@ -1103,8 +1174,12 @@ fun MengiApp(viewModel: MengiViewModel) {
                                             deletedRecords = deletedRecords,
                                             phoneStorageStatus = phoneStorageStatus,
                                             devicePerformance = devicePerformance,
+                                            deviceTelemetry = deviceTelemetry,
+                                            isOptimizingPerformance = isOptimizingPerformance,
+                                            lastOptimizationReport = lastOptimizationReport,
                                             onSetPerformanceMode = viewModel::setPerformanceMode,
                                             onOptimizeSystemNow = viewModel::optimizeSystemNow,
+                                            onRefreshDeviceTelemetry = { viewModel.refreshDevicePerformance(includeDbProbe = false) },
                                             onSetThemeMode = viewModel::setThemeMode,
                                             onSetLanguage = viewModel::setLanguage,
                                             onSetAutoUpdate = viewModel::setAutoUpdateEnabled,
@@ -1124,6 +1199,9 @@ fun MengiApp(viewModel: MengiViewModel) {
                                             onOpenEnrollFingerprint = openEnrollFingerprintSettings,
                                             onCopyDeviceOwnerCommand = handleCopyDeviceOwnerCommand,
                                             onRequestManageStoragePermission = requestManageStoragePermission,
+                                            onOpenAndroidSystemBackupSettings = {
+                                                AndroidSystemBackupScheduler.openAndroidSystemBackupSettings(context)
+                                            },
                                             onCheckUpdates = { viewModel.checkForUpdates(silentIfUpToDate = false) },
                                             onDownloadUpdate = viewModel::startUpdateDownloadAndInstall,
                                             onCancelDownloadUpdate = viewModel::cancelUpdateDownload,
@@ -1239,52 +1317,12 @@ fun MengiApp(viewModel: MengiViewModel) {
             )
         }
 
-        // First-launch / Post-reinstall 1-tap prompt so Android 13–16 grants All Files Access
-        // and immediately restores Documents/Mengidata backups + keeps live backups safe forever.
-        if (pendingReinstallRestore && !restorePromptDismissed && !rootPhonePermissions.storageManagerGranted) {
-            AlertDialog(
-                onDismissRequest = { viewModel.dismissRestorePrompt() },
-                shape = RoundedCornerShape(26.dp),
-                title = {
-                    Text(
-                        text = tr(
-                            language,
-                            "Rejesha Data & Washa Hifadhi Kiotomatiki",
-                            "Auto-Restore & Phone Backup"
-                        ),
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                },
-                text = {
-                    Text(
-                        text = tr(
-                            language,
-                            "Android 13+ inahitaji ruhusa ya 'All Files Access' (Storage Manager) ili VaultLedger iweze kusoma nakala yako ya zamani kwenye Documents/Mengidata na kurejesha data zako ZOTE kiotomatiki baada ya ku-uninstall na kusakinisha tena.",
-                            "Android 13+ requires 'All Files Access' (Storage Manager) so VaultLedger can read your previous backup in Documents/Mengidata and automatically restore ALL your records after reinstalling."
-                        ),
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            viewModel.dismissRestorePrompt()
-                            requestManageStoragePermission()
-                        },
-                        shape = CircleShape,
-                        modifier = Modifier.testTag("prompt_grant_storage_restore_btn")
-                    ) {
-                        Text(tr(language, "Ruhusu & Rejesha Sasa", "Allow & Restore Now"))
-                    }
-                },
-                dismissButton = {
-                    TextButton(
-                        onClick = { viewModel.dismissRestorePrompt() },
-                        modifier = Modifier.testTag("prompt_dismiss_storage_restore_btn")
-                    ) {
-                        Text(tr(language, "Baadaye", "Later"))
-                    }
-                }
+        if (showBusinessProfileSheet) {
+            BusinessProfileSheet(
+                settings = settings,
+                language = language,
+                onSaveSettings = viewModel::saveBusinessSettings,
+                onDismiss = { showBusinessProfileSheet = false }
             )
         }
         }

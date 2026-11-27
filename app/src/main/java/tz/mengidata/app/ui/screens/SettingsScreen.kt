@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Business
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.CloudDone
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.DeleteForever
 import androidx.compose.material.icons.rounded.Download
@@ -86,13 +87,14 @@ import tz.mengidata.app.ui.components.DevicePerformanceSettingsCard
 import tz.mengidata.app.ui.components.MengiCard
 import tz.mengidata.app.ui.components.OneUiFieldShape
 import tz.mengidata.app.ui.components.OneUiScreenHeader
+import tz.mengidata.app.system.DeviceHardwareSnapshot
+import tz.mengidata.app.system.OptimizationReport
 import tz.mengidata.app.ui.components.OneUiSegmentedTabs
 import tz.mengidata.app.ui.components.PinSetupDialog
 import tz.mengidata.app.ui.components.RecoveryVaultSheet
 import tz.mengidata.app.ui.components.ReportColorLegendStrip
 import tz.mengidata.app.ui.components.StatusPill
 import tz.mengidata.app.ui.components.TypedConfirmDangerDialog
-import tz.mengidata.app.ui.components.UpdateCenterCard
 import tz.mengidata.app.ui.components.oneUiTextFieldColors
 import tz.mengidata.app.ui.theme.ContrastAccessibility
 import tz.mengidata.app.ui.theme.LocalMengiColors
@@ -121,8 +123,12 @@ fun SettingsScreen(
     deletedRecords: List<DeletedRecordEntity>,
     phoneStorageStatus: PhoneStorageStatus,
     devicePerformance: DevicePerformanceProfile = DevicePerformanceProfile.defaultBalanced(),
+    deviceTelemetry: DeviceHardwareSnapshot = devicePerformance.hardware,
+    isOptimizingPerformance: Boolean = false,
+    lastOptimizationReport: OptimizationReport? = null,
     onSetPerformanceMode: (PerformanceModePreference) -> Unit = {},
     onOptimizeSystemNow: () -> Unit = {},
+    onRefreshDeviceTelemetry: () -> Unit = {},
     onSetThemeMode: (ThemeMode) -> Unit,
     onSetLanguage: (AppLanguage) -> Unit,
     onSetAutoUpdate: (Boolean) -> Unit,
@@ -140,6 +146,7 @@ fun SettingsScreen(
     onOpenEnrollFingerprint: () -> Unit = {},
     onCopyDeviceOwnerCommand: () -> Unit = {},
     onRequestManageStoragePermission: () -> Unit = {},
+    onOpenAndroidSystemBackupSettings: () -> Unit = {},
     onCheckUpdates: () -> Unit,
     onDownloadUpdate: (UpdateInfo) -> Unit,
     onCancelDownloadUpdate: () -> Unit = {},
@@ -166,18 +173,6 @@ fun SettingsScreen(
 ) {
     val colors = LocalMengiColors.current
 
-    var businessName by remember(settings) { mutableStateOf(settings.businessName) }
-    var ownerName by remember(settings) { mutableStateOf(settings.ownerName) }
-    var tagline by remember(settings) { mutableStateOf(settings.tagline) }
-    var address by remember(settings) { mutableStateOf(settings.address) }
-    var phone by remember(settings) { mutableStateOf(settings.phone) }
-    var email by remember(settings) { mutableStateOf(settings.email) }
-    var tin by remember(settings) { mutableStateOf(settings.tin) }
-    var invoicePrefix by remember(settings) { mutableStateOf(settings.invoicePrefix) }
-    var vatRateText by remember(settings) { mutableStateOf(settings.vatRate.toString()) }
-    var paymentDetails by remember(settings) { mutableStateOf(settings.paymentDetails) }
-    var invoiceNote by remember(settings) { mutableStateOf(settings.invoiceNote) }
-
     var showPinSetupDialog by remember { mutableStateOf(false) }
     var showRecoveryVault by remember { mutableStateOf(false) }
     var showDemoConfirm by remember { mutableStateOf(false) }
@@ -193,7 +188,7 @@ fun SettingsScreen(
         ) {
             item(key = "header") {
                 OneUiScreenHeader(
-                    eyebrow = tr(language, "Sanidi Mfumo na Masasisho", "System & Updates"),
+                    eyebrow = tr(language, "Sanidi Mfumo na Usalama", "System & Security"),
                     title = tr(language, "Mipangilio", "Settings")
                 )
             }
@@ -328,13 +323,17 @@ fun SettingsScreen(
                 }
             }
 
-            // 1A. Adaptive Device Performance Card (auto-tunes for any phone)
+            // 1A. Live Adaptive Device Performance Engine Card
             item(key = "device_performance_card") {
                 DevicePerformanceSettingsCard(
                     profile = devicePerformance,
+                    telemetry = deviceTelemetry,
+                    isOptimizing = isOptimizingPerformance,
+                    lastOptimizationReport = lastOptimizationReport,
                     language = language,
                     onSelectMode = onSetPerformanceMode,
-                    onOptimizeNow = onOptimizeSystemNow
+                    onOptimizeNow = onOptimizeSystemNow,
+                    onRefreshTelemetry = onRefreshDeviceTelemetry
                 )
             }
 
@@ -348,30 +347,14 @@ fun SettingsScreen(
                         title = tr(language, "Usalama na Faragha", "Security & Privacy"),
                         subtitle = tr(language, "Linda salio na funga programu kwa namba ya siri ya tarakimu 4.", "Hide balances in public and lock app with a 4-digit PIN."),
                         badge = {
-                            val isProtected = pinLockEnabled || uninstallGuardStatus.isProtected || uninstallGuardStatus.isDeviceOwner
-                            val badgeText = when {
-                                uninstallGuardStatus.isDeviceOwner -> tr(language, "Device Owner", "Device Owner")
-                                uninstallGuardStatus.isFullyProtected -> tr(language, "Ulinzi Kamili", "System Armed")
-                                uninstallGuardStatus.isProtected -> tr(language, "Hatua 1 Imebaki", "1 Step Left")
-                                pinLockEnabled -> tr(language, "PIN Imewashwa", "PIN Active")
-                                else -> tr(language, "Wazi", "Unlocked")
-                            }
                             StatusPill(
-                                text = badgeText,
-                                containerColor = if (uninstallGuardStatus.isFullyProtected || pinLockEnabled) {
-                                    colors.incomeSoft
-                                } else if (uninstallGuardStatus.isProtected) {
-                                    colors.warningSoft
+                                text = if (pinLockEnabled) {
+                                    tr(language, "PIN Imewashwa", "PIN Active")
                                 } else {
-                                    colors.subtleSurface
+                                    tr(language, "Wazi", "Unlocked")
                                 },
-                                contentColor = if (uninstallGuardStatus.isFullyProtected || pinLockEnabled) {
-                                    colors.income
-                                } else if (uninstallGuardStatus.isProtected) {
-                                    colors.warning
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                }
+                                containerColor = if (pinLockEnabled) colors.incomeSoft else colors.subtleSurface,
+                                contentColor = if (pinLockEnabled) colors.income else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     )
@@ -474,589 +457,10 @@ fun SettingsScreen(
                             }
                         }
                     }
-
-                    Spacer(Modifier.height(14.dp))
-                    HorizontalDivider(color = colors.cardBorder)
-                    Spacer(Modifier.height(14.dp))
-
-                    // Android System Fingerprint Uninstall Protection (2-Layer OS Guard)
-                    val guardArmed = uninstallGuardStatus.isFullyProtected
-                    val isDeviceOwner = uninstallGuardStatus.isDeviceOwner
-                    val biometricAvailability = uninstallGuardStatus.biometricAvailability
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(
-                            modifier = Modifier.weight(1f).padding(end = 10.dp),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Surface(
-                                shape = CircleShape,
-                                color = if (guardArmed) colors.incomeSoft else colors.subtleSurface,
-                                modifier = Modifier.size(38.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Fingerprint,
-                                        contentDescription = tr(language, "Alama ya kidole", "Fingerprint"),
-                                        tint = if (guardArmed) colors.income else MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                            }
-                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text(
-                                    text = tr(
-                                        language,
-                                        "Ulinzi wa Kuondoa App (Android System)",
-                                        "Android System Uninstall Lock"
-                                    ),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                Text(
-                                    text = if (guardArmed) {
-                                        tr(
-                                            language,
-                                            "UMEWASHWA: Mtu akijaribu ku-uninstall VaultLedger popote kwenye simu, Android inadai Alama ya Kidole papo hapo.",
-                                            "ARMED: Any attempt to uninstall VaultLedger triggers the Android System Fingerprint lock."
-                                        )
-                                    } else {
-                                        tr(
-                                            language,
-                                            "Washa hatua 2 za Android hapa chini ili kuzuia ku-uninstall kutoka skrini na Mipangilio bila Fingerprint.",
-                                            "Enable both Android System steps below so nobody can uninstall from Home or Settings without Fingerprint."
-                                        )
-                                    },
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = if (guardArmed) colors.income else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                        StatusPill(
-                            text = when {
-                                guardArmed -> tr(language, "KAMILI", "ARMED")
-                                uninstallGuardStatus.isProtected -> tr(language, "1/2", "1/2")
-                                else -> tr(language, "ZIMA", "OFF")
-                            },
-                            containerColor = when {
-                                guardArmed -> colors.incomeSoft
-                                uninstallGuardStatus.isProtected -> colors.warningSoft
-                                else -> colors.subtleSurface
-                            },
-                            contentColor = when {
-                                guardArmed -> colors.income
-                                uninstallGuardStatus.isProtected -> colors.warning
-                                else -> MaterialTheme.colorScheme.onSurfaceVariant
-                            }
-                        )
-                    }
-
-                    Spacer(Modifier.height(12.dp))
-
-                    // Step 1: Android Device Administrator
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = colors.subtleSurface,
-                        border = BorderStroke(
-                            1.dp,
-                            if (uninstallGuardStatus.isDeviceAdminActive) colors.income.copy(alpha = 0.4f) else colors.cardBorder
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 10.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                                Text(
-                                    text = tr(language, "Hatua 1 · Android Device Admin", "Step 1 · Android Device Admin"),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                Text(
-                                    text = if (uninstallGuardStatus.isDeviceAdminActive) {
-                                        tr(language, "Imewashwa — huzuia ku-uninstall moja kwa moja.", "Active — blocks 1-tap uninstallation.")
-                                    } else {
-                                        tr(language, "Huzuia ku-uninstall kutoka skrini ya simu.", "Blocks quick uninstall from Home screen.")
-                                    },
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = if (uninstallGuardStatus.isDeviceAdminActive) colors.income else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            if (uninstallGuardStatus.isDeviceAdminActive) {
-                                Icon(
-                                    imageVector = Icons.Rounded.CheckCircle,
-                                    contentDescription = tr(language, "Imewashwa", "Active"),
-                                    tint = colors.income,
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            } else {
-                                FilledTonalButton(
-                                    onClick = onActivateDeviceAdmin,
-                                    shape = CircleShape,
-                                    modifier = Modifier.testTag("activate_device_admin_btn")
-                                ) {
-                                    Text(tr(language, "Washa", "Enable"), style = MaterialTheme.typography.labelMedium)
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(Modifier.height(8.dp))
-
-                    // Step 2: Android System Accessibility Fingerprint Interceptor
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = colors.subtleSurface,
-                        border = BorderStroke(
-                            1.dp,
-                            if (uninstallGuardStatus.isAccessibilityGuardActive) colors.income.copy(alpha = 0.4f) else colors.cardBorder
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 10.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                                    Text(
-                                        text = tr(
-                                            language,
-                                            "Hatua 2 · Ulinzi wa Fingerprint (Accessibility)",
-                                            "Step 2 · System Fingerprint Guard (Accessibility)"
-                                        ),
-                                        style = MaterialTheme.typography.labelLarge,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                    Text(
-                                        text = if (uninstallGuardStatus.isAccessibilityGuardActive) {
-                                            tr(
-                                                language,
-                                                "Imewashwa — inakamata dirisha la Uninstall & Settings na kudai Fingerprint.",
-                                                "Active — intercepts Android Uninstall & Settings and demands Fingerprint."
-                                            )
-                                        } else {
-                                            tr(
-                                                language,
-                                                "Inakamata dirisha la Uninstall la Android na kudai Alama ya Kidole papo hapo.",
-                                                "Intercepts Android Uninstall dialogs and immediately pops up Fingerprint."
-                                            )
-                                        },
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = if (uninstallGuardStatus.isAccessibilityGuardActive) colors.income else MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                if (uninstallGuardStatus.isAccessibilityGuardActive) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.CheckCircle,
-                                        contentDescription = tr(language, "Imewashwa", "Active"),
-                                        tint = colors.income,
-                                        modifier = Modifier.size(22.dp)
-                                    )
-                                } else {
-                                    FilledTonalButton(
-                                        onClick = onOpenAccessibilityGuard,
-                                        shape = CircleShape,
-                                        modifier = Modifier.testTag("enable_accessibility_guard_btn")
-                                    ) {
-                                        Text(tr(language, "Washa", "Enable"), style = MaterialTheme.typography.labelMedium)
-                                    }
-                                }
-                            }
-
-                            if (!uninstallGuardStatus.isAccessibilityGuardActive) {
-                                HorizontalDivider(color = colors.cardBorder)
-                                Text(
-                                    text = tr(
-                                        language,
-                                        "Kidokezo cha Android 13+: Kama ikionyesha 'Restricted setting', bonyeza 'Fungua App Info' → nukta 3 juu (⋮) → Allow restricted settings, kisha rudi uwashe Hatua 2.",
-                                        "Android 13+ tip: If blocked by 'Restricted setting', tap 'Open App Info' → top-right 3 dots (⋮) → Allow restricted settings, then enable Step 2."
-                                    ),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                OutlinedButton(
-                                    onClick = onOpenRestrictedSettingsAppInfo,
-                                    shape = CircleShape,
-                                    border = BorderStroke(1.dp, colors.cardBorder),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(44.dp)
-                                        .testTag("open_restricted_settings_app_info_btn")
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Security,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(Modifier.size(6.dp))
-                                    Text(
-                                        text = tr(language, "Fungua App Info (Restricted Settings)", "Open App Info (Restricted Settings)"),
-                                        maxLines = 1
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    if (biometricAvailability == BiometricAvailability.NONE_ENROLLED) {
-                        Spacer(Modifier.height(10.dp))
-                        FilledTonalButton(
-                            onClick = onOpenEnrollFingerprint,
-                            shape = CircleShape,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(48.dp)
-                                .testTag("enroll_fingerprint_btn")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Fingerprint,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(Modifier.size(8.dp))
-                            Text(
-                                text = tr(
-                                    language,
-                                    "Sajili Alama ya Kidole (Android)",
-                                    "Enroll Fingerprint in Android"
-                                ),
-                                maxLines = 1
-                            )
-                        }
-                    }
-
-                    if (uninstallGuardStatus.isProtected) {
-                        Spacer(Modifier.height(10.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            OutlinedButton(
-                                onClick = onDisableUninstallProtection,
-                                shape = CircleShape,
-                                border = BorderStroke(1.dp, colors.cardBorder),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(48.dp)
-                                    .testTag("disable_uninstall_protection_btn")
-                            ) {
-                                Text(
-                                    text = tr(language, "Zima Ulinzi", "Unlock Guard"),
-                                    textAlign = TextAlign.Center,
-                                    maxLines = 1
-                                )
-                            }
-                            FilledTonalButton(
-                                onClick = onRequestFingerprintUninstall,
-                                shape = CircleShape,
-                                modifier = Modifier
-                                    .weight(1.3f)
-                                    .height(48.dp)
-                                    .testTag("fingerprint_uninstall_app_btn")
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Fingerprint,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(Modifier.size(6.dp))
-                                Text(
-                                    text = tr(language, "Ondoa App", "Uninstall App"),
-                                    textAlign = TextAlign.Center,
-                                    maxLines = 1
-                                )
-                            }
-                        }
-                    }
-
-                    // Android Enterprise Device Owner (MDM / Kiosk) status & ADB provisioning command
-                    Spacer(Modifier.height(12.dp))
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = colors.subtleSurface,
-                        border = BorderStroke(
-                            1.dp,
-                            if (isDeviceOwner) colors.income.copy(alpha = 0.45f) else colors.cardBorder
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.VerifiedUser,
-                                        contentDescription = null,
-                                        tint = if (isDeviceOwner) colors.income else MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Text(
-                                        text = tr(
-                                            language,
-                                            "Android Enterprise (Device Owner)",
-                                            "Android Enterprise (Device Owner)"
-                                        ),
-                                        style = MaterialTheme.typography.labelLarge,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                }
-                                StatusPill(
-                                    text = if (isDeviceOwner) {
-                                        tr(language, "IMEWASHWA", "ACTIVE")
-                                    } else {
-                                        tr(language, "MDM / ADB", "MDM / ADB")
-                                    },
-                                    containerColor = if (isDeviceOwner) colors.incomeSoft else MaterialTheme.colorScheme.surfaceContainerHigh,
-                                    contentColor = if (isDeviceOwner) colors.income else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            if (isDeviceOwner) {
-                                Text(
-                                    text = tr(
-                                        language,
-                                        "Simu hii imesajiliwa kama Device Owner. Kuondoa programu kumezuiwa kabisa katika mfumo wa Android.",
-                                        "Provisioned as Device Owner. App uninstallation is strictly locked at the OS level."
-                                    ),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = colors.income
-                                )
-                            } else if (adbDeviceOwnerCommand.isNotBlank()) {
-                                Text(
-                                    text = tr(
-                                        language,
-                                        "Kwa ulinzi wa Kiosk/MDM usioondolewa kwa vyovyote, endesha amri hii kupitia ADB kwenye kifaa kisicho na akaunti:",
-                                        "For unremovable MDM/Kiosk protection, provision via ADB on a fresh device (no accounts added):"
-                                    ),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Surface(
-                                    shape = RoundedCornerShape(10.dp),
-                                    color = MaterialTheme.colorScheme.surface,
-                                    border = BorderStroke(1.dp, colors.cardBorder),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text(
-                                        text = adbDeviceOwnerCommand,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.padding(10.dp)
-                                    )
-                                }
-                                OutlinedButton(
-                                    onClick = onCopyDeviceOwnerCommand,
-                                    shape = CircleShape,
-                                    border = BorderStroke(1.dp, colors.cardBorder),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(44.dp)
-                                        .testTag("copy_device_owner_cmd_btn")
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.ContentCopy,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(Modifier.size(6.dp))
-                                    Text(
-                                        text = tr(language, "Nakili Amri ya ADB", "Copy ADB Command"),
-                                        maxLines = 1
-                                    )
-                                }
-                            }
-                        }
-                    }
                 }
             }
 
-            // 2. Flagship Bespoke OTA Update Console (4x Turbo Multi-Stream)
-            item(key = "update_card") {
-                UpdateCenterCard(
-                    language = language,
-                    autoUpdateEnabled = autoUpdateEnabled,
-                    updateState = updateState,
-                    onSetAutoUpdate = onSetAutoUpdate,
-                    onCheckUpdates = onCheckUpdates,
-                    onDownloadUpdate = onDownloadUpdate,
-                    onCancelDownload = onCancelDownloadUpdate,
-                    onOpenInstallPermissionSettings = onOpenInstallPermissionSettings,
-                    onOpenReleasesBrowser = onOpenReleasesBrowser,
-                    onDirectInstallApk = onDirectInstallApk,
-                    onUninstallOldApp = onUninstallOldApp
-                )
-            }
-
-            // 3. Business Profile & Invoice Defaults
-            item(key = "business_form") {
-                MengiCard {
-                    OneUiSettingsSectionHeader(
-                        icon = Icons.Rounded.Business,
-                        iconBg = colors.incomeSoft,
-                        iconTint = colors.income,
-                        title = tr(language, "Taarifa za Biashara & Ankara", "Business Profile & Invoice Defaults"),
-                        subtitle = tr(language, "Zinaonekana kwenye ankara za PDF na risiti.", "Printed on your PDF invoices and business headers.")
-                    )
-                    Spacer(Modifier.height(14.dp))
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        OutlinedTextField(
-                            value = businessName,
-                            onValueChange = { businessName = it },
-                            label = { Text(tr(language, "Jina la Biashara *", "Business Name *")) },
-                            singleLine = true,
-                            shape = OneUiFieldShape,
-                            colors = oneUiTextFieldColors(),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedTextField(
-                                value = ownerName,
-                                onValueChange = { ownerName = it },
-                                label = { Text(tr(language, "Mmiliki", "Owner")) },
-                                singleLine = true,
-                                shape = OneUiFieldShape,
-                                colors = oneUiTextFieldColors(),
-                                modifier = Modifier.weight(1f)
-                            )
-                            OutlinedTextField(
-                                value = tin,
-                                onValueChange = { tin = it },
-                                label = { Text("TIN") },
-                                singleLine = true,
-                                shape = OneUiFieldShape,
-                                colors = oneUiTextFieldColors(),
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                        OutlinedTextField(
-                            value = tagline,
-                            onValueChange = { tagline = it },
-                            label = { Text(tr(language, "Maelezo Mafupi ya Biashara", "Tagline")) },
-                            singleLine = true,
-                            shape = OneUiFieldShape,
-                            colors = oneUiTextFieldColors(),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedTextField(
-                                value = phone,
-                                onValueChange = { phone = it },
-                                label = { Text(tr(language, "Simu", "Phone")) },
-                                singleLine = true,
-                                shape = OneUiFieldShape,
-                                colors = oneUiTextFieldColors(),
-                                modifier = Modifier.weight(1f)
-                            )
-                            OutlinedTextField(
-                                value = email,
-                                onValueChange = { email = it },
-                                label = { Text(tr(language, "Barua pepe", "Email")) },
-                                singleLine = true,
-                                shape = OneUiFieldShape,
-                                colors = oneUiTextFieldColors(),
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                        OutlinedTextField(
-                            value = address,
-                            onValueChange = { address = it },
-                            label = { Text(tr(language, "Anwani ya Ofisi", "Office Address")) },
-                            singleLine = true,
-                            shape = OneUiFieldShape,
-                            colors = oneUiTextFieldColors(),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedTextField(
-                                value = invoicePrefix,
-                                onValueChange = { invoicePrefix = it.take(6).uppercase() },
-                                label = { Text(tr(language, "Kiambishi cha Ankara", "Invoice Prefix")) },
-                                singleLine = true,
-                                shape = OneUiFieldShape,
-                                colors = oneUiTextFieldColors(),
-                                modifier = Modifier.weight(1f)
-                            )
-                            OutlinedTextField(
-                                value = vatRateText,
-                                onValueChange = { vatRateText = it.filter { c -> c.isDigit() || c == '.' } },
-                                label = { Text("VAT (%)") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                                singleLine = true,
-                                shape = OneUiFieldShape,
-                                colors = oneUiTextFieldColors(),
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                        OutlinedTextField(
-                            value = paymentDetails,
-                            onValueChange = { paymentDetails = it },
-                            label = { Text(tr(language, "Maelezo ya Malipo (M-Pesa / Benki)", "Payment Details")) },
-                            minLines = 2,
-                            shape = OneUiFieldShape,
-                            colors = oneUiTextFieldColors(),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        OutlinedTextField(
-                            value = invoiceNote,
-                            onValueChange = { invoiceNote = it },
-                            label = { Text(tr(language, "Maelezo ya chini ya ankara", "Invoice Footer Note")) },
-                            minLines = 2,
-                            shape = OneUiFieldShape,
-                            colors = oneUiTextFieldColors(),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Button(
-                            onClick = {
-                                onSaveSettings(
-                                    settings.copy(
-                                        businessName = businessName.trim().ifBlank { "VaultLedger" },
-                                        ownerName = ownerName.trim(),
-                                        tagline = tagline.trim(),
-                                        address = address.trim(),
-                                        phone = phone.trim(),
-                                        email = email.trim(),
-                                        tin = tin.trim(),
-                                        invoicePrefix = invoicePrefix.trim().ifBlank { "MD" },
-                                        vatRate = (vatRateText.toDoubleOrNull() ?: 0.0).coerceIn(0.0, 100.0),
-                                        paymentDetails = paymentDetails.trim(),
-                                        invoiceNote = invoiceNote.trim()
-                                    )
-                                )
-                            },
-                            shape = CircleShape,
-                            modifier = Modifier.fillMaxWidth().height(50.dp).testTag("save_settings_btn")
-                        ) {
-                            Text(tr(language, "Hifadhi Taarifa za Biashara", "Save Business Settings"))
-                        }
-                    }
-                }
-            }
-
-            // 4A. Automatic Phone Storage Backup & Zero-Loss Vault Card
+            // 2. Automatic Phone Storage Backup & Zero-Loss Vault Card
             item(key = "database_phone_storage_card") {
                 val lastSyncedLabel = remember(phoneStorageStatus.lastSyncedMillis, language) {
                     if (phoneStorageStatus.lastSyncedMillis > 0L) {
@@ -1077,71 +481,27 @@ fun SettingsScreen(
                         icon = Icons.Rounded.PhoneAndroid,
                         iconBg = colors.incomeSoft,
                         iconTint = colors.income,
-                        title = tr(language, "Hifadhi Kiotomatiki kwenye Simu", "Auto Phone Storage Backup"),
+                        title = tr(language, "Hifadhi ya Data & Urejeshaji", "Data Backup & Recovery"),
                         subtitle = tr(
                             language,
-                            "Data hujihifadhi zenyewe kwenye simu kila unapofanya badiliko au kufunga app.",
-                            "Data automatically backs itself up to phone storage on every change & exit."
+                            "Android System huhifadhi na kurejesha data zako kiotomatiki bila kuhitaji kuwasha chochote.",
+                            "Android System automatically backs up and restores your data in the background."
                         ),
                         badge = {
                             StatusPill(
-                                text = when {
-                                    phoneStorageStatus.isSyncingNow -> tr(language, "Inahifadhi...", "Syncing...")
-                                    autoPhoneBackupEnabled -> tr(language, "Auto: WAZI", "Auto: ON")
-                                    else -> tr(language, "Imesimama", "Paused")
+                                text = if (phoneStorageStatus.isSyncingNow) {
+                                    tr(language, "Inahifadhi...", "Syncing...")
+                                } else {
+                                    tr(language, "Auto", "Auto")
                                 },
-                                containerColor = if (autoPhoneBackupEnabled) colors.incomeSoft else colors.warningSoft,
-                                contentColor = if (autoPhoneBackupEnabled) colors.income else colors.warning
+                                containerColor = colors.incomeSoft,
+                                contentColor = colors.income
                             )
                         }
                     )
                     Spacer(Modifier.height(12.dp))
 
-                    // Auto-Backup Master Toggle
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = colors.subtleSurface,
-                        border = BorderStroke(1.dp, colors.cardBorder),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 14.dp, vertical = 10.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = tr(
-                                        language,
-                                        "Hifadhi Data Kiotomatiki (Auto-Save)",
-                                        "Automatic Phone Storage Sync"
-                                    ),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = tr(
-                                        language,
-                                        "Huhifadhi nakala ya papo hapo + nakala za siku 7 na hurejesha kiotomatiki ukisakinisha upya.",
-                                        "Instant auto-mirror + 7-day daily history + automatic restore on reinstall."
-                                    ),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Switch(
-                                checked = autoPhoneBackupEnabled,
-                                onCheckedChange = onSetAutoPhoneBackup,
-                                modifier = Modifier.testTag("auto_phone_backup_switch")
-                            )
-                        }
-                    }
-
-                    Spacer(Modifier.height(10.dp))
-
-                    // Live Storage Proof Panel
+                    // Compact Read-Only Vault Summary
                     Surface(
                         shape = RoundedCornerShape(16.dp),
                         color = colors.subtleSurface,
@@ -1152,26 +512,6 @@ fun SettingsScreen(
                             modifier = Modifier.padding(14.dp),
                             verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Shield,
-                                    contentDescription = null,
-                                    tint = colors.income,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Text(
-                                    text = tr(
-                                        language,
-                                        "Mahali Data Zinapohifadhiwa Kwenye Simu",
-                                        "Active Phone Storage Vault Locations"
-                                    ),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
                             Text(
                                 text = "• ${phoneStorageStatus.phoneBackupPathLabel} ($sizeLabel)",
                                 style = MaterialTheme.typography.bodySmall,
@@ -1195,43 +535,6 @@ fun SettingsScreen(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            HorizontalDivider(color = colors.cardBorder)
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    modifier = Modifier.weight(1f).padding(end = 8.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = if (phonePermissions.storageManagerGranted) Icons.Rounded.CheckCircle else Icons.Rounded.Storage,
-                                        contentDescription = null,
-                                        tint = if (phonePermissions.storageManagerGranted) colors.income else colors.warning,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Text(
-                                        text = if (phonePermissions.storageManagerGranted) {
-                                            tr(language, "Ruhusa ya Hifadhi Kamili (Storage Manager): Imewashwa", "All Files Access (Storage Manager): Granted")
-                                        } else {
-                                            tr(language, "Ruhusu Hifadhi Kamili (Storage Manager) kuhifadhi na kusoma PDF za ankara", "Grant Storage Manager access to save & retrieve Invoice PDFs")
-                                        },
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = if (phonePermissions.storageManagerGranted) colors.income else MaterialTheme.colorScheme.onSurface
-                                    )
-                                }
-                                if (!phonePermissions.storageManagerGranted) {
-                                    FilledTonalButton(
-                                        onClick = onRequestManageStoragePermission,
-                                        shape = CircleShape,
-                                        modifier = Modifier.testTag("perm_storage_manager_btn")
-                                    ) {
-                                        Text(tr(language, "Ruhusu", "Allow"), style = MaterialTheme.typography.labelMedium)
-                                    }
-                                }
-                            }
                         }
                     }
 
@@ -1250,8 +553,8 @@ fun SettingsScreen(
                             Text(
                                 text = tr(
                                     language,
-                                    "Hifadhi kwenye Simu Sasa",
-                                    "Sync Database to Phone Storage Now"
+                                    "Hifadhi Sasa",
+                                    "Sync Backup Now"
                                 ),
                                 maxLines = 1
                             )
@@ -1298,13 +601,7 @@ fun SettingsScreen(
                         }
 
                         OutlinedButton(
-                            onClick = {
-                                if (!phonePermissions.storageManagerGranted) {
-                                    onRequestManageStoragePermission()
-                                } else {
-                                    onRestoreSafetySnapshot()
-                                }
-                            },
+                            onClick = onRestoreSafetySnapshot,
                             shape = CircleShape,
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1314,19 +611,11 @@ fun SettingsScreen(
                             Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.size(8.dp))
                             Text(
-                                text = if (phonePermissions.storageManagerGranted) {
-                                    tr(
-                                        language,
-                                        "Rejesha kutoka Hifadhi ya Simu",
-                                        "Restore from Phone Storage"
-                                    )
-                                } else {
-                                    tr(
-                                        language,
-                                        "Ruhusu Hifadhi & Rejesha Data",
-                                        "Allow Storage & Auto-Restore"
-                                    )
-                                },
+                                text = tr(
+                                    language,
+                                    "Rejesha kutoka Hifadhi ya Simu",
+                                    "Restore from Phone Storage"
+                                ),
                                 maxLines = 1
                             )
                         }

@@ -286,57 +286,33 @@ fun InvoicesScreen(
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = if (storageManagerGranted) {
-                                        tr(
-                                            language,
-                                            "Documents/Mengidata/Ankara · ${savedPublicPdfs.size} faili za PDF",
-                                            "Documents/Mengidata/Ankara · ${savedPublicPdfs.size} PDF files"
-                                        )
-                                    } else {
-                                        tr(
-                                            language,
-                                            "Ruhusu Storage Manager ili kusoma na kuhifadhi PDF zote za simu (${savedPublicPdfs.size} zimepatikana)",
-                                            "Grant Storage Manager access to save & retrieve all public PDFs (${savedPublicPdfs.size} found)"
-                                        )
-                                    },
+                                    text = tr(
+                                        language,
+                                        "Documents/Mengidata/Ankara · ${savedPublicPdfs.size} faili za PDF",
+                                        "Documents/Mengidata/Ankara · ${savedPublicPdfs.size} PDF files"
+                                    ),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        FilledTonalButton(
+                            onClick = {
+                                onRefreshSavedPublicPdfs()
+                                showSavedPdfsSheet = true
+                            },
+                            shape = CircleShape,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("open_saved_pdfs_btn")
                         ) {
-                            FilledTonalButton(
-                                onClick = {
-                                    onRefreshSavedPublicPdfs()
-                                    showSavedPdfsSheet = true
-                                },
-                                shape = CircleShape,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .testTag("open_saved_pdfs_btn")
-                            ) {
-                                Icon(Icons.Rounded.PictureAsPdf, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.size(6.dp))
-                                Text(
-                                    text = tr(language, "PDF Zilizohifadhiwa (${savedPublicPdfs.size})", "Saved PDFs (${savedPublicPdfs.size})"),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                            if (!storageManagerGranted) {
-                                Button(
-                                    onClick = onRequestManageStoragePermission,
-                                    shape = CircleShape,
-                                    modifier = Modifier.testTag("grant_storage_manager_invoices_btn")
-                                ) {
-                                    Icon(Icons.Rounded.Security, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(Modifier.size(4.dp))
-                                    Text(tr(language, "Ruhusu Hifadhi", "Allow Storage"), maxLines = 1)
-                                }
-                            }
+                            Icon(Icons.Rounded.PictureAsPdf, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.size(6.dp))
+                            Text(
+                                text = tr(language, "PDF Zilizohifadhiwa (${savedPublicPdfs.size})", "Saved PDFs (${savedPublicPdfs.size})"),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
                     }
                 }
@@ -1298,39 +1274,6 @@ private fun SavedPublicPdfsSheet(
                                 imageVector = Icons.Rounded.Refresh,
                                 contentDescription = tr(language, "Onyesha upya", "Refresh")
                             )
-                        }
-                    }
-
-                    if (!storageManagerGranted) {
-                        Surface(
-                            shape = RoundedCornerShape(16.dp),
-                            color = colors.warningSoft,
-                            border = BorderStroke(1.dp, colors.warning.copy(alpha = 0.4f)),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(14.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Text(
-                                    text = tr(
-                                        language,
-                                        "Ruhusa ya Storage Manager (All Files Access) haijawashwa. Washa ili uweze kuhifadhi na kurejesha PDF zote za ankara kwenye hifadhi ya simu.",
-                                        "All Files Access (MANAGE_EXTERNAL_STORAGE) is not enabled yet. Enable it to save and retrieve all invoice PDFs from public storage."
-                                    ),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Button(
-                                    onClick = onRequestManageStoragePermission,
-                                    shape = CircleShape,
-                                    modifier = Modifier.fillMaxWidth().testTag("sheet_grant_storage_manager_btn")
-                                ) {
-                                    Icon(Icons.Rounded.Security, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(Modifier.size(6.dp))
-                                    Text(tr(language, "Ruhusu Storage Manager", "Grant All Files Access"))
-                                }
-                            }
                         }
                     }
                 }

@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
+import tz.mengidata.app.backup.AndroidSystemBackupScheduler
 import tz.mengidata.app.i18n.FormatUtils
 import java.io.File
 import java.io.FileOutputStream
@@ -32,17 +33,22 @@ data class PhoneStorageStatus(
     val hasInternalBackup: Boolean = false,
     val hasPhoneStorageBackup: Boolean = false,
     val hasPublicDocumentsBackup: Boolean = false,
+    val hasDownloadMirrorBackup: Boolean = false,
     val hasCustomFolderBackup: Boolean = false,
     val hasPreClearBackup: Boolean = false,
     val lastSyncedMillis: Long = 0L,
+    val lastPublicSyncedMillis: Long = 0L,
     val backupSizeBytes: Long = 0L,
     val dailySnapshotCount: Int = 0,
     val phoneBackupPathLabel: String = "Documents/Mengidata/Mengidata_Database_Backup.json",
     val customFolderLabel: String = "",
+    val androidSystemBackupArmed: Boolean = false,
+    val lastAndroidBackupSignalMillis: Long = 0L,
+    val storageAccessGranted: Boolean = false,
     val isSyncingNow: Boolean = false
 ) {
     val hasAnyBackup: Boolean
-        get() = hasInternalBackup || hasPhoneStorageBackup || hasPublicDocumentsBackup || hasCustomFolderBackup || hasPreClearBackup
+        get() = hasInternalBackup || hasPhoneStorageBackup || hasPublicDocumentsBackup || hasDownloadMirrorBackup || hasCustomFolderBackup || hasPreClearBackup
 }
 
 private data class BackupCandidate(
@@ -133,65 +139,102 @@ class PhoneStorageVault(private val context: Context) {
 
     private fun publicInvoicesDirDirect(): File = File(publicMengidataRootDir(), PUBLIC_INVOICES_SUBFOLDER)
 
+    private fun uriCachePrefs() =
+        context.applicationContext.getSharedPreferences(URI_CACHE_PREFS, Context.MODE_PRIVATE)
+
+    private fun getCachedMediaUri(key: String): Uri? {
+        val raw = uriCachePrefs().getString(key, null) ?: return null
+        return runCatching { Uri.parse(raw) }.getOrNull()
+    }
+
+    private fun saveCachedMediaUri(key: String, uri: Uri) {
+        uriCachePrefs().edit().putString(key, uri.toString()).apply()
+    }
+
     private fun computeStatus(isSyncing: Boolean): PhoneStorageStatus {
         val internal = internalLatestFile()
         val external = externalBackupFile()
         val preClear = preClearFile()
         val historyDir = externalHistoryDir()
+        val allFilesGranted = hasAllFilesAccess()
 
         val hasInternal = internal.exists() && internal.length() > 10L
         val hasExternal = external != null && external.exists() && external.length() > 10L
         val hasPreClear = preClear.exists() && preClear.length() > 10L
 
-        val directPublic = if (hasAllFilesAccess()) {
-            listOf(publicBackupFileDirect(), publicSecondaryBackupFileDirect())
-                .filter { it.exists() && it.length() > 10L }
-                .maxByOrNull { it.lastModified() }
+        val directPrimary = if (allFilesGranted) {
+            publicBackupFileDirect().takeIf { it.exists() && it.length() > 10L }
         } else {
             null
         }
-        val publicInfo = if (directPublic == null) queryPublicMediaStoreBackupInfo() else null
-        val hasPublic = directPublic != null || publicInfo != null
+        val directDownload = if (allFilesGranted) {
+            publicSecondaryBackupFileDirect().takeIf { it.exists() && it.length() > 10L }
+        } else {
+            null
+        }
+        val mediaDocsInfo = if (directPrimary == null) queryPublicDocsMediaStoreInfo() else null
+        val mediaDownloadsInfo = if (directDownload == null) queryPublicDownloadsMediaStoreInfo() else null
+
+        val hasPublicDocs = directPrimary != null || mediaDocsInfo != null
+        val hasDownloadMirror = directDownload != null || mediaDownloadsInfo != null
 
         val customUri = customFolderTreeUri
         val hasCustom = customUri != null && hasPersistedTreePermission(customUri)
         val customLabel = if (hasCustom && customUri != null) formatTreeLabel(customUri) else ""
 
+        val latestPublicMod = listOfNotNull(
+            directPrimary?.lastModified(),
+            directDownload?.lastModified(),
+            mediaDocsInfo?.second?.takeIf { it > 0L },
+            mediaDownloadsInfo?.second?.takeIf { it > 0L }
+        ).maxOrNull() ?: 0L
+
         val latestMod = listOfNotNull(
             internal.takeIf { hasInternal }?.lastModified(),
             external?.takeIf { hasExternal }?.lastModified(),
-            directPublic?.lastModified(),
-            publicInfo?.second?.takeIf { it > 0L },
+            latestPublicMod.takeIf { it > 0L },
             preClear.takeIf { hasPreClear }?.lastModified()
         ).maxOrNull() ?: 0L
 
         val sizeBytes = listOfNotNull(
-            directPublic?.length(),
+            directPrimary?.length(),
+            directDownload?.length(),
             internal.takeIf { hasInternal }?.length(),
             external?.takeIf { hasExternal }?.length()
         ).maxOrNull() ?: 0L
 
-        val publicDailyCount = if (hasAllFilesAccess()) {
-            publicHistoryDirDirect().listFiles { f -> f.isFile && f.name.endsWith(".json") }?.size ?: 0
+        val publicDailyCount = if (allFilesGranted) {
+            publicHistoryDirDirect().listFiles { f -> f.isFile && (f.name.endsWith(".json") || f.name.endsWith(".txt")) }?.size ?: 0
         } else {
             0
         }
         val externalDailyCount = historyDir?.listFiles { f -> f.isFile && f.name.endsWith(".json") }?.size ?: 0
         val dailyCount = maxOf(publicDailyCount, externalDailyCount)
 
+        val systemBackupArmed = AndroidSystemBackupScheduler.isPeriodicJobScheduled(context)
+        val lastSignalMs = maxOf(
+            AndroidSystemBackupScheduler.getLastBackupManagerSignalMillis(context),
+            AndroidSystemBackupScheduler.getLastJobSyncMillis(context)
+        )
+
         val pathLabel = "Documents/$PUBLIC_FOLDER/$PUBLIC_BACKUP_FILE"
 
         return PhoneStorageStatus(
             hasInternalBackup = hasInternal,
-            hasPhoneStorageBackup = hasExternal || hasPublic || hasCustom,
-            hasPublicDocumentsBackup = hasPublic,
+            hasPhoneStorageBackup = hasExternal || hasPublicDocs || hasDownloadMirror || hasCustom,
+            hasPublicDocumentsBackup = hasPublicDocs,
+            hasDownloadMirrorBackup = hasDownloadMirror,
             hasCustomFolderBackup = hasCustom,
             hasPreClearBackup = hasPreClear,
             lastSyncedMillis = latestMod,
+            lastPublicSyncedMillis = latestPublicMod,
             backupSizeBytes = sizeBytes,
             dailySnapshotCount = dailyCount,
             phoneBackupPathLabel = pathLabel,
             customFolderLabel = customLabel,
+            androidSystemBackupArmed = systemBackupArmed,
+            lastAndroidBackupSignalMillis = lastSignalMs,
+            storageAccessGranted = allFilesGranted,
             isSyncingNow = isSyncing
         )
     }
@@ -243,15 +286,29 @@ class PhoneStorageVault(private val context: Context) {
         }.getOrDefault(false)
     }
 
-    fun saveAutoSnapshot(json: String, allowPublicOverwrite: Boolean = true): Boolean {
+    fun hasReadableRealPublicBackup(): Boolean {
+        return readBestAvailableSnapshot(requireRealUserData = true, includeInternalAppFiles = false) != null
+    }
+
+    fun saveAutoSnapshot(
+        json: String,
+        allowPublicOverwrite: Boolean = true,
+        forcePublicWriteIfNoRealBackup: Boolean = false
+    ): Boolean {
         _statusFlow.value = _statusFlow.value.copy(isSyncingNow = true)
         var anySaved = false
+        var anyPublicSaved = false
         val today = FormatUtils.todayIso()
         val payloadBytes = json.toByteArray(Charsets.UTF_8)
-        val shouldWritePublic = allowPublicOverwrite && !isDemoOnlyBackupJson(json)
+        val demoOnlyPayload = isDemoOnlyBackupJson(json)
+        val shouldWritePublic = if (demoOnlyPayload) {
+            forcePublicWriteIfNoRealBackup && !hasReadableRealPublicBackup()
+        } else {
+            allowPublicOverwrite
+        }
 
         try {
-            // 1. Atomic rolling internal snapshot (rotate latest -> prev before replacing)
+            // 1. Atomic rolling internal snapshot (backed up by Android System BackupAgent!)
             runCatching {
                 val latest = internalLatestFile()
                 val prev = internalPrevFile()
@@ -284,7 +341,7 @@ class PhoneStorageVault(private val context: Context) {
                 }
             }
 
-            // 3. Public Phone Storage mirrors (ONLY overwrite with REAL user data, NEVER unmodified demo data!)
+            // 3. Public Phone Storage mirrors (survive uninstall locally on device!)
             if (shouldWritePublic) {
                 if (hasAllFilesAccess()) {
                     // Primary public mirror: Documents/Mengidata/Mengidata_Database_Backup.json + 14-day History
@@ -312,7 +369,10 @@ class PhoneStorageVault(private val context: Context) {
                         }
                         ok
                     }.getOrDefault(false)
-                    if (primarySaved) anySaved = true
+                    if (primarySaved) {
+                        anySaved = true
+                        anyPublicSaved = true
+                    }
 
                     // Secondary redundant public mirror: Download/VaultLedger/VaultLedger_AutoBackup.json
                     val secondarySaved = runCatching {
@@ -329,18 +389,27 @@ class PhoneStorageVault(private val context: Context) {
                         }
                         ok
                     }.getOrDefault(false)
-                    if (secondarySaved) anySaved = true
+                    if (secondarySaved) {
+                        anySaved = true
+                        anyPublicSaved = true
+                    }
                 } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    runCatching {
-                        val okLatest = writePublicDocumentsFile(
+                    // Scoped-storage MediaStore writes with cached URI reuse + OEM MIME fallback
+                    val docsUri = runCatching {
+                        writePublicDocumentsFileCached(
+                            cacheKey = KEY_DOCS_LATEST_URI,
                             relativePath = "${Environment.DIRECTORY_DOCUMENTS}/$PUBLIC_FOLDER",
                             fileName = PUBLIC_BACKUP_FILE,
                             fallbackName = PUBLIC_BACKUP_FILE_FALLBACK,
-                            mimeType = "application/json",
                             bytes = payloadBytes
                         )
-                        if (okLatest) anySaved = true
+                    }.getOrNull()
+                    if (docsUri != null) {
+                        anySaved = true
+                        anyPublicSaved = true
+                    }
 
+                    runCatching {
                         writePublicDocumentsFile(
                             relativePath = "${Environment.DIRECTORY_DOCUMENTS}/$PUBLIC_FOLDER/$PUBLIC_HISTORY_SUBFOLDER",
                             fileName = "Mengidata_Backup_$today.json",
@@ -348,15 +417,20 @@ class PhoneStorageVault(private val context: Context) {
                             mimeType = "application/json",
                             bytes = payloadBytes
                         )
+                    }
 
-                        // Also mirror to public Downloads via MediaStore.Downloads
-                        writePublicDownloadsFile(
+                    val downloadsUri = runCatching {
+                        writePublicDownloadsFileCached(
+                            cacheKey = KEY_DOWNLOADS_LATEST_URI,
                             relativePath = "${Environment.DIRECTORY_DOWNLOADS}/$PUBLIC_SECONDARY_FOLDER",
                             fileName = PUBLIC_SECONDARY_BACKUP_FILE,
                             fallbackName = PUBLIC_SECONDARY_BACKUP_FALLBACK,
-                            mimeType = "application/json",
                             bytes = payloadBytes
                         )
+                    }.getOrNull()
+                    if (downloadsUri != null) {
+                        anySaved = true
+                        anyPublicSaved = true
                     }
                 }
             }
@@ -367,13 +441,19 @@ class PhoneStorageVault(private val context: Context) {
                 runCatching {
                     if (writeToCustomSafFolder(customUri, PUBLIC_BACKUP_FILE, "application/json", payloadBytes)) {
                         anySaved = true
+                        anyPublicSaved = true
                     }
                 }
+            }
+
+            // 5. Notify native Android System BackupManager whenever real/forced data is saved!
+            if (anySaved && (!demoOnlyPayload || forcePublicWriteIfNoRealBackup)) {
+                AndroidSystemBackupScheduler.notifyAndroidBackupManager(context)
             }
         } finally {
             _statusFlow.value = computeStatus(isSyncing = false)
         }
-        return anySaved
+        return if (shouldWritePublic) (anyPublicSaved || anySaved) else anySaved
     }
 
     fun savePreClearSnapshot(json: String) {
@@ -524,7 +604,10 @@ class PhoneStorageVault(private val context: Context) {
      * Download/VaultLedger, MediaStore, SAF folder, internal & external snapshots) and returns
      * the newest REAL user backup, strictly prioritizing real user data over unmodified demo snapshots.
      */
-    fun readBestAvailableSnapshot(requireRealUserData: Boolean = false): String? {
+    fun readBestAvailableSnapshot(
+        requireRealUserData: Boolean = false,
+        includeInternalAppFiles: Boolean = true
+    ): String? {
         val candidates = mutableListOf<BackupCandidate>()
 
         fun considerPayload(text: String?, fileModMillis: Long, sourceLabel: String) {
@@ -555,9 +638,9 @@ class PhoneStorageVault(private val context: Context) {
                 runCatching {
                     if (dir.exists() && dir.isDirectory) {
                         dir.listFiles { f ->
-                            f.isFile && f.name.endsWith(".json", ignoreCase = true) && f.length() > 10L
+                            f.isFile && (f.name.endsWith(".json", ignoreCase = true) || f.name.endsWith(".txt", ignoreCase = true)) && f.length() > 10L
                         }?.sortedByDescending { it.lastModified() }
-                            ?.take(12)
+                            ?.take(16)
                             ?.forEach { file ->
                                 val text = runCatching { file.readText(Charsets.UTF_8) }.getOrNull()
                                 considerPayload(text, file.lastModified(), file.absolutePath)
@@ -567,25 +650,36 @@ class PhoneStorageVault(private val context: Context) {
             }
         }
 
-        // 2. Local & app-external snapshots
-        val appFiles = buildList {
-            add(internalLatestFile())
-            externalBackupFile()?.let { add(it) }
-            add(preClearFile())
-            add(internalPrevFile())
-            externalHistoryDir()?.listFiles { f -> f.isFile && f.name.endsWith(".json") }
-                ?.sortedByDescending { it.lastModified() }
-                ?.take(5)
-                ?.let { addAll(it) }
-        }.filter { it.exists() && it.length() > 10L }
+        // 2. Local & app-external snapshots (includes snapshots restored by Android System BackupAgent!)
+        if (includeInternalAppFiles) {
+            val appFiles = buildList {
+                add(internalLatestFile())
+                externalBackupFile()?.let { add(it) }
+                add(preClearFile())
+                add(internalPrevFile())
+                externalHistoryDir()?.listFiles { f -> f.isFile && f.name.endsWith(".json") }
+                    ?.sortedByDescending { it.lastModified() }
+                    ?.take(5)
+                    ?.let { addAll(it) }
+            }.filter { it.exists() && it.length() > 10L }
 
-        appFiles.forEach { file ->
-            val text = runCatching { file.readText(Charsets.UTF_8) }.getOrNull()
-            considerPayload(text, file.lastModified(), file.name)
+            appFiles.forEach { file ->
+                val text = runCatching { file.readText(Charsets.UTF_8) }.getOrNull()
+                considerPayload(text, file.lastModified(), file.name)
+            }
         }
 
-        // 3. Public MediaStore Files & Downloads scan (even if All Files Access not yet granted)
+        // 3. Cached MediaStore URIs + Public MediaStore Files & Downloads scan
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            listOfNotNull(
+                getCachedMediaUri(KEY_DOCS_LATEST_URI),
+                getCachedMediaUri(KEY_DOWNLOADS_LATEST_URI)
+            ).forEach { uri ->
+                val text = runCatching {
+                    context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+                }.getOrNull()
+                considerPayload(text, System.currentTimeMillis() - 500L, "CachedMediaStore:$uri")
+            }
             readAllPublicMediaStoreBackups().forEach { (text, modMillis, name) ->
                 considerPayload(text, modMillis, "MediaStore:$name")
             }
@@ -666,12 +760,39 @@ class PhoneStorageVault(private val context: Context) {
         return isDemoOnlyJsonObject(parsed)
     }
 
-    private fun queryPublicMediaStoreBackupInfo(): Pair<Uri, Long>? {
+    private fun queryPublicDocsMediaStoreInfo(): Pair<Uri, Long>? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
         val relPath = "${Environment.DIRECTORY_DOCUMENTS}/$PUBLIC_FOLDER"
         return findPublicFileUriWithModified(relPath, PUBLIC_BACKUP_FILE)
             ?: findPublicFileUriWithModified(relPath, PUBLIC_BACKUP_FILE_FALLBACK)
-            ?: findPublicDownloadUriWithModified("${Environment.DIRECTORY_DOWNLOADS}/$PUBLIC_SECONDARY_FOLDER", PUBLIC_SECONDARY_BACKUP_FILE)
+            ?: queryCachedMediaUriInfo(KEY_DOCS_LATEST_URI)
+    }
+
+    private fun queryPublicDownloadsMediaStoreInfo(): Pair<Uri, Long>? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
+        val relPath = "${Environment.DIRECTORY_DOWNLOADS}/$PUBLIC_SECONDARY_FOLDER"
+        return findPublicDownloadUriWithModified(relPath, PUBLIC_SECONDARY_BACKUP_FILE)
+            ?: findPublicDownloadUriWithModified(relPath, PUBLIC_SECONDARY_BACKUP_FALLBACK)
+            ?: queryCachedMediaUriInfo(KEY_DOWNLOADS_LATEST_URI)
+    }
+
+    private fun queryCachedMediaUriInfo(cacheKey: String): Pair<Uri, Long>? {
+        val uri = getCachedMediaUri(cacheKey) ?: return null
+        return runCatching {
+            val projection = arrayOf(
+                MediaStore.MediaColumns.SIZE,
+                MediaStore.MediaColumns.DATE_MODIFIED
+            )
+            context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val size = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE))
+                    val modSec = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_MODIFIED))
+                    if (size > 10L) uri to (modSec * 1000L) else null
+                } else {
+                    null
+                }
+            }
+        }.getOrNull()
     }
 
     private fun readAllPublicMediaStoreBackups(): List<Triple<String, Long, String>> {
@@ -686,8 +807,8 @@ class PhoneStorageVault(private val context: Context) {
             MediaStore.MediaColumns.DISPLAY_NAME,
             MediaStore.MediaColumns.DATE_MODIFIED
         )
-        val selection = "(${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ? OR ${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?) AND ${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?"
-        val selectionArgs = arrayOf("Mengidata%", "VaultLedger%", "%.json")
+        val selection = "(${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ? OR ${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?) AND (${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ? OR ${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?)"
+        val selectionArgs = arrayOf("Mengidata%", "VaultLedger%", "%.json%", "%.txt")
         val sortOrder = "${MediaStore.MediaColumns.DATE_MODIFIED} DESC"
 
         for (collection in collections) {
@@ -697,7 +818,7 @@ class PhoneStorageVault(private val context: Context) {
                     val nameIdx = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
                     val modIdx = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_MODIFIED)
                     var count = 0
-                    while (cursor.moveToNext() && count < 10) {
+                    while (cursor.moveToNext() && count < 12) {
                         val id = cursor.getLong(idIdx)
                         val name = cursor.getString(nameIdx) ?: continue
                         val modMillis = cursor.getLong(modIdx) * 1000L
@@ -755,6 +876,59 @@ class PhoneStorageVault(private val context: Context) {
         }.getOrNull()
     }
 
+    private fun overwriteExistingMediaUri(uri: Uri, bytes: ByteArray): Boolean {
+        val resolver = context.contentResolver
+        return runCatching {
+            val out = resolver.openOutputStream(uri, "rwt")
+                ?: resolver.openOutputStream(uri, "wt")
+                ?: resolver.openOutputStream(uri)
+                ?: return@runCatching false
+            out.use {
+                it.write(bytes)
+                it.flush()
+            }
+            true
+        }.getOrDefault(false)
+    }
+
+    private fun writePublicDocumentsFileCached(
+        cacheKey: String,
+        relativePath: String,
+        fileName: String,
+        fallbackName: String,
+        bytes: ByteArray
+    ): Uri? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
+        val cached = getCachedMediaUri(cacheKey)
+        if (cached != null && overwriteExistingMediaUri(cached, bytes)) {
+            return cached
+        }
+        val collection = MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        val written = writeMediaStoreCollectionFile(collection, relativePath, fileName, "application/json", bytes)
+            ?: writeMediaStoreCollectionFile(collection, relativePath, fallbackName, "text/plain", bytes)
+        if (written != null) saveCachedMediaUri(cacheKey, written)
+        return written
+    }
+
+    private fun writePublicDownloadsFileCached(
+        cacheKey: String,
+        relativePath: String,
+        fileName: String,
+        fallbackName: String,
+        bytes: ByteArray
+    ): Uri? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
+        val cached = getCachedMediaUri(cacheKey)
+        if (cached != null && overwriteExistingMediaUri(cached, bytes)) {
+            return cached
+        }
+        val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        val written = writeMediaStoreCollectionFile(collection, relativePath, fileName, "application/json", bytes)
+            ?: writeMediaStoreCollectionFile(collection, relativePath, fallbackName, "text/plain", bytes)
+        if (written != null) saveCachedMediaUri(cacheKey, written)
+        return written
+    }
+
     private fun writePublicDocumentsFile(
         relativePath: String,
         fileName: String,
@@ -765,22 +939,7 @@ class PhoneStorageVault(private val context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false
         val primary = writePublicDocumentsFileReturningUri(relativePath, fileName, mimeType, bytes)
         if (primary != null) return true
-        val fallback = writePublicDocumentsFileReturningUri(relativePath, fallbackName, mimeType, bytes)
-        return fallback != null
-    }
-
-    private fun writePublicDownloadsFile(
-        relativePath: String,
-        fileName: String,
-        fallbackName: String,
-        mimeType: String,
-        bytes: ByteArray
-    ): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false
-        val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-        val primary = writeMediaStoreCollectionFile(collection, relativePath, fileName, mimeType, bytes)
-        if (primary != null) return true
-        val fallback = writeMediaStoreCollectionFile(collection, relativePath, fallbackName, mimeType, bytes)
+        val fallback = writePublicDocumentsFileReturningUri(relativePath, fallbackName, "text/plain", bytes)
         return fallback != null
     }
 
@@ -805,43 +964,44 @@ class PhoneStorageVault(private val context: Context) {
         val resolver = context.contentResolver
         val existingUri = queryMediaStoreSingle(collection, relativePath, fileName)?.first
 
-        if (existingUri != null) {
-            val overwritten = runCatching {
-                val out = resolver.openOutputStream(existingUri, "wt")
-                    ?: resolver.openOutputStream(existingUri)
-                    ?: return@runCatching false
+        if (existingUri != null && overwriteExistingMediaUri(existingUri, bytes)) {
+            return existingUri
+        }
+
+        // Try preferred MIME type first, then OEM-safe fallbacks (some Android 14–16 OEMs reject application/json in MediaStore.Files)
+        val candidateMimes = if (mimeType == "application/pdf") {
+            listOf("application/pdf")
+        } else {
+            listOf(mimeType, "text/plain", "application/octet-stream").distinct()
+        }
+
+        for (candidateMime in candidateMimes) {
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                put(MediaStore.MediaColumns.MIME_TYPE, candidateMime)
+                put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
+            }
+            val insertedUri = runCatching { resolver.insert(collection, values) }.getOrNull() ?: continue
+
+            val ok = try {
+                val out = resolver.openOutputStream(insertedUri, "wt")
+                    ?: resolver.openOutputStream(insertedUri)
+                    ?: throw IllegalStateException("Cannot open MediaStore stream")
                 out.use {
                     it.write(bytes)
                     it.flush()
                 }
+                val done = ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }
+                resolver.update(insertedUri, done, null, null)
                 true
-            }.getOrDefault(false)
-            if (overwritten) return existingUri
-        }
-
-        val values = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
-            put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
-            put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
-            put(MediaStore.MediaColumns.IS_PENDING, 1)
-        }
-        val insertedUri = resolver.insert(collection, values) ?: return null
-
-        return try {
-            val out = resolver.openOutputStream(insertedUri, "wt")
-                ?: resolver.openOutputStream(insertedUri)
-                ?: throw IllegalStateException("Cannot open MediaStore stream")
-            out.use {
-                it.write(bytes)
-                it.flush()
+            } catch (_: Throwable) {
+                runCatching { resolver.delete(insertedUri, null, null) }
+                false
             }
-            val done = ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }
-            resolver.update(insertedUri, done, null, null)
-            insertedUri
-        } catch (_: Throwable) {
-            runCatching { resolver.delete(insertedUri, null, null) }
-            null
+            if (ok) return insertedUri
         }
+        return null
     }
 
     private fun hasPersistedTreePermission(treeUri: Uri): Boolean {
@@ -912,6 +1072,9 @@ class PhoneStorageVault(private val context: Context) {
     }
 
     companion object {
+        private const val URI_CACHE_PREFS = "vault_mediastore_uri_cache"
+        private const val KEY_DOCS_LATEST_URI = "mediastore_docs_latest_uri"
+        private const val KEY_DOWNLOADS_LATEST_URI = "mediastore_downloads_latest_uri"
         private const val INTERNAL_LATEST_FILE = "mengidata_auto_snapshot.json"
         private const val INTERNAL_PREV_FILE = "mengidata_auto_snapshot_prev.json"
         private const val PRE_CLEAR_FILE = "mengidata_pre_clear_snapshot.json"
