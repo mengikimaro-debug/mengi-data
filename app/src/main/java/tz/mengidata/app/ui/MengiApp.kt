@@ -47,6 +47,8 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -64,6 +66,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
@@ -118,6 +121,7 @@ import tz.mengidata.app.ui.screens.InvoicesScreen
 import tz.mengidata.app.ui.screens.SettingsScreen
 import tz.mengidata.app.ui.screens.TransactionsScreen
 import tz.mengidata.app.security.BiometricAvailability
+import tz.mengidata.app.security.UninstallGuardSession
 import tz.mengidata.app.security.UninstallProtectionManager
 import tz.mengidata.app.system.LocalDevicePerformance
 import tz.mengidata.app.ui.theme.LocalMengiColors
@@ -154,6 +158,9 @@ fun MengiApp(viewModel: MengiViewModel) {
     val isAppUnlocked by viewModel.isAppUnlocked.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val devicePerformance by viewModel.devicePerformance.collectAsStateWithLifecycle()
+    val pendingReinstallRestore by viewModel.pendingReinstallRestore.collectAsStateWithLifecycle()
+    val restorePromptDismissed by viewModel.restorePromptDismissed.collectAsStateWithLifecycle()
+    val rootPhonePermissions by viewModel.phonePermissions.collectAsStateWithLifecycle()
 
     val navController = rememberNavController()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
@@ -184,27 +191,39 @@ fun MengiApp(viewModel: MengiViewModel) {
     val deviceAdminActivationLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { _ ->
+        UninstallGuardSession.revokeTemporaryUnlock()
         viewModel.refreshUninstallProtectionStatus()
-        if (UninstallProtectionManager.isUninstallProtectionActive(context)) {
+        if (UninstallProtectionManager.isDeviceAdminActive(context)) {
+            viewModel.markUninstallProtectionArmed()
+            val needsAccessibility = !UninstallProtectionManager.isAccessibilityGuardEnabled(context)
             viewModel.emitSecurityNotice(
-                tr(
-                    language,
-                    "Ulinzi wa Alama ya Kidole umewashwa kwenye mfumo wa Android. App haiwezi ku-uninstalliwa bila Fingerprint.",
-                    "Android System Fingerprint uninstall lock is now active."
-                )
+                if (needsAccessibility) {
+                    tr(
+                        language,
+                        "Hatua 1 imekamilika! Sasa washa Hatua 2 (Accessibility) ili Android idai Fingerprint wakati wa Uninstall.",
+                        "Step 1 active! Now enable Step 2 (Accessibility) so Android demands Fingerprint on Uninstall."
+                    )
+                } else {
+                    tr(
+                        language,
+                        "Ulinzi kamili wa Android System Fingerprint umewashwa!",
+                        "Full Android System Fingerprint Uninstall Guard is active!"
+                    )
+                }
             )
         } else {
             viewModel.emitSecurityNotice(
                 tr(
                     language,
-                    "Ulinzi wa mfumo wa Android haukuwashwa. Thibitisha 'Activate' ili kuzuia kuondoa app.",
-                    "Android System guard was not activated. Tap Activate to block uninstallation."
+                    "Device Admin haikuwashwa. Bonyeza 'Activate' kwenye dirisha la Android ili kuzuia kuondoa app.",
+                    "Device Admin was not activated. Tap Activate on the Android prompt."
                 )
             )
         }
     }
 
     val openEnrollFingerprintSettings: () -> Unit = {
+        UninstallGuardSession.grantTemporaryUnlock(30_000L)
         val openedEnroll = runCatching {
             context.startActivity(UninstallProtectionManager.buildEnrollFingerprintIntent())
         }.isSuccess
@@ -215,57 +234,63 @@ fun MengiApp(viewModel: MengiViewModel) {
         }
     }
 
-    val handleToggleUninstallProtection: (Boolean) -> Unit = { enable ->
+    val handleActivateDeviceAdmin: () -> Unit = {
         val biometricStatus = UninstallProtectionManager.getBiometricStatus(context)
-        if (enable) {
-            if (biometricStatus == BiometricAvailability.NONE_ENROLLED) {
-                viewModel.emitSecurityNotice(
-                    tr(
-                        language,
-                        "Sajili Alama ya Kidole kwanza kwenye mipangilio ya Android.",
-                        "Please enroll a Fingerprint in Android Settings first."
-                    )
+        if (biometricStatus == BiometricAvailability.NONE_ENROLLED) {
+            viewModel.emitSecurityNotice(
+                tr(
+                    language,
+                    "Sajili Alama ya Kidole kwanza kwenye mipangilio ya Android.",
+                    "Please enroll a Fingerprint in Android Settings first."
                 )
-                openEnrollFingerprintSettings()
-            } else if (biometricStatus == BiometricAvailability.UNAVAILABLE) {
-                viewModel.emitSecurityNotice(
-                    tr(
-                        language,
-                        "Kifaa hiki hakina sensa ya Alama ya Kidole.",
-                        "Fingerprint sensor is not available on this device."
+            )
+            openEnrollFingerprintSettings()
+        } else if (UninstallProtectionManager.isDeviceOwner(context)) {
+            UninstallProtectionManager.authenticateFingerprint(
+                context = context,
+                title = tr(language, "Washa Ulinzi wa Device Owner", "Enable Device Owner Lock"),
+                subtitle = tr(language, "Thibitisha Alama ya Kidole", "Verify Fingerprint"),
+                description = tr(
+                    language,
+                    "Weka kidole chako ili kufunga uondoaji wa app katika mfumo mzima wa Android.",
+                    "Scan your Fingerprint to lock uninstallation across Android System."
+                ),
+                cancelLabel = tr(language, "Ghairi", "Cancel"),
+                allowCredentialFallbackIfNoBiometric = true,
+                onSuccess = { viewModel.enableDeviceOwnerUninstallBlockAfterFingerprint() },
+                onFailure = { }
+            )
+        } else {
+            // Directly open Android's official Device Admin activation prompt after Fingerprint (if available)
+            val launchAdminPrompt = {
+                UninstallGuardSession.grantTemporaryUnlock(25_000L)
+                runCatching {
+                    deviceAdminActivationLauncher.launch(
+                        UninstallProtectionManager.buildActivateDeviceAdminIntent(context, language)
                     )
-                )
-            } else {
+                }.onFailure {
+                    viewModel.emitSecurityNotice(
+                        tr(
+                            language,
+                            "Imeshindwa kufungua dirisha la Android Device Admin.",
+                            "Could not open Android Device Admin activation screen."
+                        )
+                    )
+                }
+            }
+            if (biometricStatus == BiometricAvailability.READY) {
                 UninstallProtectionManager.authenticateFingerprint(
                     context = context,
-                    title = tr(language, "Washa Ulinzi wa Kuondoa App", "Enable Uninstall Protection"),
-                    subtitle = tr(language, "Thibitisha Alama ya Kidole (Android System)", "Verify Fingerprint (Android System)"),
+                    title = tr(language, "Hatua 1 · Android Device Admin", "Step 1 · Android Device Admin"),
+                    subtitle = tr(language, "Thibitisha Alama ya Kidole", "Verify Fingerprint"),
                     description = tr(
                         language,
-                        "Weka kidole chako ili kuwasha ulinzi wa mfumo wa Android wa kuzuia kuondoa VaultLedger.",
-                        "Touch the fingerprint sensor to activate Android System uninstall blocking."
+                        "Weka kidole chako kisha bonyeza 'Activate' kwenye dirisha la mfumo wa Android.",
+                        "Verify your Fingerprint, then tap Activate on the Android System dialog."
                     ),
                     cancelLabel = tr(language, "Ghairi", "Cancel"),
                     allowCredentialFallbackIfNoBiometric = false,
-                    onSuccess = {
-                        if (UninstallProtectionManager.isDeviceOwner(context)) {
-                            viewModel.enableDeviceOwnerUninstallBlockAfterFingerprint()
-                        } else {
-                            runCatching {
-                                deviceAdminActivationLauncher.launch(
-                                    UninstallProtectionManager.buildActivateDeviceAdminIntent(context, language)
-                                )
-                            }.onFailure {
-                                viewModel.emitSecurityNotice(
-                                    tr(
-                                        language,
-                                        "Imeshindwa kufungua dirisha la ulinzi la Android.",
-                                        "Could not open Android Device Admin prompt."
-                                    )
-                                )
-                            }
-                        }
-                    },
+                    onSuccess = { launchAdminPrompt() },
                     onFailure = { reason ->
                         if (reason != "CANCELLED") {
                             viewModel.emitSecurityNotice(
@@ -278,39 +303,70 @@ fun MengiApp(viewModel: MengiViewModel) {
                         }
                     }
                 )
+            } else {
+                launchAdminPrompt()
             }
-        } else {
-            // Strictly require Android System Fingerprint before disabling Device Admin / Device Owner uninstall lock
-            UninstallProtectionManager.authenticateFingerprint(
-                context = context,
-                title = tr(language, "Zima Ulinzi wa Kuondoa App", "Disable Uninstall Protection"),
-                subtitle = tr(language, "Alama ya Kidole inahitajika", "Fingerprint Required"),
-                description = tr(
-                    language,
-                    "Weka kidole chako ili kuruhusu app iweze kuondolewa (uninstall).",
-                    "Verify your Fingerprint to unlock app uninstallation."
-                ),
-                cancelLabel = tr(language, "Ghairi", "Cancel"),
-                allowCredentialFallbackIfNoBiometric = true,
-                onSuccess = {
-                    viewModel.deactivateUninstallProtectionAfterFingerprint(
-                        notifyUser = true,
-                        clearDeviceOwnerForUninstall = false
-                    )
-                },
-                onFailure = { reason ->
-                    if (reason != "CANCELLED") {
-                        viewModel.emitSecurityNotice(
-                            tr(
-                                language,
-                                "Alama ya kidole haikubaliwi — ulinzi wa kuondoa app bado upo wazi.",
-                                "Fingerprint not verified — uninstall protection remains active."
-                            )
-                        )
-                    }
-                }
-            )
         }
+    }
+
+    val handleOpenAccessibilityGuard: () -> Unit = {
+        UninstallGuardSession.grantTemporaryUnlock(45_000L)
+        viewModel.emitSecurityNotice(
+            tr(
+                language,
+                "Tafuta 'Installed apps' → 'Ulinzi wa Kuondoa VaultLedger (Fingerprint)' kisha WASHA.",
+                "Open 'Installed apps' → 'Ulinzi wa Kuondoa VaultLedger (Fingerprint)' and turn it ON."
+            )
+        )
+        runCatching {
+            context.startActivity(UninstallProtectionManager.buildOpenAccessibilitySettingsIntent())
+        }
+    }
+
+    val handleOpenRestrictedSettingsAppInfo: () -> Unit = {
+        UninstallGuardSession.grantTemporaryUnlock(45_000L)
+        viewModel.emitSecurityNotice(
+            tr(
+                language,
+                "Bonyeza nukta 3 juu kulia (⋮) → 'Allow restricted settings', kisha rudi uwashe Hatua 2.",
+                "Tap top-right 3 dots (⋮) → 'Allow restricted settings', then return and enable Step 2."
+            )
+        )
+        runCatching {
+            context.startActivity(UninstallProtectionManager.buildOpenAppInfoSettingsIntent(context))
+        }
+    }
+
+    val handleDisableUninstallProtection: () -> Unit = {
+        UninstallProtectionManager.authenticateFingerprint(
+            context = context,
+            title = tr(language, "Zima Ulinzi wa Kuondoa App", "Unlock Uninstall Guard"),
+            subtitle = tr(language, "Alama ya Kidole inahitajika", "Fingerprint Required"),
+            description = tr(
+                language,
+                "Weka kidole chako ili kuzima ulinzi wa Android System wa kuondoa app.",
+                "Scan your Fingerprint to unlock Android System uninstall protection."
+            ),
+            cancelLabel = tr(language, "Ghairi", "Cancel"),
+            allowCredentialFallbackIfNoBiometric = true,
+            onSuccess = {
+                viewModel.deactivateUninstallProtectionAfterFingerprint(
+                    notifyUser = true,
+                    clearDeviceOwnerForUninstall = false
+                )
+            },
+            onFailure = { reason ->
+                if (reason != "CANCELLED") {
+                    viewModel.emitSecurityNotice(
+                        tr(
+                            language,
+                            "Alama ya kidole haikuthibitishwa — ulinzi bado umewashwa.",
+                            "Fingerprint not verified — uninstall protection remains armed."
+                        )
+                    )
+                }
+            }
+        )
     }
 
     val handleFingerprintGuidedUninstall: () -> Unit = {
@@ -336,7 +392,9 @@ fun MengiApp(viewModel: MengiViewModel) {
                     )
                     scope.launch {
                         repeat(10) {
-                            if (!UninstallProtectionManager.isUninstallProtectionActive(context)) return@repeat
+                            if (!UninstallProtectionManager.isDeviceAdminActive(context) &&
+                                !UninstallProtectionManager.isDeviceOwnerUninstallBlocked(context)
+                            ) return@repeat
                             delay(150L)
                         }
                         viewModel.refreshUninstallProtectionStatus()
@@ -1036,10 +1094,8 @@ fun MengiApp(viewModel: MengiViewModel) {
                                             autoPhoneBackupEnabled = autoPhoneBackupEnabled,
                                             privacyMaskEnabled = privacyMaskEnabled,
                                             pinLockEnabled = pinLockEnabled,
-                                            uninstallProtectionActive = uninstallGuardStatus.isProtected,
-                                            isDeviceOwner = uninstallGuardStatus.isDeviceOwner,
+                                            uninstallGuardStatus = uninstallGuardStatus,
                                             adbDeviceOwnerCommand = adbDeviceOwnerCommand,
-                                            biometricAvailability = uninstallGuardStatus.biometricAvailability,
                                             phonePermissions = phonePermissions,
                                             updateState = updateState,
                                             statsSummary = summary,
@@ -1060,7 +1116,10 @@ fun MengiApp(viewModel: MengiViewModel) {
                                             onSavePin = { pin -> viewModel.setupAppPin(pin) },
                                             onDisablePin = viewModel::disableAppPin,
                                             onLockNow = viewModel::lockAppNow,
-                                            onToggleUninstallProtection = handleToggleUninstallProtection,
+                                            onActivateDeviceAdmin = handleActivateDeviceAdmin,
+                                            onOpenAccessibilityGuard = handleOpenAccessibilityGuard,
+                                            onOpenRestrictedSettingsAppInfo = handleOpenRestrictedSettingsAppInfo,
+                                            onDisableUninstallProtection = handleDisableUninstallProtection,
                                             onRequestFingerprintUninstall = handleFingerprintGuidedUninstall,
                                             onOpenEnrollFingerprint = openEnrollFingerprintSettings,
                                             onCopyDeviceOwnerCommand = handleCopyDeviceOwnerCommand,
@@ -1177,6 +1236,55 @@ fun MengiApp(viewModel: MengiViewModel) {
             AboutAppSheet(
                 language = language,
                 onDismiss = { showAboutApp = false }
+            )
+        }
+
+        // First-launch / Post-reinstall 1-tap prompt so Android 13–16 grants All Files Access
+        // and immediately restores Documents/Mengidata backups + keeps live backups safe forever.
+        if (pendingReinstallRestore && !restorePromptDismissed && !rootPhonePermissions.storageManagerGranted) {
+            AlertDialog(
+                onDismissRequest = { viewModel.dismissRestorePrompt() },
+                shape = RoundedCornerShape(26.dp),
+                title = {
+                    Text(
+                        text = tr(
+                            language,
+                            "Rejesha Data & Washa Hifadhi Kiotomatiki",
+                            "Auto-Restore & Phone Backup"
+                        ),
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                },
+                text = {
+                    Text(
+                        text = tr(
+                            language,
+                            "Android 13+ inahitaji ruhusa ya 'All Files Access' (Storage Manager) ili VaultLedger iweze kusoma nakala yako ya zamani kwenye Documents/Mengidata na kurejesha data zako ZOTE kiotomatiki baada ya ku-uninstall na kusakinisha tena.",
+                            "Android 13+ requires 'All Files Access' (Storage Manager) so VaultLedger can read your previous backup in Documents/Mengidata and automatically restore ALL your records after reinstalling."
+                        ),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            viewModel.dismissRestorePrompt()
+                            requestManageStoragePermission()
+                        },
+                        shape = CircleShape,
+                        modifier = Modifier.testTag("prompt_grant_storage_restore_btn")
+                    ) {
+                        Text(tr(language, "Ruhusu & Rejesha Sasa", "Allow & Restore Now"))
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { viewModel.dismissRestorePrompt() },
+                        modifier = Modifier.testTag("prompt_dismiss_storage_restore_btn")
+                    ) {
+                        Text(tr(language, "Baadaye", "Later"))
+                    }
+                }
             )
         }
         }

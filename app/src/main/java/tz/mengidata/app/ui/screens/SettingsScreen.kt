@@ -78,6 +78,7 @@ import tz.mengidata.app.i18n.ThemeMode
 import tz.mengidata.app.i18n.tr
 import tz.mengidata.app.notifications.PhonePermissionsSnapshot
 import tz.mengidata.app.security.BiometricAvailability
+import tz.mengidata.app.security.UninstallGuardStatus
 import tz.mengidata.app.system.DevicePerformanceProfile
 import tz.mengidata.app.system.PerformanceModePreference
 import tz.mengidata.app.ui.components.ConfirmActionDialog
@@ -111,10 +112,8 @@ fun SettingsScreen(
     autoPhoneBackupEnabled: Boolean = true,
     privacyMaskEnabled: Boolean,
     pinLockEnabled: Boolean,
-    uninstallProtectionActive: Boolean = false,
-    isDeviceOwner: Boolean = false,
+    uninstallGuardStatus: UninstallGuardStatus = UninstallGuardStatus(),
     adbDeviceOwnerCommand: String = "",
-    biometricAvailability: BiometricAvailability = BiometricAvailability.READY,
     phonePermissions: PhonePermissionsSnapshot,
     updateState: UpdateUiState,
     statsSummary: String,
@@ -133,7 +132,10 @@ fun SettingsScreen(
     onSavePin: (String) -> Unit,
     onDisablePin: () -> Unit,
     onLockNow: () -> Unit,
-    onToggleUninstallProtection: (Boolean) -> Unit = {},
+    onActivateDeviceAdmin: () -> Unit = {},
+    onOpenAccessibilityGuard: () -> Unit = {},
+    onOpenRestrictedSettingsAppInfo: () -> Unit = {},
+    onDisableUninstallProtection: () -> Unit = {},
     onRequestFingerprintUninstall: () -> Unit = {},
     onOpenEnrollFingerprint: () -> Unit = {},
     onCopyDeviceOwnerCommand: () -> Unit = {},
@@ -346,18 +348,30 @@ fun SettingsScreen(
                         title = tr(language, "Usalama na Faragha", "Security & Privacy"),
                         subtitle = tr(language, "Linda salio na funga programu kwa namba ya siri ya tarakimu 4.", "Hide balances in public and lock app with a 4-digit PIN."),
                         badge = {
-                            val isProtected = pinLockEnabled || uninstallProtectionActive || isDeviceOwner
+                            val isProtected = pinLockEnabled || uninstallGuardStatus.isProtected || uninstallGuardStatus.isDeviceOwner
                             val badgeText = when {
-                                isDeviceOwner -> tr(language, "Device Owner", "Device Owner")
-                                pinLockEnabled && uninstallProtectionActive -> tr(language, "Ulinzi Kamili", "Full Guard")
-                                uninstallProtectionActive -> tr(language, "Alama ya Kidole", "Fingerprint Lock")
+                                uninstallGuardStatus.isDeviceOwner -> tr(language, "Device Owner", "Device Owner")
+                                uninstallGuardStatus.isFullyProtected -> tr(language, "Ulinzi Kamili", "System Armed")
+                                uninstallGuardStatus.isProtected -> tr(language, "Hatua 1 Imebaki", "1 Step Left")
                                 pinLockEnabled -> tr(language, "PIN Imewashwa", "PIN Active")
                                 else -> tr(language, "Wazi", "Unlocked")
                             }
                             StatusPill(
                                 text = badgeText,
-                                containerColor = if (isProtected) colors.incomeSoft else colors.subtleSurface,
-                                contentColor = if (isProtected) colors.income else MaterialTheme.colorScheme.onSurfaceVariant
+                                containerColor = if (uninstallGuardStatus.isFullyProtected || pinLockEnabled) {
+                                    colors.incomeSoft
+                                } else if (uninstallGuardStatus.isProtected) {
+                                    colors.warningSoft
+                                } else {
+                                    colors.subtleSurface
+                                },
+                                contentColor = if (uninstallGuardStatus.isFullyProtected || pinLockEnabled) {
+                                    colors.income
+                                } else if (uninstallGuardStatus.isProtected) {
+                                    colors.warning
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
                             )
                         }
                     )
@@ -465,108 +479,242 @@ fun SettingsScreen(
                     HorizontalDivider(color = colors.cardBorder)
                     Spacer(Modifier.height(14.dp))
 
-                    // Android System Fingerprint Uninstall Protection
+                    // Android System Fingerprint Uninstall Protection (2-Layer OS Guard)
+                    val guardArmed = uninstallGuardStatus.isFullyProtected
+                    val isDeviceOwner = uninstallGuardStatus.isDeviceOwner
+                    val biometricAvailability = uninstallGuardStatus.biometricAvailability
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(
-                            modifier = Modifier.weight(1f).padding(end = 12.dp),
+                            modifier = Modifier.weight(1f).padding(end = 10.dp),
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalAlignment = Alignment.Top
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Surface(
                                 shape = CircleShape,
-                                color = if (uninstallProtectionActive) colors.incomeSoft else colors.subtleSurface,
+                                color = if (guardArmed) colors.incomeSoft else colors.subtleSurface,
                                 modifier = Modifier.size(38.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Icon(
                                         imageVector = Icons.Rounded.Fingerprint,
                                         contentDescription = tr(language, "Alama ya kidole", "Fingerprint"),
-                                        tint = if (uninstallProtectionActive) colors.income else MaterialTheme.colorScheme.primary,
+                                        tint = if (guardArmed) colors.income else MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.size(20.dp)
                                     )
                                 }
                             }
-                            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text(
                                     text = tr(
                                         language,
-                                        "Ulinzi wa Kuondoa App (Fingerprint)",
-                                        "Fingerprint Uninstall Protection"
+                                        "Ulinzi wa Kuondoa App (Android System)",
+                                        "Android System Uninstall Lock"
                                     ),
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.SemiBold
                                 )
                                 Text(
-                                    text = when {
-                                        isDeviceOwner && uninstallProtectionActive -> tr(
+                                    text = if (guardArmed) {
+                                        tr(
                                             language,
-                                            "Android Enterprise Device Owner: Kuondoa (uninstall) kumezuiwa kabisa katika mfumo mzima hadi uthibitishe Fingerprint.",
-                                            "Android Enterprise Device Owner: Uninstall is strictly blocked system-wide until Fingerprint verification."
+                                            "UMEWASHWA: Mtu akijaribu ku-uninstall VaultLedger popote kwenye simu, Android inadai Alama ya Kidole papo hapo.",
+                                            "ARMED: Any attempt to uninstall VaultLedger triggers the Android System Fingerprint lock."
                                         )
-                                        uninstallProtectionActive -> tr(
+                                    } else {
+                                        tr(
                                             language,
-                                            "Mfumo wa Android unazuia app ku-uninstalliwa bila uthibitisho wa Alama ya Kidole (Fingerprint).",
-                                            "Android System blocks uninstalling VaultLedger until your Fingerprint is verified."
-                                        )
-                                        biometricAvailability == BiometricAvailability.NONE_ENROLLED -> tr(
-                                            language,
-                                            "Sajili Alama ya Kidole kwenye mipangilio ya Android ili kuwasha ulinzi wa kuondoa app.",
-                                            "Enroll a Fingerprint in Android Settings first to enable uninstall protection."
-                                        )
-                                        biometricAvailability == BiometricAvailability.UNAVAILABLE -> tr(
-                                            language,
-                                            "Kifaa hiki hakina sensa ya Alama ya Kidole inayopatikana.",
-                                            "Fingerprint hardware is unavailable on this device."
-                                        )
-                                        else -> tr(
-                                            language,
-                                            "Huzuia mtu yeyote ku-uninstall app kupitia mfumo wa Android hadi athibitishe Alama ya Kidole.",
-                                            "Locks uninstallation at the Android System level until Fingerprint is verified."
+                                            "Washa hatua 2 za Android hapa chini ili kuzuia ku-uninstall kutoka skrini na Mipangilio bila Fingerprint.",
+                                            "Enable both Android System steps below so nobody can uninstall from Home or Settings without Fingerprint."
                                         )
                                     },
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = if (uninstallProtectionActive) colors.income else MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = if (guardArmed) colors.income else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
-                        Switch(
-                            checked = uninstallProtectionActive,
-                            onCheckedChange = onToggleUninstallProtection,
-                            modifier = Modifier.testTag("uninstall_protection_switch")
+                        StatusPill(
+                            text = when {
+                                guardArmed -> tr(language, "KAMILI", "ARMED")
+                                uninstallGuardStatus.isProtected -> tr(language, "1/2", "1/2")
+                                else -> tr(language, "ZIMA", "OFF")
+                            },
+                            containerColor = when {
+                                guardArmed -> colors.incomeSoft
+                                uninstallGuardStatus.isProtected -> colors.warningSoft
+                                else -> colors.subtleSurface
+                            },
+                            contentColor = when {
+                                guardArmed -> colors.income
+                                uninstallGuardStatus.isProtected -> colors.warning
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                            }
                         )
                     }
 
-                    if (uninstallProtectionActive) {
-                        Spacer(Modifier.height(12.dp))
-                        OutlinedButton(
-                            onClick = onRequestFingerprintUninstall,
-                            shape = CircleShape,
-                            border = BorderStroke(1.dp, colors.cardBorder),
+                    Spacer(Modifier.height(12.dp))
+
+                    // Step 1: Android Device Administrator
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = colors.subtleSurface,
+                        border = BorderStroke(
+                            1.dp,
+                            if (uninstallGuardStatus.isDeviceAdminActive) colors.income.copy(alpha = 0.4f) else colors.cardBorder
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(48.dp)
-                                .testTag("fingerprint_uninstall_app_btn")
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Fingerprint,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(Modifier.size(8.dp))
-                            Text(
-                                text = tr(
-                                    language,
-                                    "Thibitisha Fingerprint & Ondoa App",
-                                    "Verify Fingerprint & Uninstall App"
-                                ),
-                                maxLines = 1
-                            )
+                            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                Text(
+                                    text = tr(language, "Hatua 1 · Android Device Admin", "Step 1 · Android Device Admin"),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = if (uninstallGuardStatus.isDeviceAdminActive) {
+                                        tr(language, "Imewashwa — huzuia ku-uninstall moja kwa moja.", "Active — blocks 1-tap uninstallation.")
+                                    } else {
+                                        tr(language, "Huzuia ku-uninstall kutoka skrini ya simu.", "Blocks quick uninstall from Home screen.")
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (uninstallGuardStatus.isDeviceAdminActive) colors.income else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            if (uninstallGuardStatus.isDeviceAdminActive) {
+                                Icon(
+                                    imageVector = Icons.Rounded.CheckCircle,
+                                    contentDescription = tr(language, "Imewashwa", "Active"),
+                                    tint = colors.income,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            } else {
+                                FilledTonalButton(
+                                    onClick = onActivateDeviceAdmin,
+                                    shape = CircleShape,
+                                    modifier = Modifier.testTag("activate_device_admin_btn")
+                                ) {
+                                    Text(tr(language, "Washa", "Enable"), style = MaterialTheme.typography.labelMedium)
+                                }
+                            }
                         }
-                    } else if (biometricAvailability == BiometricAvailability.NONE_ENROLLED) {
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+
+                    // Step 2: Android System Accessibility Fingerprint Interceptor
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = colors.subtleSurface,
+                        border = BorderStroke(
+                            1.dp,
+                            if (uninstallGuardStatus.isAccessibilityGuardActive) colors.income.copy(alpha = 0.4f) else colors.cardBorder
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                    Text(
+                                        text = tr(
+                                            language,
+                                            "Hatua 2 · Ulinzi wa Fingerprint (Accessibility)",
+                                            "Step 2 · System Fingerprint Guard (Accessibility)"
+                                        ),
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        text = if (uninstallGuardStatus.isAccessibilityGuardActive) {
+                                            tr(
+                                                language,
+                                                "Imewashwa — inakamata dirisha la Uninstall & Settings na kudai Fingerprint.",
+                                                "Active — intercepts Android Uninstall & Settings and demands Fingerprint."
+                                            )
+                                        } else {
+                                            tr(
+                                                language,
+                                                "Inakamata dirisha la Uninstall la Android na kudai Alama ya Kidole papo hapo.",
+                                                "Intercepts Android Uninstall dialogs and immediately pops up Fingerprint."
+                                            )
+                                        },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (uninstallGuardStatus.isAccessibilityGuardActive) colors.income else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                if (uninstallGuardStatus.isAccessibilityGuardActive) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.CheckCircle,
+                                        contentDescription = tr(language, "Imewashwa", "Active"),
+                                        tint = colors.income,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                } else {
+                                    FilledTonalButton(
+                                        onClick = onOpenAccessibilityGuard,
+                                        shape = CircleShape,
+                                        modifier = Modifier.testTag("enable_accessibility_guard_btn")
+                                    ) {
+                                        Text(tr(language, "Washa", "Enable"), style = MaterialTheme.typography.labelMedium)
+                                    }
+                                }
+                            }
+
+                            if (!uninstallGuardStatus.isAccessibilityGuardActive) {
+                                HorizontalDivider(color = colors.cardBorder)
+                                Text(
+                                    text = tr(
+                                        language,
+                                        "Kidokezo cha Android 13+: Kama ikionyesha 'Restricted setting', bonyeza 'Fungua App Info' → nukta 3 juu (⋮) → Allow restricted settings, kisha rudi uwashe Hatua 2.",
+                                        "Android 13+ tip: If blocked by 'Restricted setting', tap 'Open App Info' → top-right 3 dots (⋮) → Allow restricted settings, then enable Step 2."
+                                    ),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                OutlinedButton(
+                                    onClick = onOpenRestrictedSettingsAppInfo,
+                                    shape = CircleShape,
+                                    border = BorderStroke(1.dp, colors.cardBorder),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(44.dp)
+                                        .testTag("open_restricted_settings_app_info_btn")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Security,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(Modifier.size(6.dp))
+                                    Text(
+                                        text = tr(language, "Fungua App Info (Restricted Settings)", "Open App Info (Restricted Settings)"),
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if (biometricAvailability == BiometricAvailability.NONE_ENROLLED) {
                         Spacer(Modifier.height(10.dp))
                         FilledTonalButton(
                             onClick = onOpenEnrollFingerprint,
@@ -590,6 +738,50 @@ fun SettingsScreen(
                                 ),
                                 maxLines = 1
                             )
+                        }
+                    }
+
+                    if (uninstallGuardStatus.isProtected) {
+                        Spacer(Modifier.height(10.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = onDisableUninstallProtection,
+                                shape = CircleShape,
+                                border = BorderStroke(1.dp, colors.cardBorder),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp)
+                                    .testTag("disable_uninstall_protection_btn")
+                            ) {
+                                Text(
+                                    text = tr(language, "Zima Ulinzi", "Unlock Guard"),
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 1
+                                )
+                            }
+                            FilledTonalButton(
+                                onClick = onRequestFingerprintUninstall,
+                                shape = CircleShape,
+                                modifier = Modifier
+                                    .weight(1.3f)
+                                    .height(48.dp)
+                                    .testTag("fingerprint_uninstall_app_btn")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Fingerprint,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.size(6.dp))
+                                Text(
+                                    text = tr(language, "Ondoa App", "Uninstall App"),
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 1
+                                )
+                            }
                         }
                     }
 
@@ -1105,26 +1297,38 @@ fun SettingsScreen(
                             )
                         }
 
-                        if (hasSafetySnapshot || phoneStorageStatus.hasAnyBackup) {
-                            OutlinedButton(
-                                onClick = onRestoreSafetySnapshot,
-                                shape = CircleShape,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(46.dp)
-                                    .testTag("restore_phone_storage_btn")
-                            ) {
-                                Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.size(8.dp))
-                                Text(
-                                    text = tr(
+                        OutlinedButton(
+                            onClick = {
+                                if (!phonePermissions.storageManagerGranted) {
+                                    onRequestManageStoragePermission()
+                                } else {
+                                    onRestoreSafetySnapshot()
+                                }
+                            },
+                            shape = CircleShape,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .testTag("restore_phone_storage_btn")
+                        ) {
+                            Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.size(8.dp))
+                            Text(
+                                text = if (phonePermissions.storageManagerGranted) {
+                                    tr(
                                         language,
                                         "Rejesha kutoka Hifadhi ya Simu",
                                         "Restore from Phone Storage"
-                                    ),
-                                    maxLines = 1
-                                )
-                            }
+                                    )
+                                } else {
+                                    tr(
+                                        language,
+                                        "Ruhusu Hifadhi & Rejesha Data",
+                                        "Allow Storage & Auto-Restore"
+                                    )
+                                },
+                                maxLines = 1
+                            )
                         }
                     }
                 }

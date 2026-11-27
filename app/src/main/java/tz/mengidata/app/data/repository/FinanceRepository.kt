@@ -99,33 +99,114 @@ class FinanceRepository(
         storageVault.deleteSavedPublicPdf(pdf)
     }
 
-    suspend fun ensureInitialized() {
-        withContext(Dispatchers.IO) {
-            ensureDefaultCategoriesSeeded()
-            if (!prefs.isSeeded()) {
-                val existing = settingsDao.getSettings()
-                val existingTxns = txnDao.getAll()
-                if (existing == null && existingTxns.isEmpty()) {
-                    // Auto-recover user data from phone storage if a backup already exists!
-                    val recovered = runCatching {
-                        val savedJson = storageVault.readBestAvailableSnapshot()
-                        if (!savedJson.isNullOrBlank()) {
-                            importBackupJson(savedJson)
-                            true
-                        } else {
-                            false
-                        }
-                    }.getOrDefault(false)
-                    if (!recovered) {
-                        loadDemoData()
+    suspend fun ensureInitialized(): Boolean = withContext(Dispatchers.IO) {
+        ensureDefaultCategoriesSeeded()
+        var autoRestored = false
+        if (!prefs.isSeeded()) {
+            val existing = settingsDao.getSettings()
+            val existingTxns = txnDao.getAll()
+            if (existing == null && existingTxns.isEmpty()) {
+                // Auto-recover REAL user data from phone storage if readable immediately!
+                val recovered = runCatching {
+                    val savedJson = storageVault.readBestAvailableSnapshot(requireRealUserData = true)
+                    if (!savedJson.isNullOrBlank()) {
+                        importBackupJson(savedJson)
+                        true
+                    } else {
+                        false
                     }
+                }.getOrDefault(false)
+                if (recovered) {
+                    autoRestored = true
+                    prefs.setPendingReinstallRestore(false)
+                } else {
+                    // On Android 11–16 reinstall, MANAGE_EXTERNAL_STORAGE is reset by OS so Documents/Mengidata
+                    // cannot be read until All Files Access is granted. Flag pending restore and NEVER overwrite public backups!
+                    if (!storageVault.hasAllFilesAccess()) {
+                        prefs.setPendingReinstallRestore(true)
+                    }
+                    loadDemoData()
                 }
-                prefs.markSeeded()
             }
-            reconcileLedgerIntegrity()
-            storageVault.refreshStatus()
+            prefs.markSeeded()
+        } else if (prefs.pendingReinstallRestore.value && storageVault.hasAllFilesAccess()) {
+            autoRestored = tryAutoRestoreAfterStorageAccessGranted()
+        }
+        reconcileLedgerIntegrity()
+        storageVault.refreshStatus()
+        // Only schedule public auto-backup if database actually contains real user data (not untouched demo!)
+        if (!isDatabaseOnlyDemoOrEmpty()) {
             scheduleAutoBackup()
         }
+        autoRestored
+    }
+
+    /**
+     * Returns true if the local Room DB is empty or still contains strictly unmodified demo records.
+     */
+    suspend fun isDatabaseOnlyDemoOrEmpty(): Boolean = withContext(Dispatchers.IO) {
+        val s = settingsDao.getSettings()
+        val txns = txnDao.getAll()
+        val invs = invoiceDao.getAllWithItems()
+        val bills = billDao.getAll()
+        val goals = savingsDao.getGoals()
+        val pending = pendingTxnDao.getAll()
+
+        if (s == null && txns.isEmpty() && invs.isEmpty() && bills.isEmpty() && goals.isEmpty() && pending.isEmpty()) {
+            return@withContext true
+        }
+
+        val hasRealTxn = txns.any { !it.id.startsWith("demo_") }
+        val hasRealInv = invs.any { !it.invoice.id.startsWith("demo_") }
+        val hasRealBill = bills.any { !it.id.startsWith("demo_") }
+        val hasRealGoal = goals.any { !it.id.startsWith("demo_") }
+        val hasRealPending = pending.any { !it.id.startsWith("demo_") }
+        if (hasRealTxn || hasRealInv || hasRealBill || hasRealGoal || hasRealPending) {
+            return@withContext false
+        }
+
+        val owner = s?.ownerName?.trim().orEmpty()
+        val biz = s?.businessName?.trim().orEmpty()
+        if (owner.isNotEmpty()) return@withContext false
+        if (biz.isNotEmpty() && !biz.equals("VaultLedger", ignoreCase = true) && !biz.equals("Mengidata", ignoreCase = true)) {
+            return@withContext false
+        }
+        s?.demo != false
+    }
+
+    /**
+     * Called automatically the instant the user grants "All Files Access" (Storage Manager)
+     * after reinstalling the app. Scans Documents/Mengidata & Download/VaultLedger and
+     * restores all real user data automatically without touching demo data over real backups.
+     */
+    suspend fun tryAutoRestoreAfterStorageAccessGranted(): Boolean = withContext(Dispatchers.IO) {
+        if (!storageVault.hasAllFilesAccess()) return@withContext false
+        if (!prefs.pendingReinstallRestore.value && !isDatabaseOnlyDemoOrEmpty()) {
+            return@withContext false
+        }
+        if (!isDatabaseOnlyDemoOrEmpty()) {
+            // User already created new real records; don't clobber them automatically
+            prefs.setPendingReinstallRestore(false)
+            return@withContext false
+        }
+        val savedJson = storageVault.readBestAvailableSnapshot(requireRealUserData = true)
+        if (!savedJson.isNullOrBlank()) {
+            val imported = runCatching {
+                importBackupJson(savedJson)
+                reconcileLedgerIntegrity()
+                true
+            }.getOrDefault(false)
+            if (imported) {
+                prefs.setPendingReinstallRestore(false)
+                prefs.setRestorePromptDismissed(true)
+                storageVault.saveAutoSnapshot(savedJson, allowPublicOverwrite = false)
+                storageVault.refreshStatus()
+                return@withContext true
+            }
+        }
+        prefs.setPendingReinstallRestore(false)
+        storageVault.refreshStatus()
+        false
     }
 
     suspend fun ensureDefaultCategoriesSeeded() {
@@ -1282,8 +1363,9 @@ class FinanceRepository(
 
     suspend fun exportBackupJson(): String = withContext(Dispatchers.IO) {
         val root = JSONObject()
-        root.put("version", 3)
+        root.put("version", 4)
         root.put("exportedAt", FormatUtils.todayIso())
+        root.put("exportedAtMillis", System.currentTimeMillis())
 
         val s = settingsDao.getSettings() ?: BusinessSettingsEntity()
         root.put("settings", JSONObject().apply {
@@ -1691,8 +1773,20 @@ class FinanceRepository(
         scheduledBackupJob?.cancel()
         backupMutex.withLock {
             runCatching {
+                val demoOnly = isDatabaseOnlyDemoOrEmpty()
+                if (!demoOnly) {
+                    // Clear legacy demo flag so real data is permanently recognized as owner data
+                    val currentSettings = settingsDao.getSettings()
+                    if (currentSettings != null && currentSettings.demo) {
+                        settingsDao.upsert(currentSettings.copy(demo = false))
+                    }
+                    if (prefs.pendingReinstallRestore.value) {
+                        prefs.setPendingReinstallRestore(false)
+                    }
+                }
                 val json = exportBackupJson()
-                storageVault.saveAutoSnapshot(json)
+                // CRITICAL: Never let untouched demo data overwrite a real user backup in Documents/Mengidata!
+                storageVault.saveAutoSnapshot(json, allowPublicOverwrite = !demoOnly)
             }.getOrDefault(false)
         }
     }
@@ -1700,10 +1794,15 @@ class FinanceRepository(
     suspend fun syncToPhoneStorageNow(): Boolean = persistSafetySnapshot(force = true)
 
     suspend fun restoreLatestSafetySnapshot(): Boolean = withContext(Dispatchers.IO) {
-        val json = storageVault.readBestAvailableSnapshot() ?: return@withContext false
+        val json = storageVault.readBestAvailableSnapshot(requireRealUserData = true)
+            ?: storageVault.readBestAvailableSnapshot(requireRealUserData = false)
+            ?: return@withContext false
         runCatching {
             importBackupJson(json)
             reconcileLedgerIntegrity()
+            prefs.setPendingReinstallRestore(false)
+            prefs.setRestorePromptDismissed(true)
+            storageVault.refreshStatus()
             true
         }.getOrDefault(false)
     }

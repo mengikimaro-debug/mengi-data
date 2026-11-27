@@ -69,6 +69,7 @@ import tz.mengidata.app.notifications.LargeBillWarningPopup
 import tz.mengidata.app.notifications.MengiNotificationManager
 import tz.mengidata.app.notifications.PhonePermissionsSnapshot
 import tz.mengidata.app.security.BiometricAvailability
+import tz.mengidata.app.security.UninstallGuardSession
 import tz.mengidata.app.security.UninstallGuardStatus
 import tz.mengidata.app.security.UninstallProtectionManager
 import tz.mengidata.app.updater.AppUpdateManager
@@ -120,6 +121,8 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
     val language: StateFlow<AppLanguage> = prefs.language
     val autoUpdateEnabled: StateFlow<Boolean> = prefs.autoUpdateEnabled
     val autoPhoneBackupEnabled: StateFlow<Boolean> = prefs.autoPhoneBackupEnabled
+    val pendingReinstallRestore: StateFlow<Boolean> = prefs.pendingReinstallRestore
+    val restorePromptDismissed: StateFlow<Boolean> = prefs.restorePromptDismissed
     val privacyMaskEnabled: StateFlow<Boolean> = prefs.privacyMaskEnabled
     val pinLockEnabled: StateFlow<Boolean> = prefs.pinLockEnabled
     val notificationsEnabled: StateFlow<Boolean> = prefs.notificationsEnabled
@@ -543,9 +546,18 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
             }
-            repository.ensureInitialized()
+            val autoRestored = repository.ensureInitialized()
             refreshStorageStatus()
             refreshSavedPublicPdfs()
+            if (autoRestored) {
+                emitNotice(
+                    tr(
+                        language.value,
+                        "Data zako zote zimerejeshwa kiotomatiki kutoka hifadhi ya simu!",
+                        "All your records were automatically restored from phone storage!"
+                    )
+                )
+            }
             // Automatically check due bills, unpaid bills & pending transactions once per day
             val todayIso = FormatUtils.todayIso()
             if (prefs.shouldRunDailyDueReminder(todayIso)) {
@@ -686,14 +698,25 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
     fun refreshUninstallProtectionStatus() {
         val app = getApplication<Application>()
         var status = UninstallProtectionManager.getStatus(app)
-        // If newly provisioned as Android Enterprise Device Owner, automatically lock uninstallation
         if (status.isDeviceOwner && !status.isDeviceOwnerUninstallBlocked && prefs.uninstallProtectionPreferred.value) {
             UninstallProtectionManager.enforceDeviceOwnerUninstallBlock(app, blocked = true)
             status = UninstallProtectionManager.getStatus(app)
         }
+        // Automatically arm preference if user turned on Android System Accessibility Guard or Device Admin
+        if (status.isAccessibilityGuardActive || status.isDeviceAdminActive || status.isDeviceOwnerUninstallBlocked) {
+            if (!prefs.uninstallProtectionPreferred.value) {
+                prefs.setUninstallProtectionPreferred(true)
+            }
+        }
         _uninstallGuardStatus.value = status
         _uninstallProtectionActive.value = status.isProtected
         _biometricAvailability.value = status.biometricAvailability
+    }
+
+    fun markUninstallProtectionArmed() {
+        prefs.setUninstallProtectionPreferred(true)
+        UninstallGuardSession.revokeTemporaryUnlock()
+        refreshUninstallProtectionStatus()
     }
 
     fun enableDeviceOwnerUninstallBlockAfterFingerprint(): Boolean {
@@ -701,6 +724,7 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
         val locked = UninstallProtectionManager.enforceDeviceOwnerUninstallBlock(app, blocked = true)
         if (locked) {
             prefs.setUninstallProtectionPreferred(true)
+            UninstallGuardSession.revokeTemporaryUnlock()
             refreshUninstallProtectionStatus()
             emitNotice(
                 tr(
@@ -718,6 +742,7 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
         clearDeviceOwnerForUninstall: Boolean = false
     ): Boolean {
         val app = getApplication<Application>()
+        UninstallGuardSession.grantTemporaryUnlock(45_000L)
         val removed = UninstallProtectionManager.releaseProtectionAfterFingerprint(
             context = app,
             clearDeviceOwnerForUninstall = clearDeviceOwnerForUninstall
@@ -728,8 +753,8 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
             emitNotice(
                 tr(
                     language.value,
-                    "Alama ya kidole imethibitishwa. Ulinzi wa kuondoa app umezimwa.",
-                    "Fingerprint verified. Uninstall protection deactivated."
+                    "Alama ya kidole imethibitishwa. Ulinzi wa kuondoa app umezimwa kwa sekunde 45.",
+                    "Fingerprint verified. Uninstall guard unlocked."
                 )
             )
         }
@@ -1721,6 +1746,10 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun dismissRestorePrompt() {
+        prefs.setRestorePromptDismissed(true)
+    }
+
     fun restoreLatestSafetySnapshot() {
         viewModelScope.launch {
             val ok = repository.restoreLatestSafetySnapshot()
@@ -1728,7 +1757,13 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
             if (ok) {
                 emitNotice(tr(language.value, "Hesabu zote zimerejeshwa kutoka hifadhi ya simu!", "All records restored from phone storage backup!"))
             } else {
-                emitNotice(tr(language.value, "Hakuna hifadhi ya usalama ya kurejesha bado.", "No safety snapshot available yet."))
+                emitNotice(
+                    tr(
+                        language.value,
+                        "Hakuna faili la nakala rudufu lililopatikana bado. Hakikisha umeruhusu 'All Files Access' (Storage Manager).",
+                        "No backup file found yet. Ensure 'All Files Access' (Storage Manager) is granted."
+                    )
+                )
             }
         }
     }
@@ -1992,6 +2027,21 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
             val snapshot = notificationManager.getPermissionsSnapshot(hasBackup)
             _phonePermissions.value = snapshot
             val permissionChanged = snapshot.storageManagerGranted != prevStorageGranted
+            if (snapshot.storageManagerGranted && (permissionChanged || prefs.pendingReinstallRestore.value)) {
+                val restored = repository.tryAutoRestoreAfterStorageAccessGranted()
+                if (restored) {
+                    emitNotice(
+                        tr(
+                            language.value,
+                            "Data zako zote zimerejeshwa kiotomatiki kutoka Documents/Mengidata!",
+                            "All your records were automatically restored from Documents/Mengidata!"
+                        )
+                    )
+                } else if (permissionChanged && !repository.isDatabaseOnlyDemoOrEmpty()) {
+                    // User just enabled All Files Access on an active install -> mirror real data to public storage immediately!
+                    repository.syncToPhoneStorageNow()
+                }
+            }
             if (permissionChanged || now - lastResumeRefreshMs >= 4_000L) {
                 lastResumeRefreshMs = now
                 refreshStorageStatus()

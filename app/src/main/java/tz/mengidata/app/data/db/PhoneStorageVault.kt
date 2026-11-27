@@ -13,8 +13,11 @@ import androidx.core.content.FileProvider
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import org.json.JSONArray
+import org.json.JSONObject
 import tz.mengidata.app.i18n.FormatUtils
 import java.io.File
+import java.io.FileOutputStream
 
 data class SavedPublicPdf(
     val displayName: String,
@@ -34,7 +37,7 @@ data class PhoneStorageStatus(
     val lastSyncedMillis: Long = 0L,
     val backupSizeBytes: Long = 0L,
     val dailySnapshotCount: Int = 0,
-    val phoneBackupPathLabel: String = "Documents/Mengidata",
+    val phoneBackupPathLabel: String = "Documents/Mengidata/Mengidata_Database_Backup.json",
     val customFolderLabel: String = "",
     val isSyncingNow: Boolean = false
 ) {
@@ -42,16 +45,28 @@ data class PhoneStorageStatus(
         get() = hasInternalBackup || hasPhoneStorageBackup || hasPublicDocumentsBackup || hasCustomFolderBackup || hasPreClearBackup
 }
 
+private data class BackupCandidate(
+    val json: String,
+    val isRealUserData: Boolean,
+    val timestampMillis: Long,
+    val recordCount: Int,
+    val sourceLabel: String
+)
+
 /**
- * Zero-permission automatic durable phone storage vault for Mengidata (Android 13+ Scoped Storage).
+ * Bulletproof multi-layer durable phone storage vault for VaultLedger (Android 13–16).
  *
- * Automatically mirrors every database change to multiple resilient storage layers:
+ * Mirrors real user data automatically to:
  * 1. Atomic rolling internal snapshots (`latest` + `previous` + `pre-clear`)
  * 2. App-specific external phone storage (`Android/data/.../Documents/MengidataDatabase/` + 7-day history)
- * 3. Public phone `Documents/Mengidata/Mengidata_Database_Backup.json` via MediaStore (`IS_PENDING` atomic commit)
- *    + daily rolling `Documents/Mengidata/History/Mengidata_Backup_YYYY-MM-DD.json` (survives app uninstall!)
- * 4. Optional user-chosen SAF folder (`OpenDocumentTree` persistent URI permission, e.g., SD card / custom folder)
- * 5. Clean `application/pdf` Invoice PDF mirror into `Documents/Mengidata/Ankara/` so saved PDFs always open cleanly.
+ * 3. Public `Documents/Mengidata/Mengidata_Database_Backup.json` + 14-day `History/` (survives uninstall!)
+ * 4. Redundant Public `Download/VaultLedger/VaultLedger_AutoBackup.json` (survives uninstall!)
+ * 5. Optional user-chosen SAF folder (`OpenDocumentTree` persistent URI permission)
+ *
+ * Safety guarantees:
+ * - Unmodified Demo Data NEVER overwrites public phone backups.
+ * - Atomic FUSE-safe writes never delete an existing backup unless the replacement is verified.
+ * - Auto-restore scans ALL public/history/MediaStore/Downloads files and always prioritizes real user data over demo data.
  */
 class PhoneStorageVault(private val context: Context) {
 
@@ -99,7 +114,20 @@ class PhoneStorageVault(private val context: Context) {
         return File(docs, PUBLIC_FOLDER)
     }
 
+    private fun publicVaultLedgerDocsDir(): File {
+        val docs = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
+        return File(docs, PUBLIC_SECONDARY_FOLDER)
+    }
+
+    private fun publicVaultLedgerDownloadsDir(): File {
+        val downloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        return File(downloads, PUBLIC_SECONDARY_FOLDER)
+    }
+
     private fun publicBackupFileDirect(): File = File(publicMengidataRootDir(), PUBLIC_BACKUP_FILE)
+
+    private fun publicSecondaryBackupFileDirect(): File =
+        File(publicVaultLedgerDownloadsDir(), PUBLIC_SECONDARY_BACKUP_FILE)
 
     private fun publicHistoryDirDirect(): File = File(publicMengidataRootDir(), PUBLIC_HISTORY_SUBFOLDER)
 
@@ -114,7 +142,14 @@ class PhoneStorageVault(private val context: Context) {
         val hasInternal = internal.exists() && internal.length() > 10L
         val hasExternal = external != null && external.exists() && external.length() > 10L
         val hasPreClear = preClear.exists() && preClear.length() > 10L
-        val directPublic = if (hasAllFilesAccess()) publicBackupFileDirect().takeIf { it.exists() && it.length() > 10L } else null
+
+        val directPublic = if (hasAllFilesAccess()) {
+            listOf(publicBackupFileDirect(), publicSecondaryBackupFileDirect())
+                .filter { it.exists() && it.length() > 10L }
+                .maxByOrNull { it.lastModified() }
+        } else {
+            null
+        }
         val publicInfo = if (directPublic == null) queryPublicMediaStoreBackupInfo() else null
         val hasPublic = directPublic != null || publicInfo != null
 
@@ -131,18 +166,20 @@ class PhoneStorageVault(private val context: Context) {
         ).maxOrNull() ?: 0L
 
         val sizeBytes = listOfNotNull(
+            directPublic?.length(),
             internal.takeIf { hasInternal }?.length(),
-            external?.takeIf { hasExternal }?.length(),
-            directPublic?.length()
+            external?.takeIf { hasExternal }?.length()
         ).maxOrNull() ?: 0L
 
-        val dailyCount = historyDir?.listFiles { f -> f.isFile && f.name.endsWith(".json") }?.size ?: 0
-
-        val pathLabel = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            "Documents/$PUBLIC_FOLDER/$PUBLIC_BACKUP_FILE"
+        val publicDailyCount = if (hasAllFilesAccess()) {
+            publicHistoryDirDirect().listFiles { f -> f.isFile && f.name.endsWith(".json") }?.size ?: 0
         } else {
-            external?.absolutePath ?: "Phone Storage/Mengidata"
+            0
         }
+        val externalDailyCount = historyDir?.listFiles { f -> f.isFile && f.name.endsWith(".json") }?.size ?: 0
+        val dailyCount = maxOf(publicDailyCount, externalDailyCount)
+
+        val pathLabel = "Documents/$PUBLIC_FOLDER/$PUBLIC_BACKUP_FILE"
 
         return PhoneStorageStatus(
             hasInternalBackup = hasInternal,
@@ -159,11 +196,59 @@ class PhoneStorageVault(private val context: Context) {
         )
     }
 
-    fun saveAutoSnapshot(json: String): Boolean {
+    /**
+     * FUSE-safe atomic write that NEVER destroys an existing valid target file if renameTo fails
+     * on Android's `/storage/emulated/0/` FUSE layer.
+     */
+    private fun writeFileAtomicallySafe(target: File, bytes: ByteArray): Boolean {
+        if (bytes.isEmpty()) return false
+        val parent = target.parentFile ?: return false
+        if (!parent.exists()) parent.mkdirs()
+
+        val tmp = File(parent, "${target.name}.tmp")
+        val tmpWritten = runCatching {
+            FileOutputStream(tmp, false).use { fos ->
+                fos.write(bytes)
+                fos.flush()
+                runCatching { fos.fd.sync() }
+            }
+            tmp.exists() && tmp.length() == bytes.size.toLong()
+        }.getOrDefault(false)
+
+        if (tmpWritten) {
+            if (tmp.renameTo(target) && target.exists() && target.length() == bytes.size.toLong()) {
+                return true
+            }
+            // Fallback for Android FUSE filesystems where renameTo over an existing file returns false
+            val directOk = runCatching {
+                FileOutputStream(target, false).use { fos ->
+                    fos.write(bytes)
+                    fos.flush()
+                    runCatching { fos.fd.sync() }
+                }
+                target.exists() && target.length() == bytes.size.toLong()
+            }.getOrDefault(false)
+            runCatching { tmp.delete() }
+            if (directOk) return true
+        }
+
+        runCatching { tmp.delete() }
+        return runCatching {
+            FileOutputStream(target, false).use { fos ->
+                fos.write(bytes)
+                fos.flush()
+                runCatching { fos.fd.sync() }
+            }
+            target.exists() && target.length() == bytes.size.toLong()
+        }.getOrDefault(false)
+    }
+
+    fun saveAutoSnapshot(json: String, allowPublicOverwrite: Boolean = true): Boolean {
         _statusFlow.value = _statusFlow.value.copy(isSyncingNow = true)
         var anySaved = false
         val today = FormatUtils.todayIso()
         val payloadBytes = json.toByteArray(Charsets.UTF_8)
+        val shouldWritePublic = allowPublicOverwrite && !isDemoOnlyBackupJson(json)
 
         try {
             // 1. Atomic rolling internal snapshot (rotate latest -> prev before replacing)
@@ -171,15 +256,10 @@ class PhoneStorageVault(private val context: Context) {
                 val latest = internalLatestFile()
                 val prev = internalPrevFile()
                 if (latest.exists() && latest.length() > 10L) {
-                    val prevTmp = File(context.filesDir, "$INTERNAL_PREV_FILE.tmp")
-                    latest.copyTo(prevTmp, overwrite = true)
-                    if (prev.exists()) prev.delete()
-                    prevTmp.renameTo(prev)
+                    val prevBytes = latest.readBytes()
+                    writeFileAtomicallySafe(prev, prevBytes)
                 }
-                val tmp = File(context.filesDir, "$INTERNAL_LATEST_FILE.tmp")
-                tmp.writeBytes(payloadBytes)
-                if (latest.exists()) latest.delete()
-                if (tmp.renameTo(latest)) {
+                if (writeFileAtomicallySafe(latest, payloadBytes)) {
                     anySaved = true
                 }
             }
@@ -187,23 +267,14 @@ class PhoneStorageVault(private val context: Context) {
             // 2. App external phone storage mirror + 7-day rolling daily history
             runCatching {
                 val extFile = externalBackupFile()
-                if (extFile != null) {
-                    val tmp = File(extFile.parentFile, "$EXTERNAL_BACKUP_FILE.tmp")
-                    tmp.writeBytes(payloadBytes)
-                    if (extFile.exists()) extFile.delete()
-                    if (tmp.renameTo(extFile)) {
-                        anySaved = true
-                    }
+                if (extFile != null && writeFileAtomicallySafe(extFile, payloadBytes)) {
+                    anySaved = true
                 }
                 val histDir = externalHistoryDir()
                 if (histDir != null) {
                     val dailyFile = File(histDir, "Mengidata_Backup_$today.json")
-                    val dailyTmp = File(histDir, "Mengidata_Backup_$today.json.tmp")
-                    dailyTmp.writeBytes(payloadBytes)
-                    if (dailyFile.exists()) dailyFile.delete()
-                    dailyTmp.renameTo(dailyFile)
+                    writeFileAtomicallySafe(dailyFile, payloadBytes)
 
-                    // Keep only the newest 7 daily rolling snapshots
                     val allDaily = histDir.listFiles { f -> f.isFile && f.name.endsWith(".json") }
                         ?.sortedByDescending { it.name }
                         .orEmpty()
@@ -213,53 +284,86 @@ class PhoneStorageVault(private val context: Context) {
                 }
             }
 
-            // 3. Public Phone Documents/Mengidata/ mirror (direct File I/O when MANAGE_EXTERNAL_STORAGE is granted, MediaStore fallback otherwise)
-            if (hasAllFilesAccess()) {
-                val directSaved = runCatching {
-                    val rootDir = publicMengidataRootDir().apply { if (!exists()) mkdirs() }
-                    val target = File(rootDir, PUBLIC_BACKUP_FILE)
-                    val tmp = File(rootDir, "$PUBLIC_BACKUP_FILE.tmp")
-                    tmp.writeBytes(payloadBytes)
-                    if (target.exists()) target.delete()
-                    val renamed = tmp.renameTo(target)
-                    if (renamed) {
-                        MediaScannerConnection.scanFile(context, arrayOf(target.absolutePath), arrayOf("application/json"), null)
+            // 3. Public Phone Storage mirrors (ONLY overwrite with REAL user data, NEVER unmodified demo data!)
+            if (shouldWritePublic) {
+                if (hasAllFilesAccess()) {
+                    // Primary public mirror: Documents/Mengidata/Mengidata_Database_Backup.json + 14-day History
+                    val primarySaved = runCatching {
+                        val rootDir = publicMengidataRootDir().apply { if (!exists()) mkdirs() }
+                        val target = File(rootDir, PUBLIC_BACKUP_FILE)
+                        val ok = writeFileAtomicallySafe(target, payloadBytes)
+                        if (ok) {
+                            MediaScannerConnection.scanFile(
+                                context,
+                                arrayOf(target.absolutePath),
+                                arrayOf("application/json"),
+                                null
+                            )
+                        }
+
+                        val histDir = publicHistoryDirDirect().apply { if (!exists()) mkdirs() }
+                        val dailyTarget = File(histDir, "Mengidata_Backup_$today.json")
+                        writeFileAtomicallySafe(dailyTarget, payloadBytes)
+                        val allPublicDaily = histDir.listFiles { f -> f.isFile && f.name.endsWith(".json") }
+                            ?.sortedByDescending { it.name }
+                            .orEmpty()
+                        if (allPublicDaily.size > MAX_PUBLIC_DAILY_HISTORY) {
+                            allPublicDaily.drop(MAX_PUBLIC_DAILY_HISTORY).forEach { it.delete() }
+                        }
+                        ok
+                    }.getOrDefault(false)
+                    if (primarySaved) anySaved = true
+
+                    // Secondary redundant public mirror: Download/VaultLedger/VaultLedger_AutoBackup.json
+                    val secondarySaved = runCatching {
+                        val dlDir = publicVaultLedgerDownloadsDir().apply { if (!exists()) mkdirs() }
+                        val target = File(dlDir, PUBLIC_SECONDARY_BACKUP_FILE)
+                        val ok = writeFileAtomicallySafe(target, payloadBytes)
+                        if (ok) {
+                            MediaScannerConnection.scanFile(
+                                context,
+                                arrayOf(target.absolutePath),
+                                arrayOf("application/json"),
+                                null
+                            )
+                        }
+                        ok
+                    }.getOrDefault(false)
+                    if (secondarySaved) anySaved = true
+                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    runCatching {
+                        val okLatest = writePublicDocumentsFile(
+                            relativePath = "${Environment.DIRECTORY_DOCUMENTS}/$PUBLIC_FOLDER",
+                            fileName = PUBLIC_BACKUP_FILE,
+                            fallbackName = PUBLIC_BACKUP_FILE_FALLBACK,
+                            mimeType = "application/json",
+                            bytes = payloadBytes
+                        )
+                        if (okLatest) anySaved = true
+
+                        writePublicDocumentsFile(
+                            relativePath = "${Environment.DIRECTORY_DOCUMENTS}/$PUBLIC_FOLDER/$PUBLIC_HISTORY_SUBFOLDER",
+                            fileName = "Mengidata_Backup_$today.json",
+                            fallbackName = "Mengidata_Backup_${today}_auto.json",
+                            mimeType = "application/json",
+                            bytes = payloadBytes
+                        )
+
+                        // Also mirror to public Downloads via MediaStore.Downloads
+                        writePublicDownloadsFile(
+                            relativePath = "${Environment.DIRECTORY_DOWNLOADS}/$PUBLIC_SECONDARY_FOLDER",
+                            fileName = PUBLIC_SECONDARY_BACKUP_FILE,
+                            fallbackName = PUBLIC_SECONDARY_BACKUP_FALLBACK,
+                            mimeType = "application/json",
+                            bytes = payloadBytes
+                        )
                     }
-
-                    val histDir = publicHistoryDirDirect().apply { if (!exists()) mkdirs() }
-                    val dailyTarget = File(histDir, "Mengidata_Backup_$today.json")
-                    val dailyTmp = File(histDir, "Mengidata_Backup_$today.json.tmp")
-                    dailyTmp.writeBytes(payloadBytes)
-                    if (dailyTarget.exists()) dailyTarget.delete()
-                    dailyTmp.renameTo(dailyTarget)
-                    renamed
-                }.getOrDefault(false)
-                if (directSaved) anySaved = true
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                runCatching {
-                    val okLatest = writePublicDocumentsFile(
-                        relativePath = "${Environment.DIRECTORY_DOCUMENTS}/$PUBLIC_FOLDER",
-                        fileName = PUBLIC_BACKUP_FILE,
-                        fallbackName = PUBLIC_BACKUP_FILE_FALLBACK,
-                        mimeType = "application/json",
-                        bytes = payloadBytes
-                    )
-                    if (okLatest) anySaved = true
-
-                    // Also keep today's daily snapshot in Documents/Mengidata/History/
-                    writePublicDocumentsFile(
-                        relativePath = "${Environment.DIRECTORY_DOCUMENTS}/$PUBLIC_FOLDER/$PUBLIC_HISTORY_SUBFOLDER",
-                        fileName = "Mengidata_Backup_$today.json",
-                        fallbackName = "Mengidata_Backup_${today}_auto.json",
-                        mimeType = "application/json",
-                        bytes = payloadBytes
-                    )
                 }
             }
 
             // 4. Optional user-picked SAF folder mirror (e.g., SD card or custom Downloads folder)
             val customUri = customFolderTreeUri
-            if (customUri != null && hasPersistedTreePermission(customUri)) {
+            if (shouldWritePublic && customUri != null && hasPersistedTreePermission(customUri)) {
                 runCatching {
                     if (writeToCustomSafFolder(customUri, PUBLIC_BACKUP_FILE, "application/json", payloadBytes)) {
                         anySaved = true
@@ -273,19 +377,18 @@ class PhoneStorageVault(private val context: Context) {
     }
 
     fun savePreClearSnapshot(json: String) {
+        if (isDemoOnlyBackupJson(json)) return
         val bytes = json.toByteArray(Charsets.UTF_8)
+        runCatching { writeFileAtomicallySafe(preClearFile(), bytes) }
         runCatching {
-            val target = preClearFile()
-            val tmp = File(context.filesDir, "$PRE_CLEAR_FILE.tmp")
-            tmp.writeBytes(bytes)
-            if (target.exists()) target.delete()
-            tmp.renameTo(target)
+            externalFolder()?.let { writeFileAtomicallySafe(File(it, PRE_CLEAR_FILE), bytes) }
         }
-        runCatching {
-            val extFile = externalFolder()?.let { File(it, PRE_CLEAR_FILE) }
-            extFile?.writeBytes(bytes)
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        if (hasAllFilesAccess()) {
+            runCatching {
+                val histDir = publicHistoryDirDirect().apply { if (!exists()) mkdirs() }
+                writeFileAtomicallySafe(File(histDir, "Mengidata_PreClear_${FormatUtils.todayIso()}.json"), bytes)
+            }
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             runCatching {
                 writePublicDocumentsFile(
                     relativePath = "${Environment.DIRECTORY_DOCUMENTS}/$PUBLIC_FOLDER/$PUBLIC_HISTORY_SUBFOLDER",
@@ -299,11 +402,6 @@ class PhoneStorageVault(private val context: Context) {
         refreshStatus()
     }
 
-    /**
-     * Saves a clean, guaranteed-openable PDF file into `Documents/Mengidata/Ankara/`.
-     * Uses direct public storage File I/O when `MANAGE_EXTERNAL_STORAGE` is granted (guaranteeing
-     * full read/write/overwrite/retrieval across reinstalls) and falls back cleanly to MediaStore.
-     */
     fun savePdfToPublicDocuments(filename: String, pdfBytes: ByteArray): Uri? {
         if (pdfBytes.isEmpty()) return null
         val safeName = if (filename.endsWith(".pdf", ignoreCase = true)) filename else "$filename.pdf"
@@ -312,20 +410,17 @@ class PhoneStorageVault(private val context: Context) {
             val directUri = runCatching {
                 val dir = publicInvoicesDirDirect().apply { if (!exists()) mkdirs() }
                 val target = File(dir, safeName)
-                val tmp = File(dir, "$safeName.tmp")
-                tmp.writeBytes(pdfBytes)
-                if (target.exists()) target.delete()
-                if (!tmp.renameTo(target)) {
-                    target.writeBytes(pdfBytes)
-                    tmp.delete()
-                }
-                MediaScannerConnection.scanFile(
-                    context,
-                    arrayOf(target.absolutePath),
-                    arrayOf("application/pdf"),
+                if (writeFileAtomicallySafe(target, pdfBytes)) {
+                    MediaScannerConnection.scanFile(
+                        context,
+                        arrayOf(target.absolutePath),
+                        arrayOf("application/pdf"),
+                        null
+                    )
+                    FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", target)
+                } else {
                     null
-                )
-                FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", target)
+                }
             }.getOrNull()
             if (directUri != null) return directUri
         }
@@ -342,11 +437,6 @@ class PhoneStorageVault(private val context: Context) {
         }.getOrNull()
     }
 
-    /**
-     * Retrieves all saved PDF invoices from public device storage (`Documents/Mengidata/Ankara/`).
-     * Combines direct filesystem scan (when MANAGE_EXTERNAL_STORAGE is granted) with MediaStore
-     * query fallback so PDFs are always discoverable and openable.
-     */
     fun listSavedPublicInvoicePdfs(): List<SavedPublicPdf> {
         val byName = LinkedHashMap<String, SavedPublicPdf>()
 
@@ -429,52 +519,108 @@ class PhoneStorageVault(private val context: Context) {
         return deleted
     }
 
-    fun readBestAvailableSnapshot(): String? {
-        // 1. Check local + external + rolling daily files sorted newest-first
-        val localFiles = buildList {
+    /**
+     * Scans EVERY available backup location on the phone (Documents/Mengidata, History,
+     * Download/VaultLedger, MediaStore, SAF folder, internal & external snapshots) and returns
+     * the newest REAL user backup, strictly prioritizing real user data over unmodified demo snapshots.
+     */
+    fun readBestAvailableSnapshot(requireRealUserData: Boolean = false): String? {
+        val candidates = mutableListOf<BackupCandidate>()
+
+        fun considerPayload(text: String?, fileModMillis: Long, sourceLabel: String) {
+            if (!isValidBackupPayload(text) || text == null) return
+            val parsed = runCatching { JSONObject(text) }.getOrNull() ?: return
+            val isReal = !isDemoOnlyJsonObject(parsed)
+            val jsonTs = parsed.optLong("exportedAtMillis", 0L)
+            val effectiveTs = maxOf(jsonTs, fileModMillis)
+            val recordCount = countRecordsInBackup(parsed)
+            candidates += BackupCandidate(
+                json = text,
+                isRealUserData = isReal,
+                timestampMillis = effectiveTs,
+                recordCount = recordCount,
+                sourceLabel = sourceLabel
+            )
+        }
+
+        // 1. Direct filesystem scan across ALL public surviving directories (when All Files Access is granted)
+        if (hasAllFilesAccess()) {
+            val publicDirs = listOf(
+                publicMengidataRootDir(),
+                publicHistoryDirDirect(),
+                publicVaultLedgerDownloadsDir(),
+                publicVaultLedgerDocsDir()
+            )
+            publicDirs.forEach { dir ->
+                runCatching {
+                    if (dir.exists() && dir.isDirectory) {
+                        dir.listFiles { f ->
+                            f.isFile && f.name.endsWith(".json", ignoreCase = true) && f.length() > 10L
+                        }?.sortedByDescending { it.lastModified() }
+                            ?.take(12)
+                            ?.forEach { file ->
+                                val text = runCatching { file.readText(Charsets.UTF_8) }.getOrNull()
+                                considerPayload(text, file.lastModified(), file.absolutePath)
+                            }
+                    }
+                }
+            }
+        }
+
+        // 2. Local & app-external snapshots
+        val appFiles = buildList {
             add(internalLatestFile())
             externalBackupFile()?.let { add(it) }
             add(preClearFile())
             add(internalPrevFile())
-            if (hasAllFilesAccess()) {
-                add(publicBackupFileDirect())
-                publicHistoryDirDirect().listFiles { f -> f.isFile && f.name.endsWith(".json") }
-                    ?.sortedByDescending { it.lastModified() }
-                    ?.take(3)
-                    ?.let { addAll(it) }
-            }
             externalHistoryDir()?.listFiles { f -> f.isFile && f.name.endsWith(".json") }
                 ?.sortedByDescending { it.lastModified() }
-                ?.take(3)
+                ?.take(5)
                 ?.let { addAll(it) }
         }.filter { it.exists() && it.length() > 10L }
-            .sortedByDescending { it.lastModified() }
 
-        for (file in localFiles) {
+        appFiles.forEach { file ->
             val text = runCatching { file.readText(Charsets.UTF_8) }.getOrNull()
-            if (isValidBackupPayload(text)) {
-                return text
-            }
+            considerPayload(text, file.lastModified(), file.name)
         }
 
-        // 2. Check Public Documents/Mengidata/ via MediaStore (survives app reinstall!)
+        // 3. Public MediaStore Files & Downloads scan (even if All Files Access not yet granted)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val publicText = runCatching { readPublicDocumentsBackup() }.getOrNull()
-            if (isValidBackupPayload(publicText)) {
-                return publicText
+            readAllPublicMediaStoreBackups().forEach { (text, modMillis, name) ->
+                considerPayload(text, modMillis, "MediaStore:$name")
             }
         }
 
-        // 3. Check optional user-picked Custom SAF folder
+        // 4. Optional user-picked Custom SAF folder
         val customUri = customFolderTreeUri
         if (customUri != null && hasPersistedTreePermission(customUri)) {
             val customText = runCatching { readFromCustomSafFolder(customUri, PUBLIC_BACKUP_FILE) }.getOrNull()
-            if (isValidBackupPayload(customText)) {
-                return customText
-            }
+            considerPayload(customText, System.currentTimeMillis() - 1_000L, "SAF:$PUBLIC_BACKUP_FILE")
         }
 
-        return null
+        val filtered = if (requireRealUserData) {
+            candidates.filter { it.isRealUserData }
+        } else {
+            candidates
+        }
+        if (filtered.isEmpty()) return null
+
+        // Strictly prioritize real user data first, then newest timestamp, then richest record count
+        val best = filtered.sortedWith(
+            compareByDescending<BackupCandidate> { it.isRealUserData }
+                .thenByDescending { it.timestampMillis }
+                .thenByDescending { it.recordCount }
+        ).firstOrNull()
+
+        return best?.json
+    }
+
+    private fun countRecordsInBackup(root: JSONObject): Int {
+        return (root.optJSONArray("transactions")?.length() ?: 0) +
+            (root.optJSONArray("invoices")?.length() ?: 0) +
+            (root.optJSONArray("bills")?.length() ?: 0) +
+            (root.optJSONArray("savings")?.length() ?: 0) +
+            (root.optJSONArray("pendingTransactions")?.length() ?: 0)
     }
 
     private fun isValidBackupPayload(text: String?): Boolean {
@@ -483,17 +629,113 @@ class PhoneStorageVault(private val context: Context) {
             text.contains("\"transactions\"")
     }
 
+    private fun hasAnyNonDemoItem(array: JSONArray?): Boolean {
+        if (array == null) return false
+        for (i in 0 until array.length()) {
+            val obj = array.optJSONObject(i) ?: continue
+            val id = obj.optString("id", "")
+            if (id.isNotBlank() && !id.startsWith("demo_")) return true
+        }
+        return false
+    }
+
+    private fun isDemoOnlyJsonObject(root: JSONObject): Boolean {
+        val settings = root.optJSONObject("settings")
+        val demoFlag = settings?.optBoolean("demo", false) ?: false
+        if (!demoFlag) return false
+
+        // Even if settings.demo wasn't cleared in an older version, if ANY real record exists, treat as real data!
+        if (hasAnyNonDemoItem(root.optJSONArray("transactions"))) return false
+        if (hasAnyNonDemoItem(root.optJSONArray("invoices"))) return false
+        if (hasAnyNonDemoItem(root.optJSONArray("bills"))) return false
+        if (hasAnyNonDemoItem(root.optJSONArray("savings"))) return false
+        if (hasAnyNonDemoItem(root.optJSONArray("pendingTransactions"))) return false
+
+        val owner = settings?.optString("ownerName", "")?.trim().orEmpty()
+        val biz = settings?.optString("businessName", "")?.trim().orEmpty()
+        if (owner.isNotEmpty()) return false
+        if (biz.isNotEmpty() && !biz.equals("VaultLedger", ignoreCase = true) && !biz.equals("Mengidata", ignoreCase = true)) {
+            return false
+        }
+        return true
+    }
+
+    fun isDemoOnlyBackupJson(text: String?): Boolean {
+        if (!isValidBackupPayload(text) || text == null) return true
+        val parsed = runCatching { JSONObject(text) }.getOrNull() ?: return true
+        return isDemoOnlyJsonObject(parsed)
+    }
+
     private fun queryPublicMediaStoreBackupInfo(): Pair<Uri, Long>? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
         val relPath = "${Environment.DIRECTORY_DOCUMENTS}/$PUBLIC_FOLDER"
         return findPublicFileUriWithModified(relPath, PUBLIC_BACKUP_FILE)
             ?: findPublicFileUriWithModified(relPath, PUBLIC_BACKUP_FILE_FALLBACK)
+            ?: findPublicDownloadUriWithModified("${Environment.DIRECTORY_DOWNLOADS}/$PUBLIC_SECONDARY_FOLDER", PUBLIC_SECONDARY_BACKUP_FILE)
+    }
+
+    private fun readAllPublicMediaStoreBackups(): List<Triple<String, Long, String>> {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return emptyList()
+        val results = mutableListOf<Triple<String, Long, String>>()
+        val collections = listOf(
+            MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY),
+            MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        )
+        val projection = arrayOf(
+            MediaStore.MediaColumns._ID,
+            MediaStore.MediaColumns.DISPLAY_NAME,
+            MediaStore.MediaColumns.DATE_MODIFIED
+        )
+        val selection = "(${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ? OR ${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?) AND ${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?"
+        val selectionArgs = arrayOf("Mengidata%", "VaultLedger%", "%.json")
+        val sortOrder = "${MediaStore.MediaColumns.DATE_MODIFIED} DESC"
+
+        for (collection in collections) {
+            runCatching {
+                context.contentResolver.query(collection, projection, selection, selectionArgs, sortOrder)?.use { cursor ->
+                    val idIdx = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+                    val nameIdx = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
+                    val modIdx = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_MODIFIED)
+                    var count = 0
+                    while (cursor.moveToNext() && count < 10) {
+                        val id = cursor.getLong(idIdx)
+                        val name = cursor.getString(nameIdx) ?: continue
+                        val modMillis = cursor.getLong(modIdx) * 1000L
+                        val uri = ContentUris.withAppendedId(collection, id)
+                        val text = runCatching {
+                            context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+                        }.getOrNull()
+                        if (!text.isNullOrBlank()) {
+                            results += Triple(text, modMillis, name)
+                            count++
+                        }
+                    }
+                }
+            }
+        }
+        return results
     }
 
     private fun findPublicFileUriWithModified(relativePath: String, fileName: String): Pair<Uri, Long>? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
+        return queryMediaStoreSingle(
+            MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY),
+            relativePath,
+            fileName
+        )
+    }
+
+    private fun findPublicDownloadUriWithModified(relativePath: String, fileName: String): Pair<Uri, Long>? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
+        return queryMediaStoreSingle(
+            MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY),
+            relativePath,
+            fileName
+        )
+    }
+
+    private fun queryMediaStoreSingle(collection: Uri, relativePath: String, fileName: String): Pair<Uri, Long>? {
         return runCatching {
-            val collection = MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
             val projection = arrayOf(
                 MediaStore.MediaColumns._ID,
                 MediaStore.MediaColumns.DATE_MODIFIED
@@ -523,8 +765,22 @@ class PhoneStorageVault(private val context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false
         val primary = writePublicDocumentsFileReturningUri(relativePath, fileName, mimeType, bytes)
         if (primary != null) return true
-        // If previous install owns the primary file (SecurityException on Android 11+), write cleanly to fallback name
         val fallback = writePublicDocumentsFileReturningUri(relativePath, fallbackName, mimeType, bytes)
+        return fallback != null
+    }
+
+    private fun writePublicDownloadsFile(
+        relativePath: String,
+        fileName: String,
+        fallbackName: String,
+        mimeType: String,
+        bytes: ByteArray
+    ): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false
+        val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        val primary = writeMediaStoreCollectionFile(collection, relativePath, fileName, mimeType, bytes)
+        if (primary != null) return true
+        val fallback = writeMediaStoreCollectionFile(collection, relativePath, fallbackName, mimeType, bytes)
         return fallback != null
     }
 
@@ -535,8 +791,19 @@ class PhoneStorageVault(private val context: Context) {
         bytes: ByteArray
     ): Uri? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
+        val collection = MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        return writeMediaStoreCollectionFile(collection, relativePath, fileName, mimeType, bytes)
+    }
+
+    private fun writeMediaStoreCollectionFile(
+        collection: Uri,
+        relativePath: String,
+        fileName: String,
+        mimeType: String,
+        bytes: ByteArray
+    ): Uri? {
         val resolver = context.contentResolver
-        val existingUri = findPublicFileUriWithModified(relativePath, fileName)?.first
+        val existingUri = queryMediaStoreSingle(collection, relativePath, fileName)?.first
 
         if (existingUri != null) {
             val overwritten = runCatching {
@@ -552,17 +819,13 @@ class PhoneStorageVault(private val context: Context) {
             if (overwritten) return existingUri
         }
 
-        // Atomic MediaStore insert using IS_PENDING = 1 -> write -> IS_PENDING = 0
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
             put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
             put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
             put(MediaStore.MediaColumns.IS_PENDING, 1)
         }
-        val insertedUri = resolver.insert(
-            MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY),
-            values
-        ) ?: return null
+        val insertedUri = resolver.insert(collection, values) ?: return null
 
         return try {
             val out = resolver.openOutputStream(insertedUri, "wt")
@@ -579,12 +842,6 @@ class PhoneStorageVault(private val context: Context) {
             runCatching { resolver.delete(insertedUri, null, null) }
             null
         }
-    }
-
-    private fun readPublicDocumentsBackup(): String? {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
-        val uri = queryPublicMediaStoreBackupInfo()?.first ?: return null
-        return context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
     }
 
     private fun hasPersistedTreePermission(treeUri: Uri): Boolean {
@@ -661,10 +918,14 @@ class PhoneStorageVault(private val context: Context) {
         private const val EXTERNAL_SUBDIR = "MengidataDatabase"
         private const val EXTERNAL_BACKUP_FILE = "mengidata_phone_backup.json"
         private const val PUBLIC_FOLDER = "Mengidata"
+        private const val PUBLIC_SECONDARY_FOLDER = "VaultLedger"
         private const val PUBLIC_HISTORY_SUBFOLDER = "History"
         private const val PUBLIC_INVOICES_SUBFOLDER = "Ankara"
         private const val PUBLIC_BACKUP_FILE = "Mengidata_Database_Backup.json"
         private const val PUBLIC_BACKUP_FILE_FALLBACK = "Mengidata_Database_AutoBackup.json"
+        private const val PUBLIC_SECONDARY_BACKUP_FILE = "VaultLedger_AutoBackup.json"
+        private const val PUBLIC_SECONDARY_BACKUP_FALLBACK = "VaultLedger_AutoBackup_Mirror.json"
         private const val MAX_DAILY_HISTORY = 7
+        private const val MAX_PUBLIC_DAILY_HISTORY = 14
     }
 }

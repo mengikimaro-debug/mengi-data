@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <device-admin xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Zero invasive policies requested: Device Admin registration alone instructs Android
-         to block unauthorized uninstallation until deactivated via Fingerprint in VaultLedger. -->
-    <uses-policies />
+    <!-- Declaring force-lock ensures Android 13–16 recognizes and activates this Device Admin
+         in AddDeviceAdminActivity so standard 1-tap uninstall is blocked at the OS level. -->
+    <uses-policies>
+        <force-lock />
+    </uses-policies>
 </device-admin>

@@ -11,4 +11,6 @@
     <string name="cd_bookmark">Alama ya ukurasa</string>
     <string name="uninstall_guard_admin_label">Ulinzi wa Kuondoa VaultLedger</string>
     <string name="uninstall_guard_admin_description">Mfumo wa Android unazuia kuondoa (uninstall) VaultLedger bila kuthibitisha Alama ya Kidole (Fingerprint) ndani ya programu.</string>
+    <string name="uninstall_guard_accessibility_label">Ulinzi wa Kuondoa VaultLedger (Fingerprint)</string>
+    <string name="uninstall_guard_accessibility_description">Hulinda VaultLedger isiondolewe (uninstall) kwenye mfumo wa Android bila uthibitisho wa Alama ya Kidole (Fingerprint). Hufuatilia tu skrini ya kuondoa VaultLedger na haikusanyi data binafsi.</string>
 </resources>

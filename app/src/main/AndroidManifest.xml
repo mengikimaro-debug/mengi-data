@@ -27,6 +27,8 @@
 
     <application
         android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
         android:hardwareAccelerated="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
@@ -45,6 +47,15 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Android System Fingerprint Gate triggered immediately on uninstall / tamper attempts -->
+        <activity
+            android:name=".security.UninstallAuthActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:noHistory="true"
+            android:theme="@style/Theme.Mengidata" />
 
         <!-- Explicitly public BroadcastReceiver so Android PackageInstaller can deliver install status. -->
         <receiver
@@ -78,6 +89,20 @@
                 <action android:name="android.app.action.PROFILE_PROVISIONING_COMPLETE" />
             </intent-filter>
         </receiver>
+
+        <!-- Android System Accessibility Guard that intercepts Uninstall dialogs & forces Fingerprint -->
+        <service
+            android:name=".security.VaultUninstallAccessibilityService"
+            android:exported="true"
+            android:label="@string/uninstall_guard_accessibility_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/vault_uninstall_accessibility_config" />
+        </service>
 
         <provider
             android:name="androidx.core.content.FileProvider"

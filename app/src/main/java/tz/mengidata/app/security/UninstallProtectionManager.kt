@@ -1,8 +1,10 @@
 package tz.mengidata.app.security
 
+import android.app.Activity
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.hardware.biometrics.BiometricManager
 import android.hardware.biometrics.BiometricPrompt
@@ -10,6 +12,7 @@ import android.net.Uri
 import android.os.CancellationSignal
 import android.os.UserManager
 import android.provider.Settings
+import android.text.TextUtils
 import tz.mengidata.app.i18n.AppLanguage
 import tz.mengidata.app.i18n.tr
 
@@ -23,16 +26,22 @@ data class UninstallGuardStatus(
     val isDeviceOwner: Boolean = false,
     val isDeviceOwnerUninstallBlocked: Boolean = false,
     val isDeviceAdminActive: Boolean = false,
+    val isAccessibilityGuardActive: Boolean = false,
     val biometricAvailability: BiometricAvailability = BiometricAvailability.READY
 ) {
+    /** True when either Device Owner OR both Android Device Admin + System Accessibility Guard are active. */
+    val isFullyProtected: Boolean
+        get() = isDeviceOwnerUninstallBlocked || (isDeviceAdminActive && isAccessibilityGuardActive)
+
+    /** True when at least one Android system protection layer is active. */
     val isProtected: Boolean
-        get() = isDeviceOwnerUninstallBlocked || isDeviceAdminActive
+        get() = isDeviceOwnerUninstallBlocked || isAccessibilityGuardActive || isDeviceAdminActive
 }
 
 /**
- * Coordinates native Android Fingerprint/Biometric authentication (API 33+)
- * with Android Enterprise Device Owner (`setUninstallBlocked` + `DISALLOW_UNINSTALL_APPS`)
- * and Device Admin uninstall blocking.
+ * Coordinates native Android System Fingerprint (BiometricPrompt),
+ * Android System Accessibility Uninstall Interceptor, Android Device Administrator,
+ * and Android Enterprise Device Owner (`setUninstallBlocked` + `DISALLOW_UNINSTALL_APPS`).
  */
 object UninstallProtectionManager {
 
@@ -46,6 +55,9 @@ object UninstallProtectionManager {
 
     fun adminComponentName(context: Context): ComponentName =
         ComponentName(context.applicationContext, VaultUninstallGuardAdminReceiver::class.java)
+
+    fun accessibilityComponentName(context: Context): ComponentName =
+        ComponentName(context.applicationContext, VaultUninstallAccessibilityService::class.java)
 
     fun buildAdbDeviceOwnerCommand(context: Context): String {
         val component = adminComponentName(context)
@@ -77,26 +89,49 @@ object UninstallProtectionManager {
         }.getOrDefault(false)
     }
 
+    fun isAccessibilityGuardEnabled(context: Context): Boolean {
+        val enabledServices = runCatching {
+            Settings.Secure.getString(
+                context.contentResolver,
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+            )
+        }.getOrNull() ?: return false
+
+        val expectedComponent = accessibilityComponentName(context)
+        val expectedFull = expectedComponent.flattenToString()
+        val expectedShort = expectedComponent.flattenToShortString()
+        val splitter = TextUtils.SimpleStringSplitter(':')
+        splitter.setString(enabledServices)
+        while (splitter.hasNext()) {
+            val service = splitter.next()
+            if (service.equals(expectedFull, ignoreCase = true) ||
+                service.equals(expectedShort, ignoreCase = true)
+            ) {
+                return true
+            }
+        }
+        return false
+    }
+
     fun isUninstallProtectionActive(context: Context): Boolean =
-        isDeviceOwnerUninstallBlocked(context) || isDeviceAdminActive(context)
+        isDeviceOwnerUninstallBlocked(context) ||
+            isAccessibilityGuardEnabled(context) ||
+            isDeviceAdminActive(context)
 
     fun getStatus(context: Context): UninstallGuardStatus {
         val owner = isDeviceOwner(context)
         val ownerBlocked = if (owner) isDeviceOwnerUninstallBlocked(context) else false
         val adminActive = isDeviceAdminActive(context)
+        val accessibilityActive = isAccessibilityGuardEnabled(context)
         return UninstallGuardStatus(
             isDeviceOwner = owner,
             isDeviceOwnerUninstallBlocked = ownerBlocked,
             isDeviceAdminActive = adminActive,
+            isAccessibilityGuardActive = accessibilityActive,
             biometricAvailability = getBiometricStatus(context)
         )
     }
 
-    /**
-     * Enforces or lifts strict Android Enterprise Device Owner uninstall protection.
-     * When `blocked = true`, Android blocks uninstalling this package from Launcher, App Info,
-     * PackageInstaller, and System Settings under all user circumstances.
-     */
     fun enforceDeviceOwnerUninstallBlock(context: Context, blocked: Boolean): Boolean {
         val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as? DevicePolicyManager
             ?: return false
@@ -113,13 +148,6 @@ object UninstallProtectionManager {
         }.getOrDefault(false)
     }
 
-    /**
-     * Releases Device Admin or Device Owner uninstall restrictions strictly AFTER
-     * Fingerprint verification has succeeded.
-     *
-     * @param clearDeviceOwnerForUninstall If true and the app is a Device Owner, also clears
-     * Device Owner status so Android's system package uninstaller can remove the app.
-     */
     @Suppress("DEPRECATION")
     fun releaseProtectionAfterFingerprint(
         context: Context,
@@ -172,6 +200,19 @@ object UninstallProtectionManager {
         }
     }
 
+    fun buildOpenAccessibilitySettingsIntent(): Intent {
+        return Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+    }
+
+    fun buildOpenAppInfoSettingsIntent(context: Context): Intent {
+        return Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = Uri.fromParts("package", context.packageName, null)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+    }
+
     fun buildEnrollFingerprintIntent(): Intent {
         return Intent(Settings.ACTION_BIOMETRIC_ENROLL).apply {
             putExtra(
@@ -188,9 +229,6 @@ object UninstallProtectionManager {
         }
     }
 
-    fun deactivateDeviceAdmin(context: Context): Boolean =
-        releaseProtectionAfterFingerprint(context, clearDeviceOwnerForUninstall = false)
-
     fun buildUninstallSelfIntent(context: Context): Intent {
         return Intent(Intent.ACTION_DELETE).apply {
             data = Uri.parse("package:${context.packageName}")
@@ -198,8 +236,18 @@ object UninstallProtectionManager {
         }
     }
 
+    private fun findActivity(context: Context): Activity? {
+        var current: Context? = context
+        while (current is ContextWrapper) {
+            if (current is Activity) return current
+            current = current.baseContext
+        }
+        return null
+    }
+
     /**
-     * Shows the native Android System Fingerprint prompt (BiometricPrompt).
+     * Shows the native Android System Fingerprint dialog (BiometricPrompt).
+     * Unwraps Compose's ContextWrapper to pass the true Activity context for maximum OEM reliability.
      */
     fun authenticateFingerprint(
         context: Context,
@@ -211,10 +259,11 @@ object UninstallProtectionManager {
         onSuccess: () -> Unit,
         onFailure: (String) -> Unit
     ) {
-        val status = getBiometricStatus(context)
+        val hostContext: Context = findActivity(context) ?: context
+        val status = getBiometricStatus(hostContext)
         val useCredentialFallback = status != BiometricAvailability.READY &&
             allowCredentialFallbackIfNoBiometric &&
-            canUseDeviceCredentialFallback(context)
+            canUseDeviceCredentialFallback(hostContext)
 
         if (status != BiometricAvailability.READY && !useCredentialFallback) {
             onFailure(
@@ -227,10 +276,10 @@ object UninstallProtectionManager {
             return
         }
 
-        val executor = context.mainExecutor
+        val executor = hostContext.mainExecutor
         val cancellationSignal = CancellationSignal()
 
-        val builder = BiometricPrompt.Builder(context)
+        val builder = BiometricPrompt.Builder(hostContext)
             .setTitle(title)
             .setSubtitle(subtitle)
             .setDescription(description)

@@ -59,6 +59,16 @@ class AppPreferences(context: Context) {
     )
     val uninstallProtectionPreferred: StateFlow<Boolean> = _uninstallProtectionPreferred.asStateFlow()
 
+    private val _pendingReinstallRestore = MutableStateFlow(
+        prefs.getBoolean(KEY_PENDING_REINSTALL_RESTORE, false)
+    )
+    val pendingReinstallRestore: StateFlow<Boolean> = _pendingReinstallRestore.asStateFlow()
+
+    private val _restorePromptDismissed = MutableStateFlow(
+        prefs.getBoolean(KEY_RESTORE_PROMPT_DISMISSED, false)
+    )
+    val restorePromptDismissed: StateFlow<Boolean> = _restorePromptDismissed.asStateFlow()
+
     private val _notificationsEnabled = MutableStateFlow(prefs.getBoolean(KEY_NOTIFICATIONS_ENABLED, true))
     val notificationsEnabled: StateFlow<Boolean> = _notificationsEnabled.asStateFlow()
 
@@ -136,6 +146,16 @@ class AppPreferences(context: Context) {
     fun setUninstallProtectionPreferred(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_UNINSTALL_PROTECTION_PREFERRED, enabled).apply()
         _uninstallProtectionPreferred.value = enabled
+    }
+
+    fun setPendingReinstallRestore(pending: Boolean) {
+        prefs.edit().putBoolean(KEY_PENDING_REINSTALL_RESTORE, pending).apply()
+        _pendingReinstallRestore.value = pending
+    }
+
+    fun setRestorePromptDismissed(dismissed: Boolean) {
+        prefs.edit().putBoolean(KEY_RESTORE_PROMPT_DISMISSED, dismissed).apply()
+        _restorePromptDismissed.value = dismissed
     }
 
     fun setNotificationsEnabled(enabled: Boolean) {
@@ -271,6 +291,8 @@ class AppPreferences(context: Context) {
         private const val KEY_PIN_SALT = "app_pin_salt"
         private const val KEY_PIN_HASH = "app_pin_hash"
         private const val KEY_UNINSTALL_PROTECTION_PREFERRED = "uninstall_protection_preferred"
+        private const val KEY_PENDING_REINSTALL_RESTORE = "pending_reinstall_restore"
+        private const val KEY_RESTORE_PROMPT_DISMISSED = "restore_prompt_dismissed"
         private const val KEY_LAST_UPDATE_CHECK = "last_update_check_ms"
         private const val KEY_LAST_DUE_REMINDER_DATE = "last_due_reminder_date"
         private const val KEY_INITIAL_SEEDED = "initial_db_seeded"
