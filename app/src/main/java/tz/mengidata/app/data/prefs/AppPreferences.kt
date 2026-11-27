@@ -4,6 +4,8 @@ import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import tz.mengidata.app.data.currency.CurrencyExchangeService
+import tz.mengidata.app.data.currency.ExchangeRateSnapshot
 import tz.mengidata.app.i18n.AppLanguage
 import tz.mengidata.app.i18n.ThemeMode
 import tz.mengidata.app.system.PerformanceModePreference
@@ -152,9 +154,42 @@ class AppPreferences(context: Context) {
     }
 
     fun setLargeBillThreshold(amount: Double) {
-        val safe = amount.coerceAtLeast(1000.0)
+        val safe = if (amount.isFinite() && amount >= 1.0) amount else 1.0
         prefs.edit().putFloat(KEY_LARGE_BILL_THRESHOLD, safe.toFloat()).apply()
         _largeBillThreshold.value = safe
+    }
+
+    fun getCachedExchangeRates(): ExchangeRateSnapshot {
+        val raw = prefs.getString(KEY_EXCHANGE_RATES_JSON, null)
+        val updatedAt = prefs.getLong(KEY_EXCHANGE_RATES_UPDATED_MS, 0L)
+        val parsed = raw?.let { CurrencyExchangeService.parseRatesJson(it) }
+        return if (parsed != null) {
+            ExchangeRateSnapshot(
+                ratesPerUsd = parsed,
+                updatedAtMillis = updatedAt,
+                isLive = updatedAt > 0L
+            )
+        } else {
+            ExchangeRateSnapshot(
+                ratesPerUsd = CurrencyExchangeService.DEFAULT_RATES_PER_USD,
+                updatedAtMillis = 0L,
+                isLive = false
+            )
+        }
+    }
+
+    fun saveCachedExchangeRates(snapshot: ExchangeRateSnapshot) {
+        val json = CurrencyExchangeService.serializeRatesJson(snapshot.ratesPerUsd)
+        prefs.edit()
+            .putString(KEY_EXCHANGE_RATES_JSON, json)
+            .putLong(KEY_EXCHANGE_RATES_UPDATED_MS, snapshot.updatedAtMillis)
+            .apply()
+    }
+
+    fun isExchangeRatesStale(maxAgeMs: Long = EXCHANGE_RATES_TTL_MS): Boolean {
+        val updatedAt = prefs.getLong(KEY_EXCHANGE_RATES_UPDATED_MS, 0L)
+        if (updatedAt <= 0L) return true
+        return System.currentTimeMillis() - updatedAt >= maxAgeMs
     }
 
     fun saveAppPin(pin: String): Boolean {
@@ -228,6 +263,9 @@ class AppPreferences(context: Context) {
         private const val KEY_LAST_UPDATE_CHECK = "last_update_check_ms"
         private const val KEY_LAST_DUE_REMINDER_DATE = "last_due_reminder_date"
         private const val KEY_INITIAL_SEEDED = "initial_db_seeded"
+        private const val KEY_EXCHANGE_RATES_JSON = "exchange_rates_per_usd_json"
+        private const val KEY_EXCHANGE_RATES_UPDATED_MS = "exchange_rates_updated_ms"
         private const val TWELVE_HOURS_MS = 12L * 60L * 60L * 1000L
+        private const val EXCHANGE_RATES_TTL_MS = 30L * 60L * 1000L
     }
 }

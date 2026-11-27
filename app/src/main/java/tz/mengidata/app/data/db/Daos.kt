@@ -42,6 +42,9 @@ interface TransactionDao {
     @Query("DELETE FROM transactions WHERE id = :id")
     suspend fun deleteById(id: String)
 
+    @Query("UPDATE transactions SET amount = amount * :factor")
+    suspend fun scaleAllAmounts(factor: Double)
+
     @Query("DELETE FROM transactions")
     suspend fun deleteAll()
 }
@@ -75,6 +78,12 @@ interface InvoiceDao {
     @Query("DELETE FROM invoices WHERE id = :id")
     suspend fun deleteInvoiceById(id: String)
 
+    @Query("UPDATE invoices SET discount = discount * :factor, amountPaid = amountPaid * :factor")
+    suspend fun scaleAllInvoiceAmounts(factor: Double)
+
+    @Query("UPDATE invoice_items SET price = price * :factor")
+    suspend fun scaleAllItemPrices(factor: Double)
+
     @Query("DELETE FROM invoices")
     suspend fun deleteAll()
 }
@@ -98,6 +107,9 @@ interface BillDao {
 
     @Query("DELETE FROM bills WHERE id = :id")
     suspend fun deleteById(id: String)
+
+    @Query("UPDATE bills SET amount = amount * :factor")
+    suspend fun scaleAllAmounts(factor: Double)
 
     @Query("DELETE FROM bills")
     suspend fun deleteAll()
@@ -141,6 +153,12 @@ interface SavingsDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertLogs(logs: List<SavingsLogEntity>)
 
+    @Query("UPDATE savings_goals SET targetAmount = targetAmount * :factor, currentAmount = currentAmount * :factor")
+    suspend fun scaleAllGoalAmounts(factor: Double)
+
+    @Query("UPDATE savings_logs SET amount = amount * :factor")
+    suspend fun scaleAllLogAmounts(factor: Double)
+
     @Query("DELETE FROM savings_logs")
     suspend fun deleteAllLogs()
 }
@@ -167,6 +185,9 @@ interface CategoryDao {
 
     @Query("DELETE FROM transaction_categories WHERE id = :id")
     suspend fun deleteById(id: String)
+
+    @Query("UPDATE transaction_categories SET monthlyBudget = monthlyBudget * :factor")
+    suspend fun scaleAllBudgets(factor: Double)
 
     @Query("DELETE FROM transaction_categories")
     suspend fun deleteAll()
@@ -195,7 +216,37 @@ interface DeletedRecordDao {
     @Query("DELETE FROM deleted_records WHERE id = :id")
     suspend fun deleteById(id: String)
 
+    @Query("UPDATE deleted_records SET amount = amount * :factor")
+    suspend fun scaleAllAmounts(factor: Double)
+
     @Query("DELETE FROM deleted_records")
+    suspend fun deleteAll()
+}
+
+@Dao
+interface PendingTransactionDao {
+    @Query("SELECT * FROM pending_transactions ORDER BY expectedDate ASC, createdAt DESC, rowid DESC")
+    fun observeAll(): Flow<List<PendingTransactionEntity>>
+
+    @Query("SELECT * FROM pending_transactions ORDER BY expectedDate ASC, createdAt DESC, rowid DESC")
+    suspend fun getAll(): List<PendingTransactionEntity>
+
+    @Query("SELECT * FROM pending_transactions WHERE id = :id")
+    suspend fun getById(id: String): PendingTransactionEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(item: PendingTransactionEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(items: List<PendingTransactionEntity>)
+
+    @Query("DELETE FROM pending_transactions WHERE id = :id")
+    suspend fun deleteById(id: String)
+
+    @Query("UPDATE pending_transactions SET amount = amount * :factor, paidAmount = paidAmount * :factor")
+    suspend fun scaleAllAmounts(factor: Double)
+
+    @Query("DELETE FROM pending_transactions")
     suspend fun deleteAll()
 }
 

@@ -20,5 +20,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Mengidata"
+rootProject.name = "VaultLedger"
 include(":app")

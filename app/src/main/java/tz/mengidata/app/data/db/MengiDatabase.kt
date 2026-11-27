@@ -17,9 +17,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SavingsGoalEntity::class,
         SavingsLogEntity::class,
         TransactionCategoryEntity::class,
-        DeletedRecordEntity::class
+        DeletedRecordEntity::class,
+        PendingTransactionEntity::class
     ],
-    version = 4,
+    version = 6,
     exportSchema = false
 )
 abstract class MengiDatabase : RoomDatabase() {
@@ -30,6 +31,7 @@ abstract class MengiDatabase : RoomDatabase() {
     abstract fun savingsDao(): SavingsDao
     abstract fun categoryDao(): CategoryDao
     abstract fun deletedRecordDao(): DeletedRecordDao
+    abstract fun pendingTransactionDao(): PendingTransactionDao
 
     companion object {
         private const val DB_NAME = "mengidata_room.db"
@@ -93,6 +95,42 @@ abstract class MengiDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `pending_transactions` (
+                        `id` TEXT NOT NULL,
+                        `type` TEXT NOT NULL,
+                        `description` TEXT NOT NULL,
+                        `details` TEXT NOT NULL,
+                        `party` TEXT NOT NULL,
+                        `category` TEXT NOT NULL,
+                        `amount` REAL NOT NULL,
+                        `method` TEXT NOT NULL,
+                        `expectedDate` TEXT NOT NULL,
+                        `createdAt` TEXT NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS `index_pending_transactions_expectedDate`
+                    ON `pending_transactions` (`expectedDate`)
+                    """.trimIndent()
+                )
+            }
+        }
+
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `pending_transactions` ADD COLUMN `phoneNumber` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `pending_transactions` ADD COLUMN `location` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `pending_transactions` ADD COLUMN `paidAmount` REAL NOT NULL DEFAULT 0.0")
+            }
+        }
+
         @Volatile
         private var INSTANCE: MengiDatabase? = null
 
@@ -103,7 +141,7 @@ abstract class MengiDatabase : RoomDatabase() {
                     MengiDatabase::class.java,
                     DB_NAME
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
                     .build()
                     .also { INSTANCE = it }

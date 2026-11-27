@@ -41,6 +41,7 @@ import tz.mengidata.app.data.db.InvoiceEntity
 import tz.mengidata.app.data.db.InvoiceItemEntity
 import tz.mengidata.app.data.db.InvoiceWithItems
 import tz.mengidata.app.data.db.MengiDatabase
+import tz.mengidata.app.data.db.PendingTransactionEntity
 import tz.mengidata.app.data.db.PhoneStorageStatus
 import tz.mengidata.app.data.db.SavedPublicPdf
 import tz.mengidata.app.data.db.SavingsGoalEntity
@@ -50,6 +51,7 @@ import tz.mengidata.app.data.db.TransactionEntity
 import tz.mengidata.app.data.pdf.FinancialStatementPdfGenerator
 import tz.mengidata.app.data.pdf.InvoicePdfGenerator
 import java.io.File
+import tz.mengidata.app.data.currency.CurrencyExchangeService
 import tz.mengidata.app.data.prefs.AppPreferences
 import tz.mengidata.app.data.repository.FinanceRepository
 import tz.mengidata.app.i18n.AppLanguage
@@ -62,6 +64,7 @@ import tz.mengidata.app.ui.components.MonthlyTrendPoint
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import tz.mengidata.app.notifications.EveningReminderScheduler
 import tz.mengidata.app.notifications.LargeBillWarningPopup
 import tz.mengidata.app.notifications.MengiNotificationManager
 import tz.mengidata.app.notifications.PhonePermissionsSnapshot
@@ -150,6 +153,9 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
     val largeBillWarningPopup: StateFlow<LargeBillWarningPopup?> = _largeBillWarningPopup.asStateFlow()
     private var warningDismissJob: Job? = null
 
+    private val _isConvertingCurrency = MutableStateFlow(false)
+    val isConvertingCurrency: StateFlow<Boolean> = _isConvertingCurrency.asStateFlow()
+
     val settings: StateFlow<BusinessSettingsEntity> = repository.settingsFlow.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5_000),
@@ -193,6 +199,12 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
     )
 
     val deletedRecords: StateFlow<List<DeletedRecordEntity>> = repository.deletedRecordsFlow.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5_000),
+        emptyList()
+    )
+
+    val pendingTransactions: StateFlow<List<PendingTransactionEntity>> = repository.pendingTransactionsFlow.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5_000),
         emptyList()
@@ -507,23 +519,41 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
                 notificationManager.ensureNotificationChannels()
+                EveningReminderScheduler.scheduleDailyEveningReminder(getApplication())
+            }
+            // Silently refresh live market exchange rates in background if cache is stale
+            if (prefs.isExchangeRatesStale()) {
+                viewModelScope.launch(Dispatchers.IO) {
+                    CurrencyExchangeService.fetchLiveRatesPerUsd()?.let { liveSnapshot ->
+                        prefs.saveCachedExchangeRates(liveSnapshot)
+                    }
+                }
             }
             repository.ensureInitialized()
             refreshStorageStatus()
             refreshSavedPublicPdfs()
-            // Automatically check due bills & overdue invoices once per day via Android system notifications
+            // Automatically check due bills, unpaid bills & pending transactions once per day
             val todayIso = FormatUtils.todayIso()
             if (prefs.shouldRunDailyDueReminder(todayIso)) {
                 withContext(Dispatchers.IO) {
                     val currentBills = runCatching { repository.billsFlow.first() }.getOrDefault(emptyList())
                     val currentInvoices = runCatching { repository.invoicesFlow.first() }.getOrDefault(emptyList())
+                    val currentPending = runCatching { repository.pendingTransactionsFlow.first() }.getOrDefault(emptyList())
                     val currentSettings = runCatching { repository.settingsFlow.first() }.getOrDefault(BusinessSettingsEntity())
+                    val cur = currentSettings.currency.ifBlank { "TZS" }
                     notificationManager.runSmartDueReminders(
                         bills = currentBills,
                         invoices = currentInvoices,
-                        currency = currentSettings.currency.ifBlank { "TZS" },
+                        currency = cur,
                         language = language.value
                     )
+                    if (currentPending.isNotEmpty()) {
+                        notificationManager.notifyPendingTransactionsReminder(
+                            pendingItems = currentPending,
+                            currency = cur,
+                            language = language.value
+                        )
+                    }
                 }
             }
             if (prefs.shouldAutoCheckUpdates()) {
@@ -1338,6 +1368,52 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun setCurrency(currencyCode: String) {
+        val targetCode = FormatUtils.normalizeCurrencyCode(currencyCode)
+        val currentCode = FormatUtils.normalizeCurrencyCode(settings.value.currency)
+        if (currentCode.equals(targetCode, ignoreCase = true)) return
+        if (_isConvertingCurrency.value) return
+        val option = FormatUtils.findCurrency(targetCode)
+        viewModelScope.launch {
+            _isConvertingCurrency.value = true
+            try {
+                val snapshot = withContext(Dispatchers.IO) {
+                    val live = CurrencyExchangeService.fetchLiveRatesPerUsd()
+                    if (live != null) {
+                        prefs.saveCachedExchangeRates(live)
+                        live
+                    } else {
+                        prefs.getCachedExchangeRates()
+                    }
+                }
+                val factor = CurrencyExchangeService.conversionFactor(
+                    fromCode = currentCode,
+                    toCode = targetCode,
+                    ratesPerUsd = snapshot.ratesPerUsd
+                )
+                repository.convertAllMoneyToCurrency(
+                    targetCurrencyCode = targetCode,
+                    factor = factor
+                )
+                refreshStorageStatus()
+                val ratePair = CurrencyExchangeService.formatRatePair(
+                    fromCode = currentCode,
+                    toCode = targetCode,
+                    ratesPerUsd = snapshot.ratesPerUsd
+                )
+                emitNotice(
+                    tr(
+                        language.value,
+                        "Sarafu sasa ni ${option.symbol} · Pesa zimebadilishwa ($ratePair)",
+                        "Currency set to ${option.symbol} · Amounts converted ($ratePair)"
+                    )
+                )
+            } finally {
+                _isConvertingCurrency.value = false
+            }
+        }
+    }
+
     fun exportBackupJson() {
         viewModelScope.launch {
             val json = repository.exportBackupJson()
@@ -1919,28 +1995,138 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun runDueBillsAndInvoicesReminderNow() {
+    fun savePendingTransaction(item: PendingTransactionEntity) {
+        viewModelScope.launch {
+            val saved = repository.savePendingTransaction(item)
+            EveningReminderScheduler.scheduleDailyEveningReminder(getApplication())
+            notificationManager.notifyPendingTransactionSaved(
+                item = saved,
+                currency = settings.value.currency.ifBlank { "TZS" },
+                language = language.value
+            )
+        }
+    }
+
+    fun recordPendingPayment(id: String, addedAmount: Double, markFull: Boolean = false) {
+        viewModelScope.launch {
+            val updated = repository.recordPendingPayment(id, addedAmount, markFull) ?: return@launch
+            val cur = settings.value.currency.ifBlank { "TZS" }
+            val lang = language.value
+            EveningReminderScheduler.scheduleDailyEveningReminder(getApplication())
+            notificationManager.notifyPendingTransactionSaved(
+                item = updated,
+                currency = cur,
+                language = lang
+            )
+        }
+    }
+
+    fun completePendingTransaction(id: String) {
+        viewModelScope.launch {
+            val posted = repository.completePendingTransaction(id)
+            if (posted != null) {
+                if (prefs.notificationsEnabled.value && prefs.transactionAlertsEnabled.value) {
+                    notificationManager.notifyTransactionSaved(
+                        txn = posted,
+                        currency = settings.value.currency.ifBlank { "TZS" },
+                        language = language.value
+                    )
+                }
+                emitNotice(
+                    tr(
+                        language.value,
+                        "Muamala umekamilika na kuingizwa kwenye Ledger.",
+                        "Pending transaction completed and posted to Ledger."
+                    )
+                )
+            }
+        }
+    }
+
+    fun deletePendingTransaction(id: String) {
+        viewModelScope.launch {
+            if (repository.deletePendingTransaction(id)) {
+                emitNotice(
+                    tr(
+                        language.value,
+                        "Muamala unaosubiri umeondolewa.",
+                        "Pending transaction removed."
+                    )
+                )
+            }
+        }
+    }
+
+    fun sendEveningRemindersNow() {
         refreshPhonePermissions()
-        val count = notificationManager.runSmartDueReminders(
-            bills = bills.value,
-            invoices = invoices.value,
-            currency = settings.value.currency.ifBlank { "TZS" },
-            language = language.value
+        EveningReminderScheduler.scheduleDailyEveningReminder(getApplication())
+        val cur = settings.value.currency.ifBlank { "TZS" }
+        val lang = language.value
+        val pendingCount = notificationManager.notifyPendingTransactionsReminder(
+            pendingItems = pendingTransactions.value,
+            currency = cur,
+            language = lang
         )
-        if (count > 0) {
+        val unpaidBillsCount = notificationManager.notifyUnpaidBillsEveningReminder(
+            bills = bills.value,
+            currency = cur,
+            language = lang
+        )
+        if (pendingCount > 0 || unpaidBillsCount > 0) {
             emitNotice(
                 tr(
-                    language.value,
-                    "Ukumbusho wa malipo ($count) umetumwa kwenye taarifa za simu.",
-                    "Payment reminder ($count due items) posted to phone notifications."
+                    lang,
+                    "Ukumbusho umetumwa ($pendingCount miamala inayosubiri · $unpaidBillsCount bili hazijalipwa). Pia utatuma kila siku saa 1:00 jioni.",
+                    "Reminder sent ($pendingCount pending transactions · $unpaidBillsCount unpaid bills). Daily 7:00 PM alert active."
                 )
             )
         } else {
             emitNotice(
                 tr(
-                    language.value,
-                    "Hakuna bili au ankara zilizochelewa leo.",
-                    "No overdue bills or unpaid due invoices today."
+                    lang,
+                    "Hakuna muamala unaosubiri wala bili isiyolipwa kwa sasa.",
+                    "No pending transactions or unpaid bills right now."
+                )
+            )
+        }
+    }
+
+    fun runDueBillsAndInvoicesReminderNow() {
+        refreshPhonePermissions()
+        EveningReminderScheduler.scheduleDailyEveningReminder(getApplication())
+        val cur = settings.value.currency.ifBlank { "TZS" }
+        val lang = language.value
+        val dueCount = notificationManager.runSmartDueReminders(
+            bills = bills.value,
+            invoices = invoices.value,
+            currency = cur,
+            language = lang
+        )
+        val unpaidBillsCount = notificationManager.notifyUnpaidBillsEveningReminder(
+            bills = bills.value,
+            currency = cur,
+            language = lang
+        )
+        val pendingCount = notificationManager.notifyPendingTransactionsReminder(
+            pendingItems = pendingTransactions.value,
+            currency = cur,
+            language = lang
+        )
+        val totalSent = dueCount + unpaidBillsCount + pendingCount
+        if (totalSent > 0) {
+            emitNotice(
+                tr(
+                    lang,
+                    "Ukumbusho wa malipo, bili hazijalipwa na miamala inayosubiri umetumwa.",
+                    "Reminders for unpaid bills, due items, and pending transactions sent."
+                )
+            )
+        } else {
+            emitNotice(
+                tr(
+                    lang,
+                    "Hakuna bili isiyolipwa wala muamala unaosubiri leo.",
+                    "No unpaid bills or pending transactions right now."
                 )
             )
         }

@@ -24,6 +24,7 @@ import tz.mengidata.app.MainActivity
 import tz.mengidata.app.R
 import tz.mengidata.app.data.db.BillEntity
 import tz.mengidata.app.data.db.InvoiceWithItems
+import tz.mengidata.app.data.db.PendingTransactionEntity
 import tz.mengidata.app.data.db.TransactionEntity
 import tz.mengidata.app.i18n.AppLanguage
 import tz.mengidata.app.i18n.FormatUtils
@@ -35,7 +36,7 @@ data class PhonePermissionsSnapshot(
     val installPackagesGranted: Boolean = false,
     val storageManagerGranted: Boolean = false,
     val storageVaultReady: Boolean = true,
-    val channelsConfigured: Int = 5
+    val channelsConfigured: Int = 6
 ) {
     val allRequiredGranted: Boolean
         get() = postNotificationsGranted &&
@@ -128,6 +129,18 @@ class MengiNotificationManager(private val context: Context) {
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC
             },
             NotificationChannel(
+                CHANNEL_PENDING_TRANSACTIONS,
+                "Miamala Inayosubiri (Pending Transactions)",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Vikumbusho vya moja kwa moja vya mfumo wa Android kwa miamala inayosubiri kuingia kwenye Ledger."
+                enableVibration(true)
+                vibrationPattern = longArrayOf(0L, 160L, 80L, 160L)
+                setShowBadge(true)
+                setSound(defaultSoundUri, audioAttrs)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+            },
+            NotificationChannel(
                 CHANNEL_SAVINGS,
                 "Akiba & Malengo (Savings Vault)",
                 NotificationManager.IMPORTANCE_HIGH
@@ -197,7 +210,7 @@ class MengiNotificationManager(private val context: Context) {
             installPackagesGranted = canRequestPackageInstalls(),
             storageManagerGranted = isStorageManagerGranted(),
             storageVaultReady = storageVaultReady,
-            channelsConfigured = 5
+            channelsConfigured = 6
         )
     }
 
@@ -409,8 +422,8 @@ class MengiNotificationManager(private val context: Context) {
     fun notifyUpdateAvailable(version: String, language: AppLanguage) {
         val title = tr(
             language,
-            "Toleo Jipya la Mengidata v$version Linapatikana",
-            "Mengidata v$version Update Available"
+            "Toleo Jipya la VaultLedger v$version Linapatikana",
+            "VaultLedger v$version Update Available"
         )
         val body = tr(
             language,
@@ -474,6 +487,151 @@ class MengiNotificationManager(private val context: Context) {
             accentColor = COLOR_WARNING_AMBER
         )
         return if (posted) (overdueOrTodayBills.size + overdueInvoices.size) else 0
+    }
+
+    fun notifyPendingTransactionSaved(
+        item: PendingTransactionEntity,
+        currency: String,
+        language: AppLanguage
+    ) {
+        val formatted = FormatUtils.formatMoney(item.amount, currency)
+        val kind = tr(language, "Malipo Yanayosubiri", "Pending Payment")
+        val title = "$kind: ${item.description} ($formatted)"
+        val paymentNote = when {
+            item.isFullyPaid -> tr(language, "Kalipa kiasi chote", "Paid in full")
+            item.isPartiallyPaid -> tr(
+                language,
+                "Amelipa ${FormatUtils.formatCompactMoney(item.effectivePaidAmount, currency)} • Bado ${FormatUtils.formatCompactMoney(item.remainingAmount, currency)}",
+                "Paid ${FormatUtils.formatCompactMoney(item.effectivePaidAmount, currency)} • Remaining ${FormatUtils.formatCompactMoney(item.remainingAmount, currency)}"
+            )
+            else -> tr(
+                language,
+                "Bado ${FormatUtils.formatCompactMoney(item.remainingAmount, currency)}",
+                "Remaining ${FormatUtils.formatCompactMoney(item.remainingAmount, currency)}"
+            )
+        }
+        val body = buildList {
+            if (item.party.isNotBlank()) add(item.party.trim())
+            if (item.phoneNumber.isNotBlank()) add(item.phoneNumber.trim())
+            if (item.location.isNotBlank()) add(item.location.trim())
+            add(paymentNote)
+            add(tr(language, "Tarehe: ${item.expectedDate}", "Expected: ${item.expectedDate}"))
+            if (item.details.isNotBlank()) add(item.details.trim())
+        }.joinToString(" • ")
+        postNotification(
+            channelId = CHANNEL_PENDING_TRANSACTIONS,
+            notificationId = (NOTIF_ID_PENDING_BASE + (item.id.hashCode() and 0x7FF)),
+            title = title,
+            message = body,
+            highPriority = true,
+            smallIconRes = R.drawable.ic_notification_mengidata,
+            accentColor = if (item.isFullyPaid) COLOR_BRAND_EMERALD else COLOR_WARNING_AMBER
+        )
+    }
+
+    /**
+     * Posts a clear reminder notification for all pending transactions waiting in the Ledger,
+     * including remaining balances (bado kiasi gani), contact info, and details (maelezo).
+     */
+    fun notifyPendingTransactionsReminder(
+        pendingItems: List<PendingTransactionEntity>,
+        currency: String,
+        language: AppLanguage
+    ): Int {
+        if (pendingItems.isEmpty()) return 0
+        val totalRemaining = pendingItems.sumOf { it.remainingAmount }
+        val overdueCount = pendingItems.count { it.isOverdue }
+        val partialCount = pendingItems.count { it.isPartiallyPaid }
+        val title = tr(
+            language,
+            "Ukumbusho: Miamala ${pendingItems.size} Inasubiri (Bado ${FormatUtils.formatCompactMoney(totalRemaining, currency)})",
+            "Reminder: ${pendingItems.size} Pending Transactions (Rem. ${FormatUtils.formatCompactMoney(totalRemaining, currency)})"
+        )
+        val lines = mutableListOf<String>()
+        if (overdueCount > 0 || partialCount > 0) {
+            val stats = buildList {
+                if (overdueCount > 0) add(tr(language, "$overdueCount zimechelewa", "$overdueCount overdue"))
+                if (partialCount > 0) add(tr(language, "$partialCount wamelipa nusu", "$partialCount partial"))
+            }.joinToString(" · ")
+            lines += stats
+        }
+        pendingItems.take(3).forEach { item ->
+            val who = buildList {
+                if (item.party.isNotBlank()) add(item.party.trim())
+                if (item.phoneNumber.isNotBlank()) add(item.phoneNumber.trim())
+            }.joinToString(" ")
+            val balanceText = when {
+                item.isFullyPaid -> tr(language, "Kalipa chote", "Paid full")
+                item.isPartiallyPaid -> tr(
+                    language,
+                    "Amelipa ${FormatUtils.formatCompactMoney(item.effectivePaidAmount, currency)} · Bado ${FormatUtils.formatCompactMoney(item.remainingAmount, currency)}",
+                    "Paid ${FormatUtils.formatCompactMoney(item.effectivePaidAmount, currency)} · Rem ${FormatUtils.formatCompactMoney(item.remainingAmount, currency)}"
+                )
+                else -> tr(
+                    language,
+                    "Bado ${FormatUtils.formatCompactMoney(item.remainingAmount, currency)}",
+                    "Rem ${FormatUtils.formatCompactMoney(item.remainingAmount, currency)}"
+                )
+            }
+            val detailSnippet = item.details.trim().take(50)
+            lines += buildString {
+                append("• ${item.description}")
+                if (who.isNotBlank()) append(" [$who]")
+                append(" ($balanceText)")
+                if (detailSnippet.isNotBlank()) append(" — $detailSnippet")
+            }
+        }
+        val posted = postNotification(
+            channelId = CHANNEL_PENDING_TRANSACTIONS,
+            notificationId = NOTIF_ID_PENDING_EVENING_SUMMARY,
+            title = title,
+            message = lines.joinToString("\n"),
+            highPriority = true,
+            smallIconRes = R.drawable.ic_notification_warning,
+            accentColor = COLOR_WARNING_AMBER
+        )
+        return if (posted) pendingItems.size else 0
+    }
+
+    /**
+     * Posts a daily evening reminder notification for all unpaid bills (bili ambazo hazijalipwa).
+     */
+    fun notifyUnpaidBillsEveningReminder(
+        bills: List<BillEntity>,
+        currency: String,
+        language: AppLanguage
+    ): Int {
+        val unpaidBills = bills.filter { !it.paid }
+        if (unpaidBills.isEmpty()) return 0
+        val totalUnpaid = unpaidBills.sumOf { it.amount }
+        val overdueCount = unpaidBills.count { it.isOverdue }
+        val title = tr(
+            language,
+            "Ukumbusho wa Jioni: Bili ${unpaidBills.size} Hazijalipwa",
+            "Evening Reminder: ${unpaidBills.size} Unpaid Bills"
+        )
+        val lines = mutableListOf<String>()
+        lines += tr(
+            language,
+            "Jumla inayodaiwa: ${FormatUtils.formatMoney(totalUnpaid, currency)}" +
+                if (overdueCount > 0) " ($overdueCount zimechelewa)" else "",
+            "Total unpaid: ${FormatUtils.formatMoney(totalUnpaid, currency)}" +
+                if (overdueCount > 0) " ($overdueCount overdue)" else ""
+        )
+        unpaidBills.sortedBy { it.dueDate }.take(3).forEach { bill ->
+            val amt = FormatUtils.formatCompactMoney(bill.amount, currency)
+            lines += "• ${bill.name} ($amt · ${bill.dueDate})"
+        }
+        val posted = postNotification(
+            channelId = CHANNEL_BILLS_INVOICES,
+            notificationId = NOTIF_ID_UNPAID_BILLS_EVENING,
+            title = title,
+            message = lines.joinToString("\n"),
+            highPriority = true,
+            smallIconRes = R.drawable.ic_notification_warning,
+            accentColor = COLOR_WARNING_AMBER
+        )
+        return if (posted) unpaidBills.size else 0
     }
 
     fun notifyLargeBillWarning(
@@ -578,6 +736,7 @@ class MengiNotificationManager(private val context: Context) {
         const val CHANNEL_LARGE_BILL_WARNING = "mengidata_large_bill_warning_v2"
         const val CHANNEL_BILLS_INVOICES = "mengidata_bills_invoices_v2"
         const val CHANNEL_TRANSACTIONS = "mengidata_transactions_v2"
+        const val CHANNEL_PENDING_TRANSACTIONS = "mengidata_pending_transactions_v2"
         const val CHANNEL_SAVINGS = "mengidata_savings_v2"
         const val CHANNEL_SYSTEM_UPDATES = "mengidata_system_updates_v2"
 
@@ -597,11 +756,14 @@ class MengiNotificationManager(private val context: Context) {
         private const val NOTIF_ID_DUE_SUMMARY = 9002
         private const val NOTIF_ID_STORAGE_SYNC = 9003
         private const val NOTIF_ID_UPDATE_AVAILABLE = 9004
+        private const val NOTIF_ID_PENDING_EVENING_SUMMARY = 9005
+        private const val NOTIF_ID_UNPAID_BILLS_EVENING = 9006
         private const val NOTIF_ID_TXN_BASE = 10000
         private const val NOTIF_ID_BILL_BASE = 12000
         private const val NOTIF_ID_INVOICE_BASE = 14000
         private const val NOTIF_ID_SAVINGS_BASE = 16000
         private const val NOTIF_ID_LARGE_BILL_BASE = 18000
+        private const val NOTIF_ID_PENDING_BASE = 20000
     }
 }
 

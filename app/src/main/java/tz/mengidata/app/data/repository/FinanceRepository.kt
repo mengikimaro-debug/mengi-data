@@ -27,6 +27,7 @@ import tz.mengidata.app.data.db.InvoiceEntity
 import tz.mengidata.app.data.db.InvoiceItemEntity
 import tz.mengidata.app.data.db.InvoiceWithItems
 import tz.mengidata.app.data.db.MengiDatabase
+import tz.mengidata.app.data.db.PendingTransactionEntity
 import tz.mengidata.app.data.db.PhoneStorageStatus
 import tz.mengidata.app.data.db.PhoneStorageVault
 import tz.mengidata.app.data.db.SavedPublicPdf
@@ -56,6 +57,7 @@ class FinanceRepository(
     private val savingsDao = db.savingsDao()
     private val categoryDao = db.categoryDao()
     private val deletedRecordDao = db.deletedRecordDao()
+    private val pendingTxnDao = db.pendingTransactionDao()
     private val storageVault = PhoneStorageVault(appContext).apply {
         setCustomFolderUri(prefs.customBackupFolderUri.value)
     }
@@ -76,6 +78,7 @@ class FinanceRepository(
     val savingsLogsFlow: Flow<List<SavingsLogEntity>> = savingsDao.observeAllLogs()
     val categoriesFlow: Flow<List<TransactionCategoryEntity>> = categoryDao.observeAll()
     val deletedRecordsFlow: Flow<List<DeletedRecordEntity>> = deletedRecordDao.observeAll()
+    val pendingTransactionsFlow: Flow<List<PendingTransactionEntity>> = pendingTxnDao.observeAll()
 
     fun getPhoneStorageStatus(): PhoneStorageStatus = storageVault.getStatus()
 
@@ -206,6 +209,30 @@ class FinanceRepository(
 
     suspend fun saveSettings(settings: BusinessSettingsEntity) {
         settingsDao.upsert(settings.copy(id = 1))
+        scheduleAutoBackup()
+    }
+
+    suspend fun convertAllMoneyToCurrency(targetCurrencyCode: String, factor: Double) {
+        val target = FormatUtils.normalizeCurrencyCode(targetCurrencyCode)
+        val safeFactor = if (factor.isFinite() && factor > 0.0) factor else 1.0
+        db.withTransaction {
+            val current = settingsDao.getSettings() ?: BusinessSettingsEntity()
+            if (safeFactor != 1.0) {
+                txnDao.scaleAllAmounts(safeFactor)
+                invoiceDao.scaleAllInvoiceAmounts(safeFactor)
+                invoiceDao.scaleAllItemPrices(safeFactor)
+                billDao.scaleAllAmounts(safeFactor)
+                savingsDao.scaleAllGoalAmounts(safeFactor)
+                savingsDao.scaleAllLogAmounts(safeFactor)
+                categoryDao.scaleAllBudgets(safeFactor)
+                deletedRecordDao.scaleAllAmounts(safeFactor)
+                pendingTxnDao.scaleAllAmounts(safeFactor)
+            }
+            settingsDao.upsert(current.copy(id = 1, currency = target))
+        }
+        if (safeFactor != 1.0) {
+            prefs.setLargeBillThreshold(prefs.largeBillThreshold.value * safeFactor)
+        }
         scheduleAutoBackup()
     }
 
@@ -1115,6 +1142,7 @@ class FinanceRepository(
         runCatching { storageVault.savePreClearSnapshot(exportBackupJson()) }
         db.withTransaction {
             txnDao.deleteAll()
+            pendingTxnDao.deleteAll()
             invoiceDao.deleteAll()
             billDao.deleteAll()
             savingsDao.deleteAllLogs()
@@ -1126,6 +1154,7 @@ class FinanceRepository(
 
     suspend fun loadDemoData() = db.withTransaction {
         txnDao.deleteAll()
+        pendingTxnDao.deleteAll()
         invoiceDao.deleteAll()
         billDao.deleteAll()
         savingsDao.deleteAllLogs()
@@ -1140,7 +1169,7 @@ class FinanceRepository(
         settingsDao.upsert(
             BusinessSettingsEntity(
                 id = 1,
-                businessName = "Mengidata",
+                businessName = "VaultLedger",
                 ownerName = "",
                 tagline = "Ushauri, mauzo & huduma za kidijitali",
                 address = "Kimara Mwisho, Ubungo, Dar es Salaam",
@@ -1392,6 +1421,26 @@ class FinanceRepository(
         }
         root.put("categories", categoriesArray)
 
+        val pendingArray = JSONArray()
+        pendingTxnDao.getAll().forEach { p ->
+            pendingArray.put(JSONObject().apply {
+                put("id", p.id)
+                put("type", p.type)
+                put("description", p.description)
+                put("details", p.details)
+                put("party", p.party)
+                put("phoneNumber", p.phoneNumber)
+                put("location", p.location)
+                put("category", p.category)
+                put("amount", p.amount)
+                put("paidAmount", p.paidAmount)
+                put("method", p.method)
+                put("expectedDate", p.expectedDate)
+                put("createdAt", p.createdAt)
+            })
+        }
+        root.put("pendingTransactions", pendingArray)
+
         root.toString(2)
     }
 
@@ -1404,6 +1453,7 @@ class FinanceRepository(
 
         db.withTransaction {
             txnDao.deleteAll()
+            pendingTxnDao.deleteAll()
             invoiceDao.deleteAll()
             billDao.deleteAll()
             savingsDao.deleteAllLogs()
@@ -1581,6 +1631,33 @@ class FinanceRepository(
                     categoryDao.upsertAll(cats)
                 }
             }
+            root.optJSONArray("pendingTransactions")?.let { arr ->
+                val pendingList = mutableListOf<PendingTransactionEntity>()
+                for (i in 0 until arr.length()) {
+                    val o = arr.getJSONObject(i)
+                    val desc = o.optString("description", "").trim()
+                    if (desc.isNotEmpty()) {
+                        pendingList += PendingTransactionEntity(
+                            id = o.optString("id").ifBlank { "ptx_${UUID.randomUUID().toString().take(12)}" },
+                            type = if (o.optString("type") == "income") "income" else "expense",
+                            description = desc,
+                            details = o.optString("details", ""),
+                            party = o.optString("party", ""),
+                            phoneNumber = o.optString("phoneNumber", ""),
+                            location = o.optString("location", ""),
+                            category = o.optString("category", "Mengineyo"),
+                            amount = o.optDouble("amount", 0.0),
+                            paidAmount = o.optDouble("paidAmount", 0.0),
+                            method = o.optString("method", "M-Pesa"),
+                            expectedDate = o.optString("expectedDate", FormatUtils.todayIso()),
+                            createdAt = o.optString("createdAt", FormatUtils.nowIsoTimestamp())
+                        )
+                    }
+                }
+                if (pendingList.isNotEmpty()) {
+                    pendingTxnDao.upsertAll(pendingList)
+                }
+            }
             ensureDefaultCategoriesSeeded()
         }
     }
@@ -1697,6 +1774,86 @@ class FinanceRepository(
             currency = settings.currency.ifBlank { "TZS" },
             language = language
         )
+    }
+
+    suspend fun savePendingTransaction(item: PendingTransactionEntity): PendingTransactionEntity =
+        withContext(Dispatchers.IO) {
+            val cleanAmount = max(item.amount, 0.0)
+            val cleanPaid = item.paidAmount.coerceIn(0.0, cleanAmount)
+            val resolved = item.copy(
+                id = item.id.ifBlank { "ptx_${UUID.randomUUID().toString().take(12)}" },
+                party = item.party.trim(),
+                phoneNumber = item.phoneNumber.trim(),
+                location = item.location.trim(),
+                details = item.details.trim(),
+                amount = cleanAmount,
+                paidAmount = cleanPaid,
+                expectedDate = item.expectedDate.ifBlank { FormatUtils.todayIso() },
+                createdAt = item.createdAt.ifBlank { FormatUtils.nowIsoTimestamp() }
+            )
+            pendingTxnDao.upsert(resolved)
+            scheduleAutoBackup()
+            resolved
+        }
+
+    suspend fun recordPendingPayment(
+        id: String,
+        addedAmount: Double,
+        markFull: Boolean = false
+    ): PendingTransactionEntity? = withContext(Dispatchers.IO) {
+        val updated = db.withTransaction {
+            val existing = pendingTxnDao.getById(id) ?: return@withTransaction null
+            val nextPaid = if (markFull) {
+                max(existing.amount, 0.0)
+            } else {
+                (existing.effectivePaidAmount + max(addedAmount, 0.0)).coerceIn(0.0, max(existing.amount, 0.0))
+            }
+            val next = existing.copy(paidAmount = nextPaid)
+            pendingTxnDao.upsert(next)
+            next
+        }
+        if (updated != null) {
+            scheduleAutoBackup()
+        }
+        updated
+    }
+
+    suspend fun completePendingTransaction(id: String): TransactionEntity? = withContext(Dispatchers.IO) {
+        val posted = db.withTransaction {
+            val pending = pendingTxnDao.getById(id) ?: return@withTransaction null
+            val combinedNotes = buildList {
+                if (pending.phoneNumber.isNotBlank()) add("Simu: ${pending.phoneNumber.trim()}")
+                if (pending.location.isNotBlank()) add("Eneo: ${pending.location.trim()}")
+                if (pending.details.isNotBlank()) add(pending.details.trim())
+            }.joinToString(" • ")
+            val ledgerTxn = TransactionEntity(
+                id = "tx_${UUID.randomUUID().toString().take(12)}",
+                type = pending.type,
+                date = FormatUtils.todayIso(),
+                description = pending.description,
+                party = pending.party,
+                category = pending.category,
+                amount = pending.amount,
+                method = pending.method,
+                notes = combinedNotes,
+                source = "manual",
+                createdAt = FormatUtils.nowIsoTimestamp()
+            )
+            txnDao.upsert(ledgerTxn)
+            pendingTxnDao.deleteById(id)
+            ledgerTxn
+        }
+        if (posted != null) {
+            scheduleAutoBackup()
+        }
+        posted
+    }
+
+    suspend fun deletePendingTransaction(id: String): Boolean = withContext(Dispatchers.IO) {
+        val existing = pendingTxnDao.getById(id) ?: return@withContext false
+        pendingTxnDao.deleteById(existing.id)
+        scheduleAutoBackup()
+        true
     }
 
     companion object {

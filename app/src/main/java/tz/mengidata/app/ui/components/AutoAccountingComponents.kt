@@ -582,6 +582,7 @@ fun ReportColorLegendStrip(language: AppLanguage) {
 @Composable
 fun SmartAutoEntrySheet(
     language: AppLanguage,
+    currency: String = "TZS",
     knownParties: List<PartySummary> = emptyList(),
     onDismiss: () -> Unit,
     onSave: (
@@ -763,7 +764,7 @@ fun SmartAutoEntrySheet(
                 OutlinedTextField(
                     value = amountText,
                     onValueChange = { amountText = it.filter { ch -> ch.isDigit() || ch == '.' }; errorText = null },
-                    label = { Text(tr(language, "Kiasi (TZS) *", "Amount *")) },
+                    label = { Text(tr(language, "Kiasi ($currency) *", "Amount ($currency) *")) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
                     shape = OneUiFieldShape,

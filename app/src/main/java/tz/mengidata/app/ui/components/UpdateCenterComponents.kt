@@ -514,8 +514,8 @@ fun UpdateCenterCard(
                                         Text(
                                             text = tr(
                                                 language,
-                                                "Ruhusu usakinishaji wa programu kwa Mengidata ili kuendelea na v${state.info.version}.",
-                                                "Allow 'Install unknown apps' for Mengidata to install v${state.info.version}."
+                                                "Ruhusu usakinishaji wa programu kwa VaultLedger ili kuendelea na v${state.info.version}.",
+                                                "Allow 'Install unknown apps' for VaultLedger to install v${state.info.version}."
                                             ),
                                             style = MaterialTheme.typography.bodySmall,
                                             color = VaultTextPrimary
@@ -843,7 +843,7 @@ fun UpdateCenterCard(
                             color = VaultTextPrimary
                         )
                         Text(
-                            text = tr(language, "Kila saa 12 unapofungua Mengidata", "Every 12 hours on app launch"),
+                            text = tr(language, "Kila saa 12 unapofungua VaultLedger", "Every 12 hours on app launch"),
                             style = MaterialTheme.typography.bodySmall,
                             color = VaultTextMuted
                         )
@@ -1095,7 +1095,7 @@ fun DashboardUpdateCapsule(
                                 color = ChampagneGold
                             )
                             Text(
-                                text = tr(language, "Gusa kuruhusu Mengidata kusakinisha v${updateState.info.version}", "Tap to allow Mengidata to install v${updateState.info.version}"),
+                                text = tr(language, "Gusa kuruhusu VaultLedger kusakinisha v${updateState.info.version}", "Tap to allow VaultLedger to install v${updateState.info.version}"),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = VaultTextMuted
                             )

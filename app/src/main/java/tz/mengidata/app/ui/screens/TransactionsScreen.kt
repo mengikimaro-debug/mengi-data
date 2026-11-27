@@ -83,6 +83,7 @@ import tz.mengidata.app.data.accounting.CategoryAnalyticsEngine
 import tz.mengidata.app.data.accounting.PartyDirectoryEngine
 import tz.mengidata.app.data.accounting.PartyRole
 import tz.mengidata.app.data.accounting.PartySummary
+import tz.mengidata.app.data.db.PendingTransactionEntity
 import tz.mengidata.app.data.db.TransactionCategoryEntity
 import tz.mengidata.app.data.db.TransactionEntity
 import tz.mengidata.app.i18n.AppLanguage
@@ -99,6 +100,10 @@ import tz.mengidata.app.ui.components.OneUiFloatingFab
 import tz.mengidata.app.ui.components.OneUiScreenHeader
 import tz.mengidata.app.ui.components.OneUiSegmentedTabs
 import tz.mengidata.app.ui.components.OneUiSheetShape
+import tz.mengidata.app.ui.components.PendingPaymentUpdateSheet
+import tz.mengidata.app.ui.components.PendingTransactionEditorSheet
+import tz.mengidata.app.ui.components.PendingTransactionRowCard
+import tz.mengidata.app.ui.components.PendingTransactionsSummaryCard
 import tz.mengidata.app.ui.components.PeriodSelectorRow
 import tz.mengidata.app.ui.components.RecognizedNameSuggestionsBar
 import tz.mengidata.app.ui.components.accessibleCategoryAccent
@@ -111,6 +116,7 @@ import tz.mengidata.app.ui.theme.LocalMengiColors
 @Composable
 fun TransactionsScreen(
     transactions: List<TransactionEntity>,
+    pendingTransactions: List<PendingTransactionEntity> = emptyList(),
     categories: List<TransactionCategoryEntity>,
     knownParties: List<PartySummary> = emptyList(),
     selectedPeriod: PeriodFilter,
@@ -122,6 +128,10 @@ fun TransactionsScreen(
     onDuplicateTransaction: (TransactionEntity) -> Unit = {},
     onShareTransactionReceipt: (TransactionEntity) -> Unit = {},
     onDeleteTransaction: (String) -> Unit,
+    onSavePendingTransaction: (PendingTransactionEntity) -> Unit = {},
+    onRecordPendingPayment: (id: String, addedAmount: Double, markFull: Boolean) -> Unit = { _, _, _ -> },
+    onCompletePendingTransaction: (String) -> Unit = {},
+    onDeletePendingTransaction: (String) -> Unit = {},
     onSaveCategory: (TransactionCategoryEntity, previousName: String?) -> Unit,
     onDeleteCategory: (String) -> Unit,
     onExportStatementPdf: (PeriodFilter) -> Unit = {},
@@ -129,15 +139,44 @@ fun TransactionsScreen(
     onExportCategoryAnalyticsCsv: (PeriodFilter) -> Unit
 ) {
     var search by remember { mutableStateOf("") }
+    var pendingSearch by remember { mutableStateOf("") }
+    var pendingFilter by remember { mutableStateOf("all") } // "all" | "unpaid" | "partial" | "full" | "overdue"
     var typeFilter by remember { mutableStateOf("all") }
     var categoryFilter by remember { mutableStateOf<String?>(null) }
     var showCategoryStrip by remember { mutableStateOf(false) }
-    var activeTab by remember { mutableStateOf("list") } // "list" | "analytics"
+    var activeTab by remember { mutableStateOf("list") } // "list" | "pending" | "analytics"
     var editingTxn by remember { mutableStateOf<TransactionEntity?>(null) }
     var showEditor by remember(openEditorTrigger) { mutableStateOf(openEditorTrigger > 0) }
+    var editingPending by remember { mutableStateOf<PendingTransactionEntity?>(null) }
+    var showPendingEditor by remember { mutableStateOf(false) }
+    var paymentUpdatingPending by remember { mutableStateOf<PendingTransactionEntity?>(null) }
     var showCategoryManager by remember { mutableStateOf(false) }
     var categoryManagerInitialType by remember { mutableStateOf("expense") }
     var pendingDeleteTxnId by remember { mutableStateOf<String?>(null) }
+    var pendingDeleteWaitingId by remember { mutableStateOf<String?>(null) }
+
+    val filteredPending = remember(pendingTransactions, pendingSearch, pendingFilter, language) {
+        val q = pendingSearch.trim().lowercase()
+        pendingTransactions.filter { item ->
+            val filterOk = when (pendingFilter) {
+                "unpaid" -> item.isUnpaid
+                "partial" -> item.isPartiallyPaid
+                "full" -> item.isFullyPaid
+                "overdue" -> item.isOverdue
+                else -> true
+            }
+            val queryOk = q.isEmpty() ||
+                item.description.lowercase().contains(q) ||
+                item.details.lowercase().contains(q) ||
+                item.party.lowercase().contains(q) ||
+                item.phoneNumber.lowercase().contains(q) ||
+                item.location.lowercase().contains(q) ||
+                item.category.lowercase().contains(q) ||
+                FormatUtils.localizedCategory(item.category, language).lowercase().contains(q) ||
+                item.expectedDate.contains(q)
+            filterOk && queryOk
+        }
+    }
 
     val categoryLookup = remember(categories) {
         categories.associateBy { "${it.type}:${it.name.trim().lowercase()}" }
@@ -278,24 +317,145 @@ fun TransactionsScreen(
             item(key = "view_mode_switcher") {
                 OneUiSegmentedTabs(
                     options = listOf(
-                        tr(language, "Orodha (${filtered.size})", "Ledger (${filtered.size})"),
-                        tr(language, "Uchambuzi wa Makundi", "Category Analytics")
+                        tr(language, "Ledger (${filtered.size})", "Ledger (${filtered.size})"),
+                        tr(language, "Inayosubiri (${pendingTransactions.size})", "Pending (${pendingTransactions.size})"),
+                        tr(language, "Makundi", "Analytics")
                     ),
-                    selectedIndex = if (activeTab == "list") 0 else 1,
-                    onSelect = { activeTab = if (it == 0) "list" else "analytics" },
-                    testTags = listOf("txns_tab_list", "txns_tab_analytics")
+                    selectedIndex = when (activeTab) {
+                        "list" -> 0
+                        "pending" -> 1
+                        else -> 2
+                    },
+                    onSelect = { idx ->
+                        activeTab = when (idx) {
+                            0 -> "list"
+                            1 -> "pending"
+                            else -> "analytics"
+                        }
+                    },
+                    testTags = listOf("txns_tab_list", "txns_tab_pending", "txns_tab_analytics")
                 )
             }
 
-            item(key = "ledger_period_selector") {
-                PeriodSelectorRow(
-                    selected = selectedPeriod,
-                    language = language,
-                    onSelect = onSelectPeriod
-                )
+            if (activeTab != "pending") {
+                item(key = "ledger_period_selector") {
+                    PeriodSelectorRow(
+                        selected = selectedPeriod,
+                        language = language,
+                        onSelect = onSelectPeriod
+                    )
+                }
             }
 
-            if (activeTab == "analytics" && analyticsReport != null) {
+            if (activeTab == "pending") {
+                item(key = "pending_summary", contentType = "pending_summary") {
+                    PendingTransactionsSummaryCard(
+                        pendingItems = pendingTransactions,
+                        currency = currency,
+                        language = language
+                    )
+                }
+
+                item(key = "pending_search_and_filters", contentType = "pending_search") {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedTextField(
+                            value = pendingSearch,
+                            onValueChange = { pendingSearch = it },
+                            placeholder = {
+                                Text(
+                                    tr(
+                                        language,
+                                        "Tafuta jina, simu, eneo au maelezo...",
+                                        "Search name, phone, location or details..."
+                                    )
+                                )
+                            },
+                            leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                            trailingIcon = if (pendingSearch.isNotEmpty()) {
+                                {
+                                    IconButton(onClick = { pendingSearch = "" }) {
+                                        Icon(
+                                            Icons.Rounded.Close,
+                                            contentDescription = tr(language, "Futa utafutaji", "Clear search")
+                                        )
+                                    }
+                                }
+                            } else null,
+                            singleLine = true,
+                            shape = CircleShape,
+                            colors = oneUiTextFieldColors(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("pending_txns_search_input")
+                        )
+
+                        val pUnpaidCount = remember(pendingTransactions) { pendingTransactions.count { it.isUnpaid } }
+                        val pPartialCount = remember(pendingTransactions) { pendingTransactions.count { it.isPartiallyPaid } }
+                        val pFullCount = remember(pendingTransactions) { pendingTransactions.count { it.isFullyPaid } }
+                        val pOverdueCount = remember(pendingTransactions) { pendingTransactions.count { it.isOverdue } }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            listOf(
+                                "all" to tr(language, "Zote (${pendingTransactions.size})", "All (${pendingTransactions.size})"),
+                                "unpaid" to tr(language, "Hajalipa ($pUnpaidCount)", "Unpaid ($pUnpaidCount)"),
+                                "partial" to tr(language, "Amelipa Nusu ($pPartialCount)", "Partial ($pPartialCount)"),
+                                "full" to tr(language, "Kalipa Chote ($pFullCount)", "Paid Full ($pFullCount)"),
+                                "overdue" to tr(language, "Zimechelewa ($pOverdueCount)", "Overdue ($pOverdueCount)")
+                            ).forEach { (key, label) ->
+                                FilterChip(
+                                    selected = pendingFilter == key,
+                                    onClick = { pendingFilter = key },
+                                    shape = CircleShape,
+                                    label = { Text(label, maxLines = 1) },
+                                    modifier = Modifier.testTag("pending_filter_$key")
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (filteredPending.isEmpty()) {
+                    item(key = "pending_empty", contentType = "pending_empty") {
+                        EmptyStateCard(
+                            icon = Icons.Rounded.AccountBalanceWallet,
+                            title = tr(language, "Hakuna malipo yanayosubiri", "No pending payments"),
+                            subtitle = tr(
+                                language,
+                                "Hifadhi malipo yanayosubiri pamoja na jina, simu, eneo na kiasi kilicholipwa.",
+                                "Track pending payments with name, phone, location, and partial or full payment status."
+                            ),
+                            actionLabel = tr(language, "Ongeza Malipo Yanayosubiri", "Add Pending Payment"),
+                            onAction = {
+                                editingPending = null
+                                showPendingEditor = true
+                            }
+                        )
+                    }
+                } else {
+                    items(
+                        items = filteredPending,
+                        key = { "pending_${it.id}" },
+                        contentType = { "pending_txn_row" }
+                    ) { pendingItem ->
+                        PendingTransactionRowCard(
+                            item = pendingItem,
+                            currency = currency,
+                            language = language,
+                            onRecordPayment = { paymentUpdatingPending = pendingItem },
+                            onCompleteToLedger = { onCompletePendingTransaction(pendingItem.id) },
+                            onEdit = {
+                                editingPending = pendingItem
+                                showPendingEditor = true
+                            },
+                            onDelete = { pendingDeleteWaitingId = pendingItem.id }
+                        )
+                    }
+                }
+            } else if (activeTab == "analytics" && analyticsReport != null) {
 
                 item(key = "analytics_breakdown") {
                     CategoryAnalyticsCard(
@@ -620,10 +780,19 @@ fun TransactionsScreen(
 
         OneUiFloatingFab(
             icon = Icons.Rounded.Add,
-            contentDescription = tr(language, "Ongeza muamala", "Add transaction"),
+            contentDescription = if (activeTab == "pending") {
+                tr(language, "Ongeza muamala unaosubiri", "Add pending transaction")
+            } else {
+                tr(language, "Ongeza muamala", "Add transaction")
+            },
             onClick = {
-                editingTxn = null
-                showEditor = true
+                if (activeTab == "pending") {
+                    editingPending = null
+                    showPendingEditor = true
+                } else {
+                    editingTxn = null
+                    showEditor = true
+                }
             },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
@@ -637,6 +806,7 @@ fun TransactionsScreen(
             initial = editingTxn,
             categories = categories,
             knownParties = knownParties,
+            currency = currency,
             language = language,
             onDismiss = {
                 showEditor = false
@@ -654,10 +824,46 @@ fun TransactionsScreen(
         )
     }
 
+    if (showPendingEditor) {
+        PendingTransactionEditorSheet(
+            initial = editingPending,
+            knownParties = knownParties,
+            currency = currency,
+            language = language,
+            onDismiss = {
+                showPendingEditor = false
+                editingPending = null
+            },
+            onSave = { item ->
+                onSavePendingTransaction(item)
+                showPendingEditor = false
+                editingPending = null
+            }
+        )
+    }
+
+    paymentUpdatingPending?.let { item ->
+        PendingPaymentUpdateSheet(
+            item = item,
+            currency = currency,
+            language = language,
+            onDismiss = { paymentUpdatingPending = null },
+            onRecordPartialPayment = { added ->
+                onRecordPendingPayment(item.id, added, false)
+                paymentUpdatingPending = null
+            },
+            onMarkFullyPaid = {
+                onRecordPendingPayment(item.id, 0.0, true)
+                paymentUpdatingPending = null
+            }
+        )
+    }
+
     if (showCategoryManager) {
         CategoryManagerSheet(
             categories = categories,
             initialType = categoryManagerInitialType,
+            currency = currency,
             language = language,
             onDismiss = { showCategoryManager = false },
             onSaveCategory = onSaveCategory,
@@ -681,6 +887,25 @@ fun TransactionsScreen(
                 pendingDeleteTxnId = null
             },
             onDismiss = { pendingDeleteTxnId = null }
+        )
+    }
+
+    pendingDeleteWaitingId?.let { id ->
+        ConfirmActionDialog(
+            title = tr(language, "Futa muamala unaosubiri?", "Delete pending transaction?"),
+            message = tr(
+                language,
+                "Muamala huu unaosubiri na maelezo yake vitaondolewa.",
+                "This pending transaction and its details will be removed."
+            ),
+            confirmLabel = tr(language, "Futa", "Delete"),
+            cancelLabel = tr(language, "Ghairi", "Cancel"),
+            isDanger = true,
+            onConfirm = {
+                onDeletePendingTransaction(id)
+                pendingDeleteWaitingId = null
+            },
+            onDismiss = { pendingDeleteWaitingId = null }
         )
     }
 }
@@ -985,6 +1210,7 @@ private fun TransactionEditorSheet(
     initial: TransactionEntity?,
     categories: List<TransactionCategoryEntity>,
     knownParties: List<PartySummary>,
+    currency: String = "TZS",
     language: AppLanguage,
     onDismiss: () -> Unit,
     onOpenCategoryManager: (activeType: String) -> Unit,
@@ -999,8 +1225,8 @@ private fun TransactionEditorSheet(
         mutableStateOf(initial?.let { AutoAccountingEngine.isHouseholdTransaction(it) } ?: false)
     }
     var description by remember(initial) { mutableStateOf(initial?.description ?: "") }
-    var amountText by remember(initial) {
-        mutableStateOf(if (initial != null && initial.amount > 0) initial.amount.toLong().toString() else "")
+    var amountText by remember(initial, currency) {
+        mutableStateOf(if (initial != null && initial.amount > 0) FormatUtils.formatEditableAmount(initial.amount, currency) else "")
     }
     var party by remember(initial) { mutableStateOf(initial?.party ?: "") }
 
@@ -1148,7 +1374,7 @@ private fun TransactionEditorSheet(
                 OutlinedTextField(
                     value = amountText,
                     onValueChange = { amountText = it.filter { ch -> ch.isDigit() || ch == '.' }; errorText = null },
-                    label = { Text(tr(language, "Kiasi (TZS) *", "Amount *")) },
+                    label = { Text(tr(language, "Kiasi ($currency) *", "Amount ($currency) *")) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
                     shape = OneUiFieldShape,

@@ -369,7 +369,7 @@ fun PinLockScreen(
             ) {
                 Image(
                     painter = painterResource(R.drawable.mengidata_oneui_icon_1795525888393),
-                    contentDescription = businessName.ifBlank { "Mengidata" },
+                    contentDescription = businessName.ifBlank { "VaultLedger" },
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
                 )
@@ -377,7 +377,7 @@ fun PinLockScreen(
 
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
-                    text = businessName.ifBlank { "Mengidata" },
+                    text = businessName.ifBlank { "VaultLedger" },
                     style = MaterialTheme.typography.headlineMedium,
                     color = Color(0xFFE6EAF0)
                 )

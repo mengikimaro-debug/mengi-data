@@ -939,24 +939,25 @@ private fun InvoiceBuilderSheet(
         mutableStateOf(initial?.invoice?.dueDate ?: FormatUtils.addDaysIso(FormatUtils.todayIso(), 14))
     }
     var state by remember(initial) { mutableStateOf(initial?.invoice?.state ?: "issued") }
-    var discountText by remember(initial) {
-        mutableStateOf(if ((initial?.invoice?.discount ?: 0.0) > 0) initial!!.invoice.discount.toLong().toString() else "")
+    val editorCurrency = settings.currency.ifBlank { "TZS" }
+    var discountText by remember(initial, editorCurrency) {
+        mutableStateOf(if ((initial?.invoice?.discount ?: 0.0) > 0) FormatUtils.formatEditableAmount(initial!!.invoice.discount, editorCurrency) else "")
     }
     var vatText by remember(initial) {
         val v = initial?.invoice?.vatRate ?: settings.vatRate
         mutableStateOf(if (v > 0) v.toString() else "0")
     }
-    var paidText by remember(initial) {
-        mutableStateOf(if ((initial?.invoice?.amountPaid ?: 0.0) > 0) initial!!.invoice.amountPaid.toLong().toString() else "")
+    var paidText by remember(initial, editorCurrency) {
+        mutableStateOf(if ((initial?.invoice?.amountPaid ?: 0.0) > 0) FormatUtils.formatEditableAmount(initial!!.invoice.amountPaid, editorCurrency) else "")
     }
     var notes by remember(initial) { mutableStateOf(initial?.invoice?.notes ?: "") }
     var errorText by remember { mutableStateOf<String?>(null) }
 
-    val lineItems = remember(initial) {
+    val lineItems = remember(initial, editorCurrency) {
         mutableStateListOf<DraftLineItem>().apply {
             if (initial != null && initial.orderedItems.isNotEmpty()) {
                 initial.orderedItems.forEach {
-                    add(DraftLineItem(it.description, it.qty.toInt().toString(), it.price.toLong().toString()))
+                    add(DraftLineItem(it.description, it.qty.toInt().toString(), FormatUtils.formatEditableAmount(it.price, editorCurrency)))
                 }
             } else {
                 add(DraftLineItem())

@@ -1,6 +1,6 @@
 {
-  "name": "Mengidata",
-  "description": "Offline-first Android business finance app for transactions, PDF invoices, bills, savings goals, business notebook, and secure self-updates.",
+  "name": "VaultLedger",
+  "description": "Offline-first Android personal and business finance app for zero-loss cash ledger, pending payments, household vs personal bills, PDF invoices, savings goals, and automatic Android system reminders.",
   "requestFramePermissions": [],
   "majorCapabilities": []
 }

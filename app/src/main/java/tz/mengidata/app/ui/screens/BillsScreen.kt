@@ -379,6 +379,7 @@ fun BillsScreen(
             initial = editingBill,
             defaultHousehold = selectedCategoryTab == BillCategoryTab.HOUSEHOLD,
             knownParties = knownParties,
+            currency = currency,
             language = language,
             onDismiss = {
                 showEditor = false
@@ -764,6 +765,7 @@ private fun BillEditorSheet(
     initial: BillEntity?,
     defaultHousehold: Boolean = false,
     knownParties: List<PartySummary>,
+    currency: String = "TZS",
     language: AppLanguage,
     onDismiss: () -> Unit,
     onSave: (BillEntity) -> Unit
@@ -777,8 +779,8 @@ private fun BillEditorSheet(
     }
     var name by remember(initial) { mutableStateOf(initial?.name ?: "") }
     var payee by remember(initial) { mutableStateOf(initial?.payee ?: "") }
-    var amountText by remember(initial) {
-        mutableStateOf(if (initial != null && initial.amount > 0) initial.amount.toLong().toString() else "")
+    var amountText by remember(initial, currency) {
+        mutableStateOf(if (initial != null && initial.amount > 0) FormatUtils.formatEditableAmount(initial.amount, currency) else "")
     }
     var dueDate by remember(initial) { mutableStateOf(initial?.dueDate ?: FormatUtils.todayIso()) }
     var category by remember(initial, defaultHousehold) {
@@ -934,7 +936,7 @@ private fun BillEditorSheet(
                 OutlinedTextField(
                     value = amountText,
                     onValueChange = { amountText = it.filter { c -> c.isDigit() || c == '.' }; errorText = null },
-                    label = { Text(tr(language, "Kiasi (TZS) *", "Amount *")) },
+                    label = { Text(tr(language, "Kiasi ($currency) *", "Amount ($currency) *")) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
                     shape = OneUiFieldShape,

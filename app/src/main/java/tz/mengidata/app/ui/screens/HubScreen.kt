@@ -240,6 +240,7 @@ fun HubScreen(
         SavingsGoalEditorSheet(
             initial = editingGoal,
             knownParties = knownParties,
+            currency = currency,
             language = language,
             onDismiss = { showGoalEditor = false; editingGoal = null },
             onSave = { goal ->
@@ -586,14 +587,15 @@ private fun OneUiSavingsGoalCard(
 private fun SavingsGoalEditorSheet(
     initial: SavingsGoalEntity?,
     knownParties: List<PartySummary>,
+    currency: String = "TZS",
     language: AppLanguage,
     onDismiss: () -> Unit,
     onSave: (SavingsGoalEntity) -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var title by remember(initial) { mutableStateOf(initial?.title ?: "") }
-    var targetText by remember(initial) { mutableStateOf(if ((initial?.targetAmount ?: 0.0) > 0) initial!!.targetAmount.toLong().toString() else "") }
-    var currentText by remember(initial) { mutableStateOf(if ((initial?.currentAmount ?: 0.0) > 0) initial!!.currentAmount.toLong().toString() else "0") }
+    var targetText by remember(initial, currency) { mutableStateOf(if ((initial?.targetAmount ?: 0.0) > 0) FormatUtils.formatEditableAmount(initial!!.targetAmount, currency) else "") }
+    var currentText by remember(initial, currency) { mutableStateOf(if ((initial?.currentAmount ?: 0.0) > 0) FormatUtils.formatEditableAmount(initial!!.currentAmount, currency) else "0") }
     var targetDate by remember(initial) { mutableStateOf(initial?.targetDate ?: FormatUtils.addMonthsIso(FormatUtils.todayIso(), 6)) }
     var notes by remember(initial) { mutableStateOf(initial?.notes ?: "") }
     var errorText by remember { mutableStateOf<String?>(null) }
@@ -640,7 +642,7 @@ private fun SavingsGoalEditorSheet(
                 OutlinedTextField(
                     value = targetText,
                     onValueChange = { targetText = it.filter { c -> c.isDigit() || c == '.' }; errorText = null },
-                    label = { Text(tr(language, "Lengo (TZS) *", "Target *")) },
+                    label = { Text(tr(language, "Lengo ($currency) *", "Target ($currency) *")) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
                     shape = OneUiFieldShape,

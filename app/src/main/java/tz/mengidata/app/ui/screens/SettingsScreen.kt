@@ -253,8 +253,8 @@ fun SettingsScreen(
                                 } else {
                                     tr(
                                         language,
-                                        "Inahitaji Android 13+ — inatumia rangi salama za Mengidata.",
-                                        "Requires Android 13+ — using accessible Mengidata palette."
+                                        "Inahitaji Android 13+ — inatumia rangi salama za VaultLedger.",
+                                        "Requires Android 13+ — using accessible VaultLedger palette."
                                     )
                                 },
                                 style = MaterialTheme.typography.bodySmall,
@@ -390,8 +390,8 @@ fun SettingsScreen(
                             Text(
                                 text = tr(
                                     language,
-                                    "Huhitaji namba ya siri unapofungua Mengidata (usimbaji wa SHA-256).",
-                                    "Requires your 4-digit PIN to open Mengidata (salted SHA-256)."
+                                    "Huhitaji namba ya siri unapofungua VaultLedger (usimbaji wa SHA-256).",
+                                    "Requires your 4-digit PIN to open VaultLedger (salted SHA-256)."
                                 ),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -584,7 +584,7 @@ fun SettingsScreen(
                             onClick = {
                                 onSaveSettings(
                                     settings.copy(
-                                        businessName = businessName.trim().ifBlank { "Mengidata" },
+                                        businessName = businessName.trim().ifBlank { "VaultLedger" },
                                         ownerName = ownerName.trim(),
                                         tagline = tagline.trim(),
                                         address = address.trim(),

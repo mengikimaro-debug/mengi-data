@@ -1,5 +1,10 @@
 package tz.mengidata.app.ui.components
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -13,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -26,15 +32,22 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.CurrencyExchange
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Savings
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.VerifiedUser
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
@@ -43,6 +56,10 @@ import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -52,6 +69,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -95,19 +114,24 @@ fun MengiSidebarSheet(
     language: AppLanguage,
     updateState: UpdateUiState,
     privacyMaskEnabled: Boolean = false,
+    isConvertingCurrency: Boolean = false,
     partyCount: Int = 0,
     selectedRouteMatch: (Any) -> Boolean,
     isSettingsSelected: Boolean,
     onSelectDestination: (Any) -> Unit,
+    onSelectCurrency: (String) -> Unit = {},
     onOpenAutoAccounting: () -> Unit = {},
     onOpenPartyDirectory: () -> Unit = {},
     onOpenSettings: () -> Unit,
+    onOpenAboutApp: () -> Unit = {},
     onCloseDrawer: () -> Unit
 ) {
     val colors = LocalMengiColors.current
     val themeState = LocalMengiThemeState.current
-    val currency = settings.currency.ifBlank { "TZS" }
+    val currency = FormatUtils.normalizeCurrencyCode(settings.currency)
+    val activeCurrencyOption = FormatUtils.findCurrency(currency)
     val hasUpdate = updateState is UpdateUiState.Available
+    var currencyListExpanded by remember { mutableStateOf(false) }
 
     ModalDrawerSheet(
         modifier = Modifier
@@ -164,14 +188,14 @@ fun MengiSidebarSheet(
                                 ) {
                                     Image(
                                         painter = painterResource(id = R.drawable.mengidata_oneui_icon_1795525888393),
-                                        contentDescription = "Mengidata",
+                                        contentDescription = "VaultLedger",
                                         contentScale = ContentScale.Crop,
                                         modifier = Modifier.fillMaxSize()
                                     )
                                 }
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = settings.businessName.ifBlank { "Mengidata" },
+                                        text = settings.businessName.ifBlank { "VaultLedger" },
                                         style = MaterialTheme.typography.titleLarge,
                                         color = Color(0xFFEBE9E3),
                                         maxLines = 1,
@@ -356,6 +380,158 @@ fun MengiSidebarSheet(
                 NavigationDrawerItem(
                     label = {
                         Text(
+                            text = tr(language, "Sarafu", "Currency"),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = if (currencyListExpanded) FontWeight.Bold else FontWeight.Medium
+                        )
+                    },
+                    selected = currencyListExpanded,
+                    onClick = { currencyListExpanded = !currencyListExpanded },
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Rounded.CurrencyExchange,
+                            contentDescription = tr(language, "Sarafu", "Currency")
+                        )
+                    },
+                    badge = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                shape = CircleShape
+                            ) {
+                                if (isConvertingCurrency) {
+                                    Box(
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        CircularProgressIndicator(
+                                            strokeWidth = 2.dp,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                    }
+                                } else {
+                                    Text(
+                                        text = activeCurrencyOption.symbol,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp)
+                                    )
+                                }
+                            }
+                            Icon(
+                                imageVector = if (currencyListExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    },
+                    shape = CircleShape,
+                    colors = itemColors,
+                    modifier = Modifier
+                        .padding(vertical = 2.dp)
+                        .testTag("drawer_currency_item")
+                )
+
+                AnimatedVisibility(
+                    visible = currencyListExpanded,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        border = BorderStroke(1.dp, colors.cardBorder),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                            .testTag("drawer_currency_list")
+                    ) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            FormatUtils.supportedCurrencies.forEachIndexed { index, option ->
+                                val isSelected = option.code.equals(currency, ignoreCase = true)
+                                Surface(
+                                    onClick = {
+                                        if (!isConvertingCurrency) {
+                                            onSelectCurrency(option.code)
+                                            currencyListExpanded = false
+                                        }
+                                    },
+                                    color = if (isSelected) {
+                                        MaterialTheme.colorScheme.primaryContainer
+                                    } else {
+                                        Color.Transparent
+                                    },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(min = 48.dp)
+                                        .semantics {
+                                            contentDescription = option.symbol
+                                        }
+                                        .testTag("drawer_currency_${option.code.lowercase()}")
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = option.symbol,
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                                            color = if (isSelected) {
+                                                MaterialTheme.colorScheme.primary
+                                            } else {
+                                                MaterialTheme.colorScheme.onSurface
+                                            },
+                                            maxLines = 1
+                                        )
+                                        if (isSelected) {
+                                            Surface(
+                                                shape = CircleShape,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(20.dp)
+                                            ) {
+                                                Box(contentAlignment = Alignment.Center) {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.Check,
+                                                        contentDescription = null,
+                                                        tint = MaterialTheme.colorScheme.onPrimary,
+                                                        modifier = Modifier.size(13.dp)
+                                                    )
+                                                }
+                                            }
+                                        } else {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(18.dp)
+                                                    .clip(CircleShape)
+                                                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                                            )
+                                        }
+                                    }
+                                }
+                                if (index < FormatUtils.supportedCurrencies.lastIndex) {
+                                    HorizontalDivider(
+                                        color = colors.cardBorder,
+                                        thickness = 0.8.dp
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                NavigationDrawerItem(
+                    label = {
+                        Text(
                             text = tr(language, "Uchambuzi wa Kiotomatiki", "Auto-Accounting"),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Medium,
@@ -464,6 +640,29 @@ fun MengiSidebarSheet(
                     modifier = Modifier
                         .padding(vertical = 2.dp)
                         .testTag("drawer_settings_item")
+                )
+
+                NavigationDrawerItem(
+                    label = {
+                        Text(
+                            text = tr(language, "Kuhusu App", "About App"),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Medium
+                        )
+                    },
+                    selected = false,
+                    onClick = onOpenAboutApp,
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Rounded.Info,
+                            contentDescription = tr(language, "Kuhusu App", "About App")
+                        )
+                    },
+                    shape = CircleShape,
+                    colors = itemColors,
+                    modifier = Modifier
+                        .padding(vertical = 2.dp)
+                        .testTag("drawer_about_app_item")
                 )
             }
 

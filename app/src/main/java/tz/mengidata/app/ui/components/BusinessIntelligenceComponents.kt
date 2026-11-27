@@ -726,8 +726,8 @@ fun PartyDirectorySheet(
                                         onClick = {
                                             val msg = tr(
                                                 language,
-                                                "Habari ${party.name}, tunakukumbusha salio la ankara ${FormatUtils.formatMoney(party.unpaidReceivables, currency)} kutoka ${businessName.ifBlank { "Mengidata" }}. Asante!",
-                                                "Hello ${party.name}, friendly reminder of your outstanding invoice balance of ${FormatUtils.formatMoney(party.unpaidReceivables, currency)} with ${businessName.ifBlank { "Mengidata" }}. Thank you!"
+                                                "Habari ${party.name}, tunakukumbusha salio la ankara ${FormatUtils.formatMoney(party.unpaidReceivables, currency)} kutoka ${businessName.ifBlank { "VaultLedger" }}. Asante!",
+                                                "Hello ${party.name}, friendly reminder of your outstanding invoice balance of ${FormatUtils.formatMoney(party.unpaidReceivables, currency)} with ${businessName.ifBlank { "VaultLedger" }}. Thank you!"
                                             )
                                             val send = Intent(Intent.ACTION_SEND).apply {
                                                 type = "text/plain"

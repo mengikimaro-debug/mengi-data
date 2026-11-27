@@ -13,7 +13,7 @@ import kotlin.math.min
 @Entity(tableName = "business_settings")
 data class BusinessSettingsEntity(
     @PrimaryKey val id: Int = 1,
-    val businessName: String = "Mengidata",
+    val businessName: String = "VaultLedger",
     val ownerName: String = "",
     val tagline: String = "Dashibodi ya biashara na fedha",
     val address: String = "",
@@ -236,5 +236,46 @@ data class DeletedRecordEntity(
     val deletedAt: String = FormatUtils.todayIso(),
     val deletedAtMillis: Long = System.currentTimeMillis()
 )
+
+@Entity(
+    tableName = "pending_transactions",
+    indices = [Index(value = ["expectedDate"])]
+)
+data class PendingTransactionEntity(
+    @PrimaryKey val id: String,
+    val type: String = "expense", // "income" | "expense"
+    val description: String,
+    val details: String = "",
+    val party: String = "",
+    val phoneNumber: String = "",
+    val location: String = "",
+    val category: String = "Mengineyo",
+    val amount: Double = 0.0,
+    val paidAmount: Double = 0.0,
+    val method: String = "M-Pesa",
+    val expectedDate: String = FormatUtils.todayIso(),
+    val createdAt: String = FormatUtils.nowIsoTimestamp()
+) {
+    val isIncome: Boolean get() = type == "income"
+    val isOverdue: Boolean get() = !isFullyPaid && FormatUtils.isOverdue(expectedDate)
+
+    val effectivePaidAmount: Double
+        get() = paidAmount.coerceIn(0.0, max(amount, 0.0))
+
+    val remainingAmount: Double
+        get() = max(amount - effectivePaidAmount, 0.0)
+
+    val isFullyPaid: Boolean
+        get() = amount > 0.0 && remainingAmount <= 0.005
+
+    val isPartiallyPaid: Boolean
+        get() = effectivePaidAmount > 0.005 && remainingAmount > 0.005
+
+    val isUnpaid: Boolean
+        get() = effectivePaidAmount <= 0.005
+
+    val paymentProgressRatio: Float
+        get() = if (amount <= 0.0) 0f else (effectivePaidAmount / amount).toFloat().coerceIn(0f, 1f)
+}
 
 

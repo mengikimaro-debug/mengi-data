@@ -493,6 +493,7 @@ private fun CategoryBreakdownRow(
 fun CategoryManagerSheet(
     categories: List<TransactionCategoryEntity>,
     initialType: String = "expense",
+    currency: String = "TZS",
     language: AppLanguage,
     onDismiss: () -> Unit,
     onSaveCategory: (TransactionCategoryEntity, previousName: String?) -> Unit,
@@ -772,8 +773,8 @@ fun CategoryManagerSheet(
                 val displayName = remember(cat.name, language) {
                     FormatUtils.localizedCategory(cat.name, language)
                 }
-                val formattedBudget = remember(cat.monthlyBudget) {
-                    if (cat.monthlyBudget > 0.0) FormatUtils.formatCompactMoney(cat.monthlyBudget) else ""
+                val formattedBudget = remember(cat.monthlyBudget, currency) {
+                    if (cat.monthlyBudget > 0.0) FormatUtils.formatCompactMoney(cat.monthlyBudget, currency) else ""
                 }
                 val isFallback = cat.name == "Mapato mengine" || cat.name == "Matumizi mengine"
                 Surface(
@@ -824,7 +825,7 @@ fun CategoryManagerSheet(
                                 nameInput = cat.name
                                 iconKey = cat.iconKey
                                 colorHex = cat.colorHex
-                                budgetText = if (cat.monthlyBudget > 0.0) cat.monthlyBudget.toLong().toString() else ""
+                                budgetText = if (cat.monthlyBudget > 0.0) FormatUtils.formatEditableAmount(cat.monthlyBudget, currency) else ""
                                 errorText = null
                             },
                             modifier = Modifier.size(44.dp)

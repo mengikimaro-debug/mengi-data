@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Mengidata</string>
+    <string name="app_name">VaultLedger</string>
     <string name="app_tagline">Dashibodi ya biashara na fedha</string>
     <string name="cd_settings">Mipangilio</string>
     <string name="cd_toggle_language">Badili lugha</string>

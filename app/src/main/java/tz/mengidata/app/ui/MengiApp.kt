@@ -93,6 +93,7 @@ import kotlinx.coroutines.launch
 import tz.mengidata.app.R
 import tz.mengidata.app.i18n.AppLanguage
 import tz.mengidata.app.i18n.tr
+import tz.mengidata.app.ui.components.AboutAppSheet
 import tz.mengidata.app.ui.components.AutoAccountingSheet
 import tz.mengidata.app.ui.components.GlobalSearchSheet
 import tz.mengidata.app.ui.components.MengiSidebarSheet
@@ -159,6 +160,7 @@ fun MengiApp(viewModel: MengiViewModel) {
     var showAutoAccountingSheet by remember { mutableStateOf(false) }
     var showPartyDirectory by remember { mutableStateOf(false) }
     var showGlobalRecoveryVault by remember { mutableStateOf(false) }
+    var showAboutApp by remember { mutableStateOf(false) }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -357,18 +359,23 @@ fun MengiApp(viewModel: MengiViewModel) {
                 val drawerLedger by viewModel.zeroLossLedger.collectAsStateWithLifecycle()
                 val drawerUpdateState by viewModel.updateState.collectAsStateWithLifecycle()
                 val drawerParties by viewModel.partyDirectory.collectAsStateWithLifecycle()
+                val isConvertingCurrency by viewModel.isConvertingCurrency.collectAsStateWithLifecycle()
                 MengiSidebarSheet(
                     settings = settings,
                     zeroLossLedger = drawerLedger,
                     language = language,
                     updateState = drawerUpdateState,
                     privacyMaskEnabled = privacyMaskEnabled,
+                    isConvertingCurrency = isConvertingCurrency,
                     partyCount = drawerParties.size,
                     selectedRouteMatch = { route -> currentDestination?.hasRoute(route::class) == true },
                     isSettingsSelected = isSettings,
                     onSelectDestination = { route ->
                         scope.launch { drawerState.close() }
                         navigateTopLevel(route)
+                    },
+                    onSelectCurrency = { code ->
+                        viewModel.setCurrency(code)
                     },
                     onOpenAutoAccounting = {
                         scope.launch { drawerState.close() }
@@ -381,6 +388,10 @@ fun MengiApp(viewModel: MengiViewModel) {
                     onOpenSettings = {
                         scope.launch { drawerState.close() }
                         openSettings()
+                    },
+                    onOpenAboutApp = {
+                        scope.launch { drawerState.close() }
+                        showAboutApp = true
                     },
                     onCloseDrawer = {
                         scope.launch { drawerState.close() }
@@ -470,13 +481,13 @@ fun MengiApp(viewModel: MengiViewModel) {
                                             ) {
                                                 Image(
                                                     painter = painterResource(id = R.drawable.mengidata_oneui_icon_1795525888393),
-                                                    contentDescription = "Mengidata",
+                                                    contentDescription = "VaultLedger",
                                                     contentScale = ContentScale.Crop,
                                                     modifier = Modifier.fillMaxSize()
                                                 )
                                             }
                                             Text(
-                                                text = settings.businessName.ifBlank { "Mengidata" },
+                                                text = settings.businessName.ifBlank { "VaultLedger" },
                                                 style = MaterialTheme.typography.titleLarge,
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis
@@ -647,11 +658,13 @@ fun MengiApp(viewModel: MengiViewModel) {
 
                                     composable<TransactionsRoute> {
                                         val transactions by viewModel.transactions.collectAsStateWithLifecycle()
+                                        val pendingTransactions by viewModel.pendingTransactions.collectAsStateWithLifecycle()
                                         val categories by viewModel.categories.collectAsStateWithLifecycle()
                                         val partyDirectory by viewModel.partyDirectory.collectAsStateWithLifecycle()
                                         val selectedPeriod by viewModel.selectedPeriod.collectAsStateWithLifecycle()
                                         TransactionsScreen(
                                             transactions = transactions,
+                                            pendingTransactions = pendingTransactions,
                                             categories = categories,
                                             knownParties = partyDirectory,
                                             selectedPeriod = selectedPeriod,
@@ -666,6 +679,10 @@ fun MengiApp(viewModel: MengiViewModel) {
                                                 runCatching { context.startActivity(Intent.createChooser(send, null)) }
                                             },
                                             onDeleteTransaction = viewModel::deleteTransaction,
+                                            onSavePendingTransaction = viewModel::savePendingTransaction,
+                                            onRecordPendingPayment = viewModel::recordPendingPayment,
+                                            onCompletePendingTransaction = viewModel::completePendingTransaction,
+                                            onDeletePendingTransaction = viewModel::deletePendingTransaction,
                                             onSaveCategory = viewModel::saveCategory,
                                             onDeleteCategory = { viewModel.deleteCategory(it) },
                                             onExportStatementPdf = viewModel::exportFinancialStatementPdf,
@@ -946,6 +963,13 @@ fun MengiApp(viewModel: MengiViewModel) {
                 onDeletePermanently = viewModel::permanentlyDeleteTrashRecord,
                 onEmptyVault = viewModel::emptyTrash,
                 onDismiss = { showGlobalRecoveryVault = false }
+            )
+        }
+
+        if (showAboutApp) {
+            AboutAppSheet(
+                language = language,
+                onDismiss = { showAboutApp = false }
             )
         }
         }

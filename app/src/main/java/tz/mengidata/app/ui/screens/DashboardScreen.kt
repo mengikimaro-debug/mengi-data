@@ -176,7 +176,7 @@ fun DashboardScreen(
             // Samsung One UI 8.5 Viewing Area Header + Pill Period Selector
             item(key = "header") {
                 OneUiScreenHeader(
-                    eyebrow = settings.businessName.ifBlank { "Mengidata" },
+                    eyebrow = settings.businessName.ifBlank { "VaultLedger" },
                     title = tr(language, "Dashibodi ya Fedha", "Finance Overview")
                 )
                 Spacer(Modifier.height(10.dp))
@@ -756,6 +756,7 @@ fun DashboardScreen(
     if (showSmartEntry) {
         SmartAutoEntrySheet(
             language = language,
+            currency = settings.currency.ifBlank { "TZS" },
             knownParties = knownParties,
             onDismiss = { showSmartEntry = false },
             onSave = { desc, amt, party, method, date, overrideBucket, markBillPaid ->

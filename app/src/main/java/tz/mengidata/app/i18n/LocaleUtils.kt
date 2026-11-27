@@ -33,16 +33,50 @@ enum class PeriodFilter(val key: String, val labelSw: String, val labelEn: Strin
     ALL("all", "Yote", "All")
 }
 
+data class CurrencyOption(
+    val code: String,
+    val symbol: String,
+    val nameSw: String,
+    val nameEn: String,
+    val isInternational: Boolean = true
+)
+
 fun tr(lang: AppLanguage, sw: String, en: String): String =
     if (lang == AppLanguage.EN) en else sw
 
 object FormatUtils {
+    val supportedCurrencies: List<CurrencyOption> = listOf(
+        CurrencyOption("TZS", "TSh", "Shilingi ya Tanzania", "Tanzanian Shilling", isInternational = false),
+        CurrencyOption("USD", "$", "Dola ya Marekani", "US Dollar", isInternational = true),
+        CurrencyOption("EUR", "€", "Yuro ya Ulaya", "Euro", isInternational = true),
+        CurrencyOption("GBP", "£", "Pauni ya Uingereza", "British Pound", isInternational = true),
+        CurrencyOption("AED", "د.إ", "Dirham ya UAE", "UAE Dirham", isInternational = true),
+        CurrencyOption("CNY", "¥", "Yuan ya China", "Chinese Yuan", isInternational = true)
+    )
+
+    val internationalCurrencies: List<CurrencyOption>
+        get() = supportedCurrencies.filter { it.isInternational }
+
+    fun normalizeCurrencyCode(raw: String?): String {
+        val clean = raw?.trim()?.uppercase(Locale.ROOT).orEmpty()
+        return supportedCurrencies.firstOrNull { it.code == clean }?.code ?: "TZS"
+    }
+
+    fun findCurrency(code: String?): CurrencyOption {
+        val clean = code?.trim()?.uppercase(Locale.ROOT).orEmpty()
+        return supportedCurrencies.firstOrNull { it.code == clean } ?: supportedCurrencies.first()
+    }
+
     private val isoDateFormatter: DateTimeFormatter = DateTimeFormatter.ISO_LOCAL_DATE
     private val isoTimestampFormatter: DateTimeFormatter =
         DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS", Locale.US)
 
     private val numberFormatLocal: ThreadLocal<DecimalFormat> = ThreadLocal.withInitial {
         DecimalFormat("#,##0", DecimalFormatSymbols(Locale.US))
+    }
+
+    private val decimalFormatLocal: ThreadLocal<DecimalFormat> = ThreadLocal.withInitial {
+        DecimalFormat("#,##0.00", DecimalFormatSymbols(Locale.US))
     }
 
     private val monthsSw = arrayOf("Jan", "Feb", "Mac", "Apr", "Mei", "Jun", "Jul", "Ago", "Sep", "Okt", "Nov", "Des")
@@ -91,20 +125,48 @@ object FormatUtils {
     }
 
     fun formatMoney(amount: Double, currency: String = "TZS"): String {
-        val rounded = amount.roundToLong()
-        val prefix = if (rounded < 0) "-" else ""
-        val formatted = numberFormatLocal.get()?.format(abs(rounded)) ?: abs(rounded).toString()
-        return "$prefix$currency $formatted"
+        val cur = currency.trim().ifBlank { "TZS" }.uppercase(Locale.ROOT)
+        if (cur == "TZS") {
+            val rounded = amount.roundToLong()
+            val prefix = if (rounded < 0) "-" else ""
+            val formatted = numberFormatLocal.get()?.format(abs(rounded)) ?: abs(rounded).toString()
+            return "$prefix$cur $formatted"
+        }
+        val absVal = abs(amount)
+        val prefix = if (amount < -0.004) "-" else ""
+        val hasDecimals = abs(absVal - absVal.roundToLong()) > 0.004
+        val formatted = if (hasDecimals) {
+            decimalFormatLocal.get()?.format(absVal) ?: String.format(Locale.US, "%.2f", absVal)
+        } else {
+            val rounded = absVal.roundToLong()
+            numberFormatLocal.get()?.format(rounded) ?: rounded.toString()
+        }
+        return "$prefix$cur $formatted"
     }
 
     fun formatCompactMoney(amount: Double, currency: String = "TZS"): String {
+        val cur = currency.trim().ifBlank { "TZS" }.uppercase(Locale.ROOT)
         val absVal = abs(amount)
-        val sign = if (amount < 0) "-" else ""
+        val sign = if (amount < -0.004) "-" else ""
         return when {
-            absVal >= 1_000_000_000 -> String.format(Locale.US, "%s%s %.1fB", sign, currency, absVal / 1_000_000_000.0)
-            absVal >= 1_000_000 -> String.format(Locale.US, "%s%s %.1fM", sign, currency, absVal / 1_000_000.0)
-            absVal >= 10_000 -> String.format(Locale.US, "%s%s %.0fK", sign, currency, absVal / 1_000.0)
-            else -> formatMoney(amount, currency)
+            absVal >= 1_000_000_000 -> String.format(Locale.US, "%s%s %.1fB", sign, cur, absVal / 1_000_000_000.0)
+            absVal >= 1_000_000 -> String.format(Locale.US, "%s%s %.1fM", sign, cur, absVal / 1_000_000.0)
+            absVal >= 10_000 -> String.format(Locale.US, "%s%s %.0fK", sign, cur, absVal / 1_000.0)
+            else -> formatMoney(amount, cur)
+        }
+    }
+
+    fun formatEditableAmount(amount: Double, currency: String = "TZS"): String {
+        if (!amount.isFinite() || amount <= 0.0) return ""
+        val cur = currency.trim().ifBlank { "TZS" }.uppercase(Locale.ROOT)
+        if (cur == "TZS") {
+            return amount.roundToLong().toString()
+        }
+        val roundedTwo = (amount * 100.0).roundToLong() / 100.0
+        return if (abs(roundedTwo - roundedTwo.roundToLong()) <= 0.004) {
+            roundedTwo.roundToLong().toString()
+        } else {
+            String.format(Locale.US, "%.2f", roundedTwo)
         }
     }
 
