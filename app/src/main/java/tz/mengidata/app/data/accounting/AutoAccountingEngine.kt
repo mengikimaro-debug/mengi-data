@@ -29,21 +29,21 @@ enum class AutoBucket(
         code = "MONEY_IN",
         labelSw = "Pesa Kuingia (Mapato)",
         labelEn = "Money In (Income)",
-        colorNameSw = "KIJANI - Pesa Kuingia",
-        colorNameEn = "GREEN - Money In",
-        colorHex = "#10B981",
-        bgHex = "#D1FAE5",
-        textHex = "#065F46"
+        colorNameSw = "BLUU YA SLATE - Pesa Kuingia",
+        colorNameEn = "SLATE BLUE - Money In",
+        colorHex = "#2C4C70",
+        bgHex = "#DCE5F0",
+        textHex = "#182B40"
     ),
     SAVINGS(
         code = "SAVINGS",
         labelSw = "Akiba",
         labelEn = "Savings",
-        colorNameSw = "BLUU - Akiba",
-        colorNameEn = "BLUE - Savings",
-        colorHex = "#2563EB",
-        bgHex = "#DBEAFE",
-        textHex = "#1E40AF"
+        colorNameSw = "ZAMBARAU YA INDIGO - Akiba",
+        colorNameEn = "INDIGO PLUM - Savings",
+        colorHex = "#4E446B",
+        bgHex = "#E3DFEC",
+        textHex = "#2C2540"
     ),
     BILL(
         code = "BILL",

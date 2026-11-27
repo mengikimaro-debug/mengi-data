@@ -239,10 +239,17 @@ class FinanceRepository(
     }
 
     suspend fun ensureDefaultCategoriesSeeded() {
-        val existingIds = categoryDao.getAll().map { it.id }.toSet()
+        val existing = categoryDao.getAll()
+        val existingIds = existing.map { it.id }.toSet()
         val missingDefaults = CategoryAnalyticsEngine.defaultCategories().filter { it.id !in existingIds }
-        if (missingDefaults.isNotEmpty()) {
-            categoryDao.upsertAll(missingDefaults)
+        val migratedLegacyGreen = existing.filter {
+            it.colorHex.trim().uppercase() in CategoryAnalyticsEngine.legacyGreenHexCodes
+        }.map {
+            it.copy(colorHex = "#2C4C70")
+        }
+        val toUpsert = missingDefaults + migratedLegacyGreen
+        if (toUpsert.isNotEmpty()) {
+            categoryDao.upsertAll(toUpsert)
         }
     }
 

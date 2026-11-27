@@ -35,23 +35,23 @@ object InvoicePdfGenerator {
     private const val MARGIN = 32f
     private const val CONTENT_WIDTH = PAGE_WIDTH - (MARGIN * 2f)
 
-    // 2026 Bespoke Luxury Corporate Palette (Midnight Obsidian + Forest Emerald + Champagne Gold)
+    // 2026 Bespoke Luxury Corporate Palette (Midnight Obsidian + Matte Indigo-Navy + Champagne Gold)
     private const val HEX_NAVY_DEEP = "#0E1821"
     private const val HEX_SLATE_MID = "#192B38"
-    private const val HEX_EMERALD_DEEP = "#1B4B3E"
-    private const val HEX_EMERALD = "#205C4B"
-    private const val HEX_EMERALD_SOFT = "#F1F7F4"
-    private const val HEX_EMERALD_BORDER = "#C5DDD2"
+    private const val HEX_EMERALD_DEEP = "#1D2B3A"
+    private const val HEX_EMERALD = "#25374A"
+    private const val HEX_EMERALD_SOFT = "#F0F4F8"
+    private const val HEX_EMERALD_BORDER = "#C6D3E1"
     private const val HEX_GOLD = "#C8A66B"
     private const val HEX_GOLD_SOFT = "#FAF7F0"
     private const val HEX_GOLD_BORDER = "#E7DAC1"
     private const val HEX_GOLD_INK = "#7E6232"
     private const val HEX_SURFACE = "#F6F8FA"
     private const val HEX_ZEBRA = "#F9FBFD"
-    private const val HEX_ITEMS_ROW_EVEN = "#EEF5F2"
-    private const val HEX_ITEMS_ROW_ODD = "#E3EFEA"
-    private const val HEX_ITEMS_DIVIDER = "#C7DCD3"
-    private const val HEX_ITEMS_BORDER = "#B2CCC1"
+    private const val HEX_ITEMS_ROW_EVEN = "#EEF2F7"
+    private const val HEX_ITEMS_ROW_ODD = "#E4EBF3"
+    private const val HEX_ITEMS_DIVIDER = "#C8D5E3"
+    private const val HEX_ITEMS_BORDER = "#B3C3D4"
     private const val HEX_BORDER = "#D8E1E8"
     private const val HEX_HAIRLINE = "#E8EEF3"
     private const val HEX_INK_PRIMARY = "#101820"
@@ -59,10 +59,10 @@ object InvoicePdfGenerator {
     private const val HEX_INK_MUTED = "#677786"
     private const val HEX_HEADER_SUB = "#C7D4DF"
 
-    // Status Badge Palettes
-    private const val HEX_PAID_BG = "#E0F2EA"
-    private const val HEX_PAID_INK = "#17543F"
-    private const val HEX_PAID_DOT = "#20805E"
+    // Status Badge Palettes (Zero-Green Matte Royal Slate-Blue for Paid)
+    private const val HEX_PAID_BG = "#DCE5F0"
+    private const val HEX_PAID_INK = "#1D3550"
+    private const val HEX_PAID_DOT = "#2C4C70"
 
     private const val HEX_PARTIAL_BG = "#FDF0DF"
     private const val HEX_PARTIAL_INK = "#7E4E18"

@@ -42,21 +42,36 @@ data class CategoryAnalyticsReport(
 object CategoryAnalyticsEngine {
 
     /**
-     * Calm, matte, non-glare color swatches for user-created business categories.
+     * Calm, matte, non-glare color swatches for user-created business categories (Zero-Green palette).
      */
     val paletteHexOptions: List<String> = listOf(
-        "#346352", // Matte Forest Sage
+        "#2C4C70", // Matte Royal Slate-Blue
         "#334B63", // Matte Slate Navy
         "#4E5975", // Matte Slate Indigo
-        "#3F6570", // Matte Muted Teal
-        "#7D5D3B", // Matte Warm Ochre
-        "#5D526E", // Matte Dusty Mauve
+        "#3F6570", // Matte Muted Fjord Blue
+        "#7D5D3B", // Matte Warm Bronze-Sand
+        "#5D526E", // Matte Indigo-Plum
         "#4A5563", // Matte Charcoal Slate
         "#4C6378", // Matte Steel Blue
-        "#2F6B5F", // Matte Deep Emerald
+        "#253447", // Matte Deep Indigo-Navy
         "#6B4E57", // Matte Rosewood
-        "#5C6643", // Matte Olive Moss
+        "#6E563B", // Matte Warm Ochre
         "#3E5A7A"  // Matte Ocean Slate
+    )
+
+    val legacyGreenHexCodes: Set<String> = setOf(
+        "#346352",
+        "#2F6B5F",
+        "#5C6643",
+        "#10B981",
+        "#059669",
+        "#047857",
+        "#16A34A",
+        "#15803D",
+        "#1B4B3E",
+        "#205C4B",
+        "#2B5B49",
+        "#0D2818"
     )
 
     val iconKeyOptions: List<String> = listOf(
@@ -94,7 +109,7 @@ object CategoryAnalyticsEngine {
 
     fun defaultCategories(today: String = FormatUtils.todayIso()): List<TransactionCategoryEntity> = listOf(
         // Income categories
-        TransactionCategoryEntity("cat_inc_sales", "Mauzo ya bidhaa", "income", "store", "#346352", 0.0, true, today),
+        TransactionCategoryEntity("cat_inc_sales", "Mauzo ya bidhaa", "income", "store", "#2C4C70", 0.0, true, today),
         TransactionCategoryEntity("cat_inc_services", "Huduma", "income", "work", "#334B63", 0.0, true, today),
         TransactionCategoryEntity("cat_inc_invoices", "Malipo ya ankara", "income", "receipt", "#3F6570", 0.0, true, today),
         TransactionCategoryEntity("cat_inc_consulting", "Ushauri", "income", "handshake", "#4E5975", 0.0, true, today),
@@ -113,7 +128,7 @@ object CategoryAnalyticsEngine {
         TransactionCategoryEntity("cat_exp_maintenance", "Matengenezo", "expense", "build", "#4A5563", 0.0, true, today),
         TransactionCategoryEntity("cat_exp_marketing", "Masoko & matangazo", "expense", "campaign", "#4E5975", 0.0, true, today),
         TransactionCategoryEntity("cat_exp_tax", "Kodi & vibali", "expense", "bank", "#5D526E", 0.0, true, today),
-        TransactionCategoryEntity("cat_exp_security", "Ulinzi & usafi", "expense", "shield", "#346352", 0.0, true, today),
+        TransactionCategoryEntity("cat_exp_security", "Ulinzi & usafi", "expense", "shield", "#253447", 0.0, true, today),
         TransactionCategoryEntity("cat_exp_health", "Afya & bima", "expense", "medical", "#3F6570", 0.0, true, today),
         TransactionCategoryEntity("cat_exp_loans", "Mkopo & marejesho", "expense", "payments", "#5D526E", 0.0, true, today),
         TransactionCategoryEntity("cat_exp_office", "Vifaa vya ofisi", "expense", "laptop", "#334B63", 0.0, true, today),
@@ -150,7 +165,7 @@ object CategoryAnalyticsEngine {
             type = "income",
             total = totalIncome,
             fallbackName = "Mapato mengine",
-            fallbackColor = "#047857",
+            fallbackColor = "#2C4C70",
             lookup = categoryLookup
         )
 

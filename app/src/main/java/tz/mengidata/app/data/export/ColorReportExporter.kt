@@ -80,16 +80,16 @@ object ColorReportExporter {
   </Style>
   <Style ss:ID="Header">
    <Font ss:Bold="1" ss:Size="11" ss:Color="#FFFFFF"/>
-   <Interior ss:Color="#346352" ss:Pattern="Solid"/>
+   <Interior ss:Color="#253447" ss:Pattern="Solid"/>
    <Alignment ss:Vertical="Center"/>
   </Style>
   <Style ss:ID="MoneyIn">
-   <Font ss:Bold="1" ss:Color="#2B5B49"/>
-   <Interior ss:Color="#E4EFEA" ss:Pattern="Solid"/>
+   <Font ss:Bold="1" ss:Color="#2C4C70"/>
+   <Interior ss:Color="#DCE5F0" ss:Pattern="Solid"/>
   </Style>
   <Style ss:ID="MoneyInNum">
-   <Font ss:Bold="1" ss:Color="#2B5B49"/>
-   <Interior ss:Color="#E4EFEA" ss:Pattern="Solid"/>
+   <Font ss:Bold="1" ss:Color="#2C4C70"/>
+   <Interior ss:Color="#DCE5F0" ss:Pattern="Solid"/>
    <NumberFormat ss:Format="#,##0.00"/>
   </Style>
   <Style ss:ID="HighBillRed">
@@ -120,30 +120,30 @@ object ColorReportExporter {
    <NumberFormat ss:Format="#,##0.00"/>
   </Style>
   <Style ss:ID="SavingsBlue">
-   <Font ss:Bold="1" ss:Color="#3B4B69"/>
-   <Interior ss:Color="#E8EDF3" ss:Pattern="Solid"/>
+   <Font ss:Bold="1" ss:Color="#4E446B"/>
+   <Interior ss:Color="#E3DFEC" ss:Pattern="Solid"/>
   </Style>
   <Style ss:ID="SavingsBlueNum">
-   <Font ss:Bold="1" ss:Color="#3B4B69"/>
-   <Interior ss:Color="#E8EDF3" ss:Pattern="Solid"/>
+   <Font ss:Bold="1" ss:Color="#4E446B"/>
+   <Interior ss:Color="#E3DFEC" ss:Pattern="Solid"/>
    <NumberFormat ss:Format="#,##0.00"/>
   </Style>
   <Style ss:ID="HouseholdTeal">
-   <Font ss:Bold="1" ss:Color="#2C4A52"/>
-   <Interior ss:Color="#E2ECEF" ss:Pattern="Solid"/>
+   <Font ss:Bold="1" ss:Color="#3A526E"/>
+   <Interior ss:Color="#DDE5EF" ss:Pattern="Solid"/>
   </Style>
   <Style ss:ID="HouseholdTealNum">
-   <Font ss:Bold="1" ss:Color="#2C4A52"/>
-   <Interior ss:Color="#E2ECEF" ss:Pattern="Solid"/>
+   <Font ss:Bold="1" ss:Color="#3A526E"/>
+   <Interior ss:Color="#DDE5EF" ss:Pattern="Solid"/>
    <NumberFormat ss:Format="#,##0.00"/>
   </Style>
   <Style ss:ID="TotalRow">
-   <Font ss:Bold="1" ss:Size="11" ss:Color="#1D242C"/>
-   <Interior ss:Color="#E4EFEA" ss:Pattern="Solid"/>
+   <Font ss:Bold="1" ss:Size="11" ss:Color="#182433"/>
+   <Interior ss:Color="#D9E1EC" ss:Pattern="Solid"/>
   </Style>
   <Style ss:ID="TotalRowNum">
-   <Font ss:Bold="1" ss:Size="11" ss:Color="#1D242C"/>
-   <Interior ss:Color="#E4EFEA" ss:Pattern="Solid"/>
+   <Font ss:Bold="1" ss:Size="11" ss:Color="#182433"/>
+   <Interior ss:Color="#D9E1EC" ss:Pattern="Solid"/>
    <NumberFormat ss:Format="#,##0.00"/>
   </Style>
  </Styles>
@@ -168,9 +168,9 @@ object ColorReportExporter {
             XmlCell(tr(language, "MSIMBO WA RANGI", "COLOR HEX"), "Header")
         ))
         xmlRow(sb, listOf(
-            XmlCell(tr(language, "KIJANI TULIVU", "SAGE GREEN"), "MoneyIn"),
+            XmlCell(tr(language, "BLUU YA SLATE", "SLATE BLUE"), "MoneyIn"),
             XmlCell(tr(language, "Pesa Kuingia / Mapato / Malipo ya Ankara", "Money In / Income / Invoice Payments"), "MoneyIn"),
-            XmlCell("#E4EFEA / #2B5B49", "MoneyIn")
+            XmlCell("#DCE5F0 / #2C4C70", "MoneyIn")
         ))
         xmlRow(sb, listOf(
             XmlCell(tr(language, "ZAMBARAU TULIVU", "SOFT LAVENDER"), "HighBillRed"),
@@ -188,14 +188,14 @@ object ColorReportExporter {
             XmlCell("#F2E6E6 / #6D4343", "ExpenseOrange")
         ))
         xmlRow(sb, listOf(
-            XmlCell(tr(language, "BLUU", "BLUE"), "SavingsBlue"),
+            XmlCell(tr(language, "ZAMBARAU YA INDIGO", "INDIGO PLUM"), "SavingsBlue"),
             XmlCell(tr(language, "Akiba (Malengo na Mihamala ya Akiba)", "Savings (Goals & Savings Logs)"), "SavingsBlue"),
-            XmlCell("#DBEAFE / #2563EB", "SavingsBlue")
+            XmlCell("#E3DFEC / #4E446B", "SavingsBlue")
         ))
         xmlRow(sb, listOf(
-            XmlCell(tr(language, "SAMAWATI", "TEAL"), "HouseholdTeal"),
+            XmlCell(tr(language, "BLUU YA FJORD", "FJORD BLUE"), "HouseholdTeal"),
             XmlCell(tr(language, "Bili ya Nyumbani (Imekatwa na kuhifadhiwa kwenye mfumo)", "Household Bill (Deducted & saved in system)"), "HouseholdTeal"),
-            XmlCell("#E0F2FE / #0E7490", "HouseholdTeal")
+            XmlCell("#DDE5EF / #3A526E", "HouseholdTeal")
         ))
         xmlRow(sb, emptyList())
 
@@ -610,7 +610,7 @@ object ColorReportExporter {
         sb.append(csv(tr(language, "Bili za Leo", "Today's Bills"))).append(',').append(num(summary.todayBillsTotal)).append(',').append(csv(if (summary.isTodayBillHigh) AutoBucket.HIGH_BILL_TODAY.colorHex else AutoBucket.BILL.colorHex)).append(',').append(csv(if (summary.isTodayBillHigh) tr(language, summary.highBillAlertSw, summary.highBillAlertEn) else tr(language, "KAWAIDA", "NORMAL"))).append('\n')
         sb.append(csv(tr(language, "Bili ya Nyumbani", "Household Bill"))).append(',').append(num(summary.totalHouseholdBills)).append(',').append(csv(AutoBucket.HOUSEHOLD_BILL.colorHex)).append(',').append(csv(AutoBucket.HOUSEHOLD_BILL.colorMeaning(language))).append('\n')
         sb.append(csv(tr(language, "Akiba Iliyopo", "Savings Balance"))).append(',').append(num(summary.netSavingsBalance)).append(',').append(csv(AutoBucket.SAVINGS.colorHex)).append(',').append(csv(AutoBucket.SAVINGS.colorMeaning(language))).append('\n')
-        sb.append(csv(tr(language, "SALIO HALISI", "VERIFIED CASH BALANCE"))).append(',').append(num(summary.verifiedCashBalance)).append(',').append(csv("#0D2818")).append(',').append(csv(tr(language, "0% UPOTEVU", "0% LOSS VERIFIED"))).append('\n')
+        sb.append(csv(tr(language, "SALIO HALISI", "VERIFIED CASH BALANCE"))).append(',').append(num(summary.verifiedCashBalance)).append(',').append(csv("#253447")).append(',').append(csv(tr(language, "0% UPOTEVU", "0% LOSS VERIFIED"))).append('\n')
         sb.append('\n')
 
         sb.append(
