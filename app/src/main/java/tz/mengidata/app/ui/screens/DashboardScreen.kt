@@ -168,14 +168,14 @@ fun DashboardScreen(
                 )
             }
 
-            // Matte Android 17 Bento Hero Balance Card (Zero Glow / Zero Glare)
+            // Matte Android 17 Bento Hero Balance Card (Zero Green / Zero Glow / Zero Glare)
             item(key = "hero_balance") {
                 PremiumReveal(delayMillis = 0) {
                     Surface(
                         shape = MaterialTheme.shapes.extraLarge,
                         color = colors.heroStart,
-                        border = BorderStroke(1.dp, Color(0xFF33453F)),
-                        shadowElevation = if (colors.isDark) 0.dp else 4.dp,
+                        border = BorderStroke(1.dp, if (colors.isDark) Color(0xFF334254) else Color(0xFF3A4E66)),
+                        shadowElevation = if (colors.isDark) 0.dp else 2.dp,
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("dashboard_hero_card")
@@ -203,17 +203,18 @@ fun DashboardScreen(
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
-                                        PulsingStatusDot(color = Color(0xFF7BB597), size = 7.dp)
+                                        PulsingStatusDot(color = if (colors.isDark) Color(0xFF8AAEE0) else Color(0xFFA2C0E8), size = 8.dp)
                                         Text(
                                             text = tr(language, "SALIO HALISI LA MFUMO", "SYSTEM NET BALANCE"),
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = colors.lime
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = if (colors.isDark) Color(0xFFBCCAD8) else Color(0xFFD2DCE8)
                                         )
                                     }
                                     StatusPill(
                                         text = if (language == AppLanguage.EN) selectedPeriod.labelEn else selectedPeriod.labelSw,
-                                        containerColor = Color(0xFF2D3E39),
-                                        contentColor = Color(0xFFEBE9E3)
+                                        containerColor = if (colors.isDark) Color(0xFF2B3A4C) else Color(0xFFECEAE3),
+                                        contentColor = if (colors.isDark) Color(0xFFE6ECF2) else Color(0xFF1F2B3A)
                                     )
                                 }
 
@@ -223,14 +224,14 @@ fun DashboardScreen(
                                         Text(
                                             text = "••••••",
                                             style = MaterialTheme.typography.displayLarge,
-                                            color = Color(0xFFEBE9E3)
+                                            color = if (colors.isDark) Color(0xFFECEFF4) else Color(0xFFF6F5F2)
                                         )
                                     } else {
                                         AnimatedMoneyText(
                                             amount = metrics.netProfit,
                                             currency = currency,
                                             style = MaterialTheme.typography.displayLarge,
-                                            color = Color(0xFFEBE9E3)
+                                            color = if (colors.isDark) Color(0xFFECEFF4) else Color(0xFFF6F5F2)
                                         )
                                     }
                                     Text(
@@ -240,11 +241,12 @@ fun DashboardScreen(
                                             "Income after deducting Expenses, Household Bill & Savings"
                                         ),
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = Color(0xFFB8C4BF)
+                                        fontWeight = FontWeight.Medium,
+                                        color = if (colors.isDark) Color(0xFFB6C3D2) else Color(0xFFCFD9E6)
                                     )
                                 }
 
-                                // Matte 4-Segment Cashflow Proportion Track
+                                // Matte 4-Segment Cashflow Proportion Track (Zero Green)
                                 val flowBase = (metrics.periodIncome.coerceAtLeast(metrics.periodTotalOutflow)).coerceAtLeast(1.0)
                                 val personalShare = ((metrics.periodExpense / flowBase).toFloat()).coerceIn(0f, 1f)
                                 val householdShare = ((metrics.periodHouseholdBills / flowBase).toFloat()).coerceIn(0f, 1f - personalShare)
@@ -252,10 +254,10 @@ fun DashboardScreen(
                                 val keptShare = (1f - personalShare - householdShare - savingsShare).coerceAtLeast(0f)
                                 Surface(
                                     shape = CircleShape,
-                                    color = Color(0xFF151E1B),
+                                    color = if (colors.isDark) Color(0xFF121821) else Color(0xFF17212D),
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .height(9.dp)
+                                        .height(10.dp)
                                 ) {
                                     Row(
                                         modifier = Modifier.fillMaxSize(),
@@ -267,7 +269,7 @@ fun DashboardScreen(
                                                     .weight(keptShare)
                                                     .fillMaxHeight()
                                                     .clip(CircleShape)
-                                                    .background(Color(0xFF7BB597))
+                                                    .background(if (colors.isDark) Color(0xFF7FA8D6) else Color(0xFF8FB4DE))
                                             )
                                         }
                                         if (personalShare > 0.01f) {
@@ -276,7 +278,7 @@ fun DashboardScreen(
                                                     .weight(personalShare)
                                                     .fillMaxHeight()
                                                     .clip(CircleShape)
-                                                    .background(Color(0xFFC9959A))
+                                                    .background(if (colors.isDark) Color(0xFFC98684) else Color(0xFFD69A98))
                                             )
                                         }
                                         if (householdShare > 0.01f) {
@@ -285,7 +287,7 @@ fun DashboardScreen(
                                                     .weight(householdShare)
                                                     .fillMaxHeight()
                                                     .clip(CircleShape)
-                                                    .background(Color(0xFF83AEB8))
+                                                    .background(if (colors.isDark) Color(0xFF9E94C4) else Color(0xFFB0A7D4))
                                             )
                                         }
                                         if (savingsShare > 0.01f) {
@@ -294,13 +296,13 @@ fun DashboardScreen(
                                                     .weight(savingsShare)
                                                     .fillMaxHeight()
                                                     .clip(CircleShape)
-                                                    .background(Color(0xFFA9A3C4))
+                                                    .background(if (colors.isDark) Color(0xFFC9A679) else Color(0xFFE5DFD3))
                                             )
                                         }
                                     }
                                 }
 
-                                // Matte 2x2 Bento Stat Grid
+                                // Matte 2x2 Bento Stat Grid (Zero Green)
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -308,8 +310,10 @@ fun DashboardScreen(
                                     HeroStatChip(
                                         modifier = Modifier.weight(1f),
                                         icon = Icons.Rounded.ArrowDownward,
-                                        iconTint = Color(0xFF9ACAB2),
-                                        iconBg = Color(0xFF233A31),
+                                        iconTint = if (colors.isDark) Color(0xFF8AB2E0) else Color(0xFFA6C4EB),
+                                        iconBg = if (colors.isDark) Color(0xFF1E2D40) else Color(0xFF283B52),
+                                        containerColor = if (colors.isDark) Color(0xFF141B24) else Color(0xFF1B2634),
+                                        borderColor = if (colors.isDark) Color(0xFF2B394A) else Color(0xFF354961),
                                         label = tr(language, "Mapato Yote", "Total Income"),
                                         amount = metrics.periodIncome,
                                         currency = currency,
@@ -318,8 +322,10 @@ fun DashboardScreen(
                                     HeroStatChip(
                                         modifier = Modifier.weight(1f),
                                         icon = Icons.Rounded.ArrowUpward,
-                                        iconTint = Color(0xFFD6B0B4),
-                                        iconBg = Color(0xFF392B2E),
+                                        iconTint = if (colors.isDark) Color(0xFFD49490) else Color(0xFFE0AEB2),
+                                        iconBg = if (colors.isDark) Color(0xFF332325) else Color(0xFF3B282B),
+                                        containerColor = if (colors.isDark) Color(0xFF141B24) else Color(0xFF1B2634),
+                                        borderColor = if (colors.isDark) Color(0xFF2B394A) else Color(0xFF354961),
                                         label = tr(language, "Matumizi Yangu", "My Expenses"),
                                         amount = metrics.periodExpense,
                                         currency = currency,
@@ -334,8 +340,10 @@ fun DashboardScreen(
                                     HeroStatChip(
                                         modifier = Modifier.weight(1f),
                                         icon = Icons.Rounded.Home,
-                                        iconTint = Color(0xFFA2C4CC),
-                                        iconBg = Color(0xFF26383E),
+                                        iconTint = if (colors.isDark) Color(0xFFA89EC9) else Color(0xFFC2BAE0),
+                                        iconBg = if (colors.isDark) Color(0xFF262336) else Color(0xFF2E2B42),
+                                        containerColor = if (colors.isDark) Color(0xFF141B24) else Color(0xFF1B2634),
+                                        borderColor = if (colors.isDark) Color(0xFF2B394A) else Color(0xFF354961),
                                         label = tr(language, "Bili ya Nyumbani", "Household Bill"),
                                         amount = metrics.periodHouseholdBills,
                                         currency = currency,
@@ -344,8 +352,10 @@ fun DashboardScreen(
                                     HeroStatChip(
                                         modifier = Modifier.weight(1f),
                                         icon = Icons.Rounded.Savings,
-                                        iconTint = Color(0xFFC2BDD6),
-                                        iconBg = Color(0xFF302E40),
+                                        iconTint = if (colors.isDark) Color(0xFFD1A97D) else Color(0xFFECEAE3),
+                                        iconBg = if (colors.isDark) Color(0xFF332A1F) else Color(0xFF33394A),
+                                        containerColor = if (colors.isDark) Color(0xFF141B24) else Color(0xFF1B2634),
+                                        borderColor = if (colors.isDark) Color(0xFF2B394A) else Color(0xFF354961),
                                         label = tr(language, "Akiba (Imekatwa)", "Savings (Deducted)"),
                                         amount = metrics.periodSavingsOutflow,
                                         currency = currency,
@@ -362,8 +372,8 @@ fun DashboardScreen(
                                         onClick = onQuickAddTransaction,
                                         shape = CircleShape,
                                         colors = ButtonDefaults.buttonColors(
-                                            containerColor = Color(0xFFEAE7DF),
-                                            contentColor = Color(0xFF192622)
+                                            containerColor = if (colors.isDark) Color(0xFF314963) else Color(0xFFECEAE3),
+                                            contentColor = if (colors.isDark) Color(0xFFEDF2F7) else Color(0xFF1F2B3A)
                                         ),
                                         contentPadding = PaddingValues(horizontal = 14.dp),
                                         modifier = Modifier
@@ -373,15 +383,16 @@ fun DashboardScreen(
                                     ) {
                                         Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                                         Spacer(Modifier.size(4.dp))
-                                        Text(tr(language, "Rekodi", "New Entry"), maxLines = 1, fontWeight = FontWeight.Bold)
+                                        Text(tr(language, "Rekodi", "New Entry"), maxLines = 1, fontWeight = FontWeight.ExtraBold)
                                     }
                                     FilledTonalButton(
                                         onClick = { showSmartEntry = true },
                                         shape = CircleShape,
                                         colors = ButtonDefaults.filledTonalButtonColors(
-                                            containerColor = Color(0xFF344C45),
-                                            contentColor = Color(0xFFEBE9E3)
+                                            containerColor = if (colors.isDark) Color(0xFF233142) else Color(0xFF2E3F54),
+                                            contentColor = if (colors.isDark) Color(0xFFE6ECF2) else Color(0xFFF3F1EC)
                                         ),
+                                        border = BorderStroke(1.dp, if (colors.isDark) Color(0xFF394D63) else Color(0xFF465D78)),
                                         contentPadding = PaddingValues(horizontal = 12.dp),
                                         modifier = Modifier
                                             .weight(1f)
@@ -396,9 +407,10 @@ fun DashboardScreen(
                                         onClick = onOpenInvoices,
                                         shape = CircleShape,
                                         colors = ButtonDefaults.filledTonalButtonColors(
-                                            containerColor = Color(0xFF2B3B36),
-                                            contentColor = Color(0xFFEBE9E3)
+                                            containerColor = if (colors.isDark) Color(0xFF19222E) else Color(0xFF1D2836),
+                                            contentColor = if (colors.isDark) Color(0xFFE6ECF2) else Color(0xFFF3F1EC)
                                         ),
+                                        border = BorderStroke(1.dp, if (colors.isDark) Color(0xFF324254) else Color(0xFF3A4E66)),
                                         contentPadding = PaddingValues(horizontal = 12.dp),
                                         modifier = Modifier
                                             .weight(1f)
@@ -407,7 +419,7 @@ fun DashboardScreen(
                                     ) {
                                         Icon(Icons.Rounded.Description, contentDescription = null, modifier = Modifier.size(16.dp))
                                         Spacer(Modifier.size(4.dp))
-                                        Text(tr(language, "Ankara", "Invoices"), maxLines = 1)
+                                        Text(tr(language, "Ankara", "Invoices"), maxLines = 1, fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
@@ -758,15 +770,16 @@ private fun HeroStatChip(
     currency: String,
     masked: Boolean = false,
     compact: Boolean = true,
-    containerColor: Color = Color(0xFF283733),
-    borderColor: Color = Color(0xFF394D47),
-    iconBg: Color = Color(0xFF30433E)
+    containerColor: Color = Color(0xFF1B2634),
+    borderColor: Color = Color(0xFF354961),
+    iconBg: Color = Color(0xFF283B52)
 ) {
+    val isDark = LocalMengiColors.current.isDark
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(22.dp),
         color = containerColor,
-        border = BorderStroke(0.8.dp, borderColor)
+        border = BorderStroke(1.dp, borderColor)
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 13.dp, vertical = 11.dp),
@@ -786,7 +799,8 @@ private fun HeroStatChip(
                 Text(
                     text = label,
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFFB8C4BF),
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (isDark) Color(0xFFB5C3D2) else Color(0xFFCFD9E6),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -794,7 +808,8 @@ private fun HeroStatChip(
                     Text(
                         text = "••••",
                         style = MaterialTheme.typography.titleSmall,
-                        color = Color(0xFFEBE9E3)
+                        fontWeight = FontWeight.Bold,
+                        color = if (isDark) Color(0xFFECEFF4) else Color(0xFFF6F5F2)
                     )
                 } else {
                     AnimatedMoneyText(
@@ -802,7 +817,7 @@ private fun HeroStatChip(
                         currency = currency,
                         compact = compact,
                         style = if (compact) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium,
-                        color = Color(0xFFEBE9E3)
+                        color = if (isDark) Color(0xFFECEFF4) else Color(0xFFF6F5F2)
                     )
                 }
             }

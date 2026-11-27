@@ -153,12 +153,12 @@ fun MengiSidebarSheet(
                 .padding(horizontal = 14.dp, vertical = 14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Matte Android 17 Header Card (Zero Glow / Zero Glare)
+            // Matte Android 17 Header Card (Zero Green / Zero Glow / Zero Glare)
             Surface(
                 shape = RoundedCornerShape(30.dp),
                 color = colors.heroStart,
-                border = BorderStroke(1.dp, Color(0xFF33453F)),
-                shadowElevation = if (colors.isDark) 0.dp else 3.dp,
+                border = BorderStroke(1.dp, if (colors.isDark) Color(0xFF334254) else Color(0xFF3A4E66)),
+                shadowElevation = if (colors.isDark) 0.dp else 2.dp,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Box(
@@ -186,8 +186,8 @@ fun MengiSidebarSheet(
                             ) {
                                 Surface(
                                     shape = RoundedCornerShape(16.dp),
-                                    color = Color(0xFF2B3C37),
-                                    border = BorderStroke(1.dp, Color(0xFF425952)),
+                                    color = if (colors.isDark) Color(0xFF141B24) else Color(0xFF1B2634),
+                                    border = BorderStroke(1.dp, if (colors.isDark) Color(0xFF324357) else Color(0xFF384D66)),
                                     modifier = Modifier.size(44.dp)
                                 ) {
                                     Image(
@@ -201,7 +201,8 @@ fun MengiSidebarSheet(
                                     Text(
                                         text = settings.businessName.ifBlank { "VaultLedger" },
                                         style = MaterialTheme.typography.titleLarge,
-                                        color = Color(0xFFEBE9E3),
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (colors.isDark) Color(0xFFECEFF4) else Color(0xFFF6F5F2),
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
@@ -213,7 +214,8 @@ fun MengiSidebarSheet(
                                     Text(
                                         text = subtitle,
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = Color(0xFFB8C4BF),
+                                        fontWeight = FontWeight.Medium,
+                                        color = if (colors.isDark) Color(0xFFB5C3D2) else Color(0xFFCFD9E6),
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
@@ -229,7 +231,8 @@ fun MengiSidebarSheet(
                                         themeState.onSetThemeMode(next)
                                     },
                                     shape = CircleShape,
-                                    color = Color(0xFF2C3D38),
+                                    color = if (colors.isDark) Color(0xFF222F3E) else Color(0xFF1B2634),
+                                    border = BorderStroke(0.8.dp, if (colors.isDark) Color(0xFF384B61) else Color(0xFF384D66)),
                                     modifier = Modifier
                                         .size(40.dp)
                                         .testTag("sidebar_theme_toggle_btn")
@@ -242,7 +245,7 @@ fun MengiSidebarSheet(
                                                 if (themeState.isDark) "Badili kwenda Mwanga" else "Badili kwenda Giza",
                                                 if (themeState.isDark) "Switch to Light Mode" else "Switch to Dark Mode"
                                             ),
-                                            tint = Color(0xFFEBE9E3),
+                                            tint = if (colors.isDark) Color(0xFFD4AC82) else Color(0xFFECEAE3),
                                             modifier = Modifier.size(18.dp)
                                         )
                                     }
@@ -250,7 +253,8 @@ fun MengiSidebarSheet(
                                 Surface(
                                     onClick = onCloseDrawer,
                                     shape = CircleShape,
-                                    color = Color(0xFF2C3D38),
+                                    color = if (colors.isDark) Color(0xFF222F3E) else Color(0xFF1B2634),
+                                    border = BorderStroke(0.8.dp, if (colors.isDark) Color(0xFF384B61) else Color(0xFF384D66)),
                                     modifier = Modifier
                                         .size(40.dp)
                                         .testTag("close_sidebar_btn")
@@ -259,7 +263,7 @@ fun MengiSidebarSheet(
                                         Icon(
                                             imageVector = Icons.Rounded.Close,
                                             contentDescription = tr(language, "Funga menyu", "Close menu"),
-                                            tint = Color(0xFFEBE9E3),
+                                            tint = if (colors.isDark) Color(0xFFE6ECF2) else Color(0xFFECEAE3),
                                             modifier = Modifier.size(18.dp)
                                         )
                                     }
@@ -269,8 +273,8 @@ fun MengiSidebarSheet(
 
                         // Matte Balance Pill
                         Surface(
-                            color = Color(0xFF273631),
-                            border = BorderStroke(0.8.dp, Color(0xFF394D47)),
+                            color = if (colors.isDark) Color(0xFF141B24) else Color(0xFF1B2634),
+                            border = BorderStroke(1.dp, if (colors.isDark) Color(0xFF2B394A) else Color(0xFF354961)),
                             shape = RoundedCornerShape(20.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
@@ -283,25 +287,27 @@ fun MengiSidebarSheet(
                                     Text(
                                         text = tr(language, "SALIO HALISI", "NET BALANCE"),
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = colors.lime
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = if (colors.isDark) Color(0xFFBCCAD8) else Color(0xFFD2DCE8)
                                     )
                                     Text(
                                         text = if (privacyMaskEnabled) "••••••" else FormatUtils.formatMoney(zeroLossLedger.verifiedCashBalance, currency),
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.Bold,
-                                        color = Color(0xFFEBE9E3),
+                                        color = if (colors.isDark) Color(0xFFECEFF4) else Color(0xFFF6F5F2),
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
                                 }
                                 Surface(
-                                    color = Color(0xFF334740),
+                                    color = if (colors.isDark) Color(0xFF2B3A4C) else Color(0xFFECEAE3),
                                     shape = CircleShape
                                 ) {
                                     Text(
                                         text = "v${BuildConfig.VERSION_NAME}",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = Color(0xFFEBE9E3),
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = if (colors.isDark) Color(0xFFE6ECF2) else Color(0xFF1F2B3A),
                                         modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
                                     )
                                 }
@@ -312,12 +318,12 @@ fun MengiSidebarSheet(
             }
 
             val itemColors = NavigationDrawerItemDefaults.colors(
-                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                selectedIconColor = MaterialTheme.colorScheme.primary,
-                selectedTextColor = MaterialTheme.colorScheme.primary,
+                selectedContainerColor = if (colors.isDark) Color(0xFF2B425B) else Color(0xFF253447),
+                selectedIconColor = if (colors.isDark) Color(0xFFEBF0F7) else Color(0xFFF6F5F2),
+                selectedTextColor = if (colors.isDark) Color(0xFFEBF0F7) else Color(0xFFF6F5F2),
                 unselectedContainerColor = MaterialTheme.colorScheme.surface,
-                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                unselectedTextColor = MaterialTheme.colorScheme.onSurface
+                unselectedIconColor = if (colors.isDark) Color(0xFFB0BDCB) else Color(0xFF2E3F54),
+                unselectedTextColor = if (colors.isDark) Color(0xFFE8ECF2) else Color(0xFF1A222E)
             )
 
             // One UI 8.5 Grouped Navigation Squircle Card

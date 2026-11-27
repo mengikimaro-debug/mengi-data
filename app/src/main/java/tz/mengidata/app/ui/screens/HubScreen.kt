@@ -169,15 +169,31 @@ fun HubScreen(
                             Surface(
                                 onClick = { goalFilter = key },
                                 shape = CircleShape,
-                                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerLow,
-                                tonalElevation = if (selected) 2.dp else 0.dp,
+                                color = when {
+                                    selected && colors.isDark -> Color(0xFF2B425B)
+                                    selected -> Color(0xFF253447)
+                                    colors.isDark -> Color(0xFF171C24)
+                                    else -> Color(0xFFFAF8F4)
+                                },
+                                border = when {
+                                    selected && colors.isDark -> BorderStroke(1.dp, Color(0xFF496A8C))
+                                    colors.isDark -> BorderStroke(1.dp, Color(0xFF293240))
+                                    selected -> BorderStroke(1.dp, Color(0xFF253447))
+                                    else -> BorderStroke(1.dp, Color(0xFFC2C4CC))
+                                },
+                                tonalElevation = if (selected) 1.dp else 0.dp,
                                 modifier = Modifier.testTag("savings_filter_$key")
                             ) {
                                 Text(
                                     text = label,
                                     style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                                    color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+                                    color = when {
+                                        selected && colors.isDark -> Color(0xFFEBF0F7)
+                                        selected -> Color(0xFFF6F5F2)
+                                        colors.isDark -> Color(0xFFB5C2D2)
+                                        else -> Color(0xFF253447)
+                                    },
                                     modifier = Modifier.padding(horizontal = 15.dp, vertical = 9.dp)
                                 )
                             }
@@ -316,8 +332,8 @@ private fun OneUiSavingsVaultSummaryCard(
     Surface(
         shape = MaterialTheme.shapes.extraLarge,
         color = colors.heroStart,
-        border = BorderStroke(1.dp, Color(0xFF33453F)),
-        shadowElevation = if (colors.isDark) 0.dp else 4.dp,
+        border = BorderStroke(1.dp, if (colors.isDark) Color(0xFF334254) else Color(0xFF3A4E66)),
+        shadowElevation = if (colors.isDark) 0.dp else 2.dp,
         modifier = Modifier.fillMaxWidth()
     ) {
         Box(
@@ -341,12 +357,13 @@ private fun OneUiSavingsVaultSummaryCard(
                     Text(
                         text = tr(language, "JUMLA YA AKIBA", "TOTAL VAULT SAVINGS"),
                         style = MaterialTheme.typography.labelSmall,
-                        color = colors.lime
+                        fontWeight = FontWeight.ExtraBold,
+                        color = if (colors.isDark) Color(0xFFBCCAD8) else Color(0xFFD2DCE8)
                     )
                     StatusPill(
                         text = "$pct% · ${goals.size} ${tr(language, "malengo", "goals")}",
-                        containerColor = Color(0xFF2D3E39),
-                        contentColor = Color(0xFFEBE9E3)
+                        containerColor = if (colors.isDark) Color(0xFF2B3A4C) else Color(0xFFECEAE3),
+                        contentColor = if (colors.isDark) Color(0xFFE6ECF2) else Color(0xFF1F2B3A)
                     )
                 }
 
@@ -354,22 +371,22 @@ private fun OneUiSavingsVaultSummaryCard(
                     amount = totalSaved,
                     currency = currency,
                     style = MaterialTheme.typography.displayLarge,
-                    color = Color(0xFFEBE9E3)
+                    color = if (colors.isDark) Color(0xFFECEFF4) else Color(0xFFF6F5F2)
                 )
 
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(9.dp)
+                        .height(10.dp)
                         .clip(CircleShape)
-                        .background(Color(0xFF151E1B))
+                        .background(if (colors.isDark) Color(0xFF121821) else Color(0xFF17212D))
                 ) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth(ratio.coerceAtLeast(if (totalSaved > 0) 0.03f else 0f))
                             .fillMaxHeight()
                             .clip(CircleShape)
-                            .background(Color(0xFF7BB597))
+                            .background(if (colors.isDark) Color(0xFF7FA8D6) else Color(0xFFE5DFD3))
                     )
                 }
 
@@ -380,12 +397,14 @@ private fun OneUiSavingsVaultSummaryCard(
                     Text(
                         text = "${tr(language, "Lengo", "Target")}: $formattedTarget",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFFB8C4BF)
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (colors.isDark) Color(0xFFB6C3D2) else Color(0xFFCFD9E6)
                     )
                     Text(
                         text = "${tr(language, "Baki", "Remaining")}: $formattedRemaining",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFFB8C4BF)
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (colors.isDark) Color(0xFFB6C3D2) else Color(0xFFCFD9E6)
                     )
                 }
             }

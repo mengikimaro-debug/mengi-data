@@ -49,76 +49,83 @@ val ExpressiveBodyFamily = FontFamily(
     Font(R.font.dm_sans, FontWeight.Bold)
 )
 
-// Android 17 Matte Material 3 Expressive Tonal Palette (Zero Glare / Zero Glow, WCAG AA/AAA Verified)
-private val M3LightCanvas = Color(0xFFF3F2EE)          // Warm Matte Stone
-private val M3LightSurface = Color(0xFFFAF9F6)         // Soft Matte Paper
-private val M3LightContainerLow = Color(0xFFECEAE3)    // Matte Stone Container Low
-private val M3LightContainer = Color(0xFFE4E1D9)       // Matte Container
-private val M3LightContainerHigh = Color(0xFFDCD8CF)   // Matte Container High
-private val M3LightContainerHighest = Color(0xFFD2CEC4)
-private val M3LightOutline = Color(0xFFB7B2A8)
-private val M3LightOutlineVariant = Color(0xFFD5D1C8)
+// Android 17 Matte Material 3 Expressive Tonal Palette (Zero Green / Zero Glare / Zero Glow, WCAG AA/AAA Verified)
+// Light Mode Matte Palette:
+// Calm Warm Stone Off-White Canvas (#F3F1EC) & Matte Alabaster Cards (#FAF8F4)
+// Paired with Deep Matte Indigo-Navy (#253447) & Slate Blue (#3A5270) — zero green, zero glare
+private val M3LightCanvas = Color(0xFFF3F1EC)          // Calm Matte Warm Stone Canvas (Zero Green)
+private val M3LightSurface = Color(0xFFFAF8F4)         // Soft Matte Alabaster Card Surface
+private val M3LightContainerLow = Color(0xFFECE9E2)    // Matte Stone Container Low
+private val M3LightContainer = Color(0xFFE3DFD7)       // Matte Stone Container
+private val M3LightContainerHigh = Color(0xFFDAD5CC)   // Matte Stone Container High
+private val M3LightContainerHighest = Color(0xFFD0CAC0)
+private val M3LightOutline = Color(0xFF778190)         // Muted Matte Slate-Blue Outline
+private val M3LightOutlineVariant = Color(0xFFD2D5DC)  // Soft Matte Slate Card Border
 
-private val M3DarkCanvas = Color(0xFF111413)           // Deep Matte Charcoal
-private val M3DarkSurface = Color(0xFF181C1A)          // Matte Dark Slate-Pine
-private val M3DarkContainerLow = Color(0xFF1D2220)
-private val M3DarkContainer = Color(0xFF222825)
-private val M3DarkContainerHigh = Color(0xFF2A312D)
-private val M3DarkContainerHighest = Color(0xFF323B36)
-private val M3DarkOutline = Color(0xFF424B46)
-private val M3DarkOutlineVariant = Color(0xFF2C332F)
+// Dark Mode Matte Palette:
+// Calm Matte Charcoal-Obsidian Canvas (#11141A) & Matte Graphite-Navy Cards (#171C24)
+// Paired with Muted Matte Steel-Blue (#324A66 / #82A6CC) & Soft Matte Amber-Bronze (#C99266) — zero green, zero neon
+private val M3DarkCanvas = Color(0xFF11141A)           // Calm Matte Charcoal-Midnight Background
+private val M3DarkSurface = Color(0xFF171C24)          // Matte Graphite-Navy Card Surface
+private val M3DarkContainerLow = Color(0xFF1C222C)     // Matte Slate-Navy Container Low
+private val M3DarkContainer = Color(0xFF212834)        // Matte Slate-Navy Container
+private val M3DarkContainerHigh = Color(0xFF27303E)    // Matte Slate-Navy Container High
+private val M3DarkContainerHighest = Color(0xFF2F3A4A) // Highest Matte Container
+private val M3DarkOutline = Color(0xFF4C596B)          // Calm Matte Steel Outline
+private val M3DarkOutlineVariant = Color(0xFF252D3A)   // Subtle Matte Card Border
 
-private val InkDark = Color(0xFF191D1B)
-private val InkMutedLight = Color(0xFF4E5652)
-private val InkSnow = Color(0xFFEBE9E3)
-private val InkMutedDark = Color(0xFFB3BCB7)
+private val InkDark = Color(0xFF1A222E)                // Deep Matte Navy-Charcoal Ink (Zero Green)
+private val InkMutedLight = Color(0xFF4A5565)          // Calm Matte Slate-Navy Secondary Text
+private val InkSnow = Color(0xFFE8ECF2)                // Soft Matte Alabaster Text
+private val InkMutedDark = Color(0xFFA8B3C2)           // Muted Silver-Slate Secondary Text
 
-private val PinePrimaryLight = Color(0xFF2A5248)         // Matte Deep Forest Sage
-private val PineContainerLight = Color(0xFFCFE0DB)
-private val PineOnContainerLight = Color(0xFF122924)
+private val PinePrimaryLight = Color(0xFF253447)       // Calm Matte Deep Indigo-Navy (Zero Green)
+private val PineContainerLight = Color(0xFFD9E1EC)     // Soft Matte Slate-Blue Pill Container
+private val PineOnContainerLight = Color(0xFF182433)   // Deep Matte Navy Ink
 
-private val PinePrimaryDark = Color(0xFF9AC2B6)          // Matte Soft Sage
-private val PineOnPrimaryDark = Color(0xFF0E2922)
-private val PineContainerDark = Color(0xFF23473E)
-private val PineOnContainerDark = Color(0xFFCFE0DB)
+private val PinePrimaryDark = Color(0xFF84A7CC)        // Calm Matte Steel Blue (Non-glowing, Zero Green)
+private val PineOnPrimaryDark = Color(0xFF101A26)
+private val PineContainerDark = Color(0xFF2B425B)      // Matte Steel-Blue Active Selection Pill
+private val PineOnContainerDark = Color(0xFFEBF0F7)    // Soft Matte Alabaster on Active Pill
 
-private val SlateSecondaryLight = Color(0xFF4B5966)      // Matte Cool Slate
-private val SlateContainerLight = Color(0xFFD7DFE6)
-private val SlateOnContainerLight = Color(0xFF1D2730)
+private val SlateSecondaryLight = Color(0xFF394D66)    // Muted Matte Fjord Blue Secondary
+private val SlateContainerLight = Color(0xFFDFE5EE)
+private val SlateOnContainerLight = Color(0xFF1B2838)
 
-private val SlateSecondaryDark = Color(0xFFB2C2CF)
-private val SlateOnSecondaryDark = Color(0xFF1D2933)
-private val SlateContainerDark = Color(0xFF34424E)
-private val SlateOnContainerDark = Color(0xFFD7DFE6)
+private val SlateSecondaryDark = Color(0xFF9AB4D0)     // Muted Matte Powder-Steel Secondary
+private val SlateOnSecondaryDark = Color(0xFF13202E)
+private val SlateContainerDark = Color(0xFF243548)
+private val SlateOnContainerDark = Color(0xFFE5EDF7)
 
-private val ClayTertiaryLight = Color(0xFF73513E)        // Matte Warm Terracotta Clay
-private val ClayContainerLight = Color(0xFFEBDDD4)
-private val ClayOnContainerLight = Color(0xFF331E14)
+private val ClayTertiaryLight = Color(0xFF73533D)      // Warm Matte Bronze-Clay Accent for Light Mode
+private val ClayContainerLight = Color(0xFFEBE1D8)
+private val ClayOnContainerLight = Color(0xFF2E1E14)
 
-private val ClayTertiaryDark = Color(0xFFCFA994)
-private val ClayOnTertiaryDark = Color(0xFF382115)
-private val ClayContainerDark = Color(0xFF54392B)
-private val ClayOnContainerDark = Color(0xFFEBDDD4)
+private val ClayTertiaryDark = Color(0xFFD1966A)       // Soft Matte Warm Amber-Bronze
+private val ClayOnTertiaryDark = Color(0xFF24150A)
+private val ClayContainerDark = Color(0xFF3D2A1D)      // Matte Warm Bronze Badge Container
+private val ClayOnContainerDark = Color(0xFFF2DFD0)
 
-private val OchreWarningLight = Color(0xFF8A5318)
-private val OchreWarningSoftLight = Color(0xFFF3E6D6)
-private val OchreWarningDark = Color(0xFFDFB17A)
-private val OchreWarningSoftDark = Color(0xFF342717)
+private val OchreWarningLight = Color(0xFF825626)
+private val OchreWarningSoftLight = Color(0xFFEDE2D3)
+private val OchreWarningDark = Color(0xFFD6A26D)       // Matte Amber-Sand Warning Font
+private val OchreWarningSoftDark = Color(0xFF332619)   // Matte Warm Umber Surface
 
-private val SageIncomeLight = Color(0xFF1F684A)
-private val SageIncomeSoftLight = Color(0xFFD7EAE0)
-private val SageIncomeDark = Color(0xFF7DC29E)
-private val SageIncomeSoftDark = Color(0xFF183024)
+// Positive / Income tokens: Muted Matte Royal Slate-Blue (Zero Green anywhere)
+private val SageIncomeLight = Color(0xFF2C4C70)        // Matte Royal Slate-Blue Income in Light Mode (No Green)
+private val SageIncomeSoftLight = Color(0xFFDCE5F0)
+private val SageIncomeDark = Color(0xFF82AEE0)         // Matte Sky-Steel Blue Income in Dark Mode (No Green)
+private val SageIncomeSoftDark = Color(0xFF1B2B3D)
 
-private val TerraExpenseLight = Color(0xFF983942)
-private val TerraExpenseSoftLight = Color(0xFFF4DFE1)
-private val TerraExpenseDark = Color(0xFFDF9EA4)
-private val TerraExpenseSoftDark = Color(0xFF361E21)
+private val TerraExpenseLight = Color(0xFF8C4349)      // Muted Matte Rosewood Expense in Light Mode
+private val TerraExpenseSoftLight = Color(0xFFEEDCE0)
+private val TerraExpenseDark = Color(0xFFD48A88)       // Muted Matte Terracotta-Rose in Dark Mode
+private val TerraExpenseSoftDark = Color(0xFF342123)
 
-private val MatteSavingsLight = Color(0xFF514C78)
-private val MatteSavingsSoftLight = Color(0xFFE2E0ED)
-private val MatteSavingsDark = Color(0xFFB9B4D8)
-private val MatteSavingsSoftDark = Color(0xFF252338)
+private val MatteSavingsLight = Color(0xFF4E446B)      // Muted Matte Indigo-Plum Savings in Light Mode
+private val MatteSavingsSoftLight = Color(0xFFE3DFEC)
+private val MatteSavingsDark = Color(0xFFA89CC8)       // Muted Matte Lavender-Slate Savings in Dark Mode
+private val MatteSavingsSoftDark = Color(0xFF262235)
 
 @Stable
 data class MengiThemeState(
@@ -162,12 +169,12 @@ data class MengiExtendedColors(
 
 private val LightExtendedColors = MengiExtendedColors(
     isDark = false,
-    heroStart = Color(0xFF1E2B27),
-    heroMid = Color(0xFF23322E),
-    heroEnd = Color(0xFF273833),
-    heroAccentGlow = Color(0xFF23322E),
-    heroGoldGlow = Color(0xFF273833),
-    lime = Color(0xFFC4DDD5),
+    heroStart = Color(0xFF1F2B3A),
+    heroMid = Color(0xFF263547),
+    heroEnd = Color(0xFF2E3F54),
+    heroAccentGlow = Color(0xFF263547),
+    heroGoldGlow = Color(0xFF2E3F54),
+    lime = Color(0xFFD8E1EC),
     limeSoft = PineContainerLight,
     limeInk = PineOnContainerLight,
     income = SageIncomeLight,
@@ -182,17 +189,17 @@ private val LightExtendedColors = MengiExtendedColors(
     subtleSurface = M3LightContainerLow,
     glassHighlight = M3LightContainerHigh,
     dockSurface = M3LightSurface,
-    dockBorder = M3LightOutlineVariant
+    dockBorder = Color(0xFFC6C9D0)
 )
 
 private val DarkExtendedColors = MengiExtendedColors(
     isDark = true,
-    heroStart = Color(0xFF1C2623),
-    heroMid = Color(0xFF202C28),
-    heroEnd = Color(0xFF24322E),
-    heroAccentGlow = Color(0xFF202C28),
-    heroGoldGlow = Color(0xFF24322E),
-    lime = Color(0xFFC4DDD5),
+    heroStart = Color(0xFF18202B),
+    heroMid = Color(0xFF1E2937),
+    heroEnd = Color(0xFF253244),
+    heroAccentGlow = Color(0xFF334A63),
+    heroGoldGlow = Color(0xFFC89065),
+    lime = Color(0xFFD19A72),
     limeSoft = PineContainerDark,
     limeInk = PineOnContainerDark,
     income = SageIncomeDark,
@@ -204,25 +211,25 @@ private val DarkExtendedColors = MengiExtendedColors(
     savings = MatteSavingsDark,
     savingsSoft = MatteSavingsSoftDark,
     cardBorder = M3DarkOutlineVariant,
-    subtleSurface = M3DarkContainerHigh,
-    glassHighlight = M3DarkContainerHighest,
-    dockSurface = M3DarkContainer,
-    dockBorder = M3DarkOutline
+    subtleSurface = M3DarkContainerLow,
+    glassHighlight = M3DarkContainerHigh,
+    dockSurface = Color(0xFF161B23),
+    dockBorder = Color(0xFF2B3442)
 )
 
 val LocalMengiColors = staticCompositionLocalOf { LightExtendedColors }
 
 internal val MengiLightColorScheme = lightColorScheme(
     primary = PinePrimaryLight,
-    onPrimary = Color(0xFFF7F7F4),
+    onPrimary = Color(0xFFF6F5F2),
     primaryContainer = PineContainerLight,
     onPrimaryContainer = PineOnContainerLight,
     secondary = SlateSecondaryLight,
-    onSecondary = Color(0xFFF7F7F4),
+    onSecondary = Color(0xFFF6F5F2),
     secondaryContainer = SlateContainerLight,
     onSecondaryContainer = SlateOnContainerLight,
     tertiary = ClayTertiaryLight,
-    onTertiary = Color(0xFFF7F7F4),
+    onTertiary = Color(0xFFF6F5F2),
     tertiaryContainer = ClayContainerLight,
     onTertiaryContainer = ClayOnContainerLight,
     background = M3LightCanvas,
@@ -239,9 +246,9 @@ internal val MengiLightColorScheme = lightColorScheme(
     outline = M3LightOutline,
     outlineVariant = M3LightOutlineVariant,
     error = TerraExpenseLight,
-    onError = Color(0xFFFDFBFA),
+    onError = Color(0xFFFAF8F4),
     errorContainer = TerraExpenseSoftLight,
-    onErrorContainer = Color(0xFF531A20)
+    onErrorContainer = Color(0xFF4D1D22)
 )
 
 internal val MengiDarkColorScheme = darkColorScheme(
@@ -263,17 +270,17 @@ internal val MengiDarkColorScheme = darkColorScheme(
     onSurface = InkSnow,
     surfaceVariant = M3DarkContainerHigh,
     onSurfaceVariant = InkMutedDark,
-    surfaceContainerLowest = Color(0xFF141816),
+    surfaceContainerLowest = Color(0xFF0D1015),
     surfaceContainerLow = M3DarkContainerLow,
     surfaceContainer = M3DarkContainer,
     surfaceContainerHigh = M3DarkContainerHigh,
     surfaceContainerHighest = M3DarkContainerHighest,
     outline = M3DarkOutline,
     outlineVariant = M3DarkOutlineVariant,
-    error = TerraExpenseDark,
-    onError = Color(0xFF47161B),
-    errorContainer = TerraExpenseSoftDark,
-    onErrorContainer = Color(0xFFF7DCDF)
+    error = Color(0xFFD98A8A),
+    onError = Color(0xFF2E1113),
+    errorContainer = Color(0xFF3B1A1D),
+    onErrorContainer = Color(0xFFF2D5D7)
 )
 
 val MengiTypography = Typography(
@@ -398,19 +405,19 @@ private fun deriveExtendedColors(
     }
 
     val heroStart = if (isDark) {
-        lerp(Color(0xFF141816), scheme.primaryContainer, 0.30f)
+        lerp(Color(0xFF141B24), scheme.primaryContainer, 0.30f)
     } else {
-        lerp(Color(0xFF1E2623), scheme.primary, 0.42f)
+        lerp(Color(0xFF1F2733), scheme.primary, 0.42f)
     }
     val heroMid = if (isDark) {
-        lerp(Color(0xFF181E1B), scheme.primary, 0.22f)
+        lerp(Color(0xFF19222E), scheme.primary, 0.22f)
     } else {
-        lerp(Color(0xFF222D29), scheme.primary, 0.48f)
+        lerp(Color(0xFF242E3B), scheme.primary, 0.48f)
     }
     val heroEnd = if (isDark) {
-        lerp(Color(0xFF1A2220), scheme.secondary, 0.22f)
+        lerp(Color(0xFF1E2938), scheme.secondary, 0.22f)
     } else {
-        lerp(Color(0xFF25322F), scheme.secondary, 0.40f)
+        lerp(Color(0xFF293545), scheme.secondary, 0.40f)
     }
 
     return base.copy(

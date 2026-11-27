@@ -90,20 +90,20 @@ import tz.mengidata.app.updater.UpdateInfo
 import tz.mengidata.app.updater.UpdateUiState
 import java.util.Locale
 
-// Bespoke Obsidian-Emerald-Gold OTA Console Palette (high contrast in both Light & Dark themes)
-private val VaultObsidian = Color(0xFF0C1520)
-private val VaultSlate = Color(0xFF142334)
-private val VaultEmeraldDeep = Color(0xFF10312A)
-private val VaultPanel = Color(0xFF172636)
-private val VaultPanelBorder = Color(0xFF283C50)
-private val VaultTextPrimary = Color(0xFFF1F5F9)
-private val VaultTextMuted = Color(0xFFA7B7C8)
-private val TurboMint = Color(0xFF34D399)
-private val TurboMintSoft = Color(0xFF12362C)
-private val ChampagneGold = Color(0xFFD9B675)
-private val ChampagneGoldSoft = Color(0xFF2E2618)
-private val AlertCoral = Color(0xFFF87171)
-private val AlertCoralSoft = Color(0xFF351B20)
+// Bespoke Matte Obsidian-Steel-Champagne OTA Console Palette (Zero green, zero glare, high contrast in both Light & Dark themes)
+private val VaultObsidian = Color(0xFF151A20)
+private val VaultSlate = Color(0xFF1C232B)
+private val VaultEmeraldDeep = Color(0xFF1D2836)
+private val VaultPanel = Color(0xFF202830)
+private val VaultPanelBorder = Color(0xFF323E4A)
+private val VaultTextPrimary = Color(0xFFECEFF4)
+private val VaultTextMuted = Color(0xFFADB8C4)
+private val TurboMint = Color(0xFF82AEE0)
+private val TurboMintSoft = Color(0xFF1B2B3D)
+private val ChampagneGold = Color(0xFFCCA97E)
+private val ChampagneGoldSoft = Color(0xFF2E271E)
+private val AlertCoral = Color(0xFFD48A84)
+private val AlertCoralSoft = Color(0xFF332223)
 
 /**
  * Flagship bespoke OTA Update Console for SettingsScreen.

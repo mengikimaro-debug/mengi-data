@@ -212,7 +212,8 @@ fun OneUiSegmentedTabs(
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh
+        color = if (colors.isDark) Color(0xFF191F28) else Color(0xFFE7E4DC),
+        border = if (colors.isDark) BorderStroke(1.dp, Color(0xFF2B3442)) else BorderStroke(1.dp, Color(0xFFC8CAD2))
     ) {
         Row(
             modifier = Modifier
@@ -224,19 +225,20 @@ fun OneUiSegmentedTabs(
             options.forEachIndexed { idx, label ->
                 val selected = idx == selectedIndex
                 val pillBg by animateColorAsState(
-                    targetValue = if (selected) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        Color.Transparent
+                    targetValue = when {
+                        selected && colors.isDark -> Color(0xFF2B425B)
+                        selected -> Color(0xFF253447)
+                        else -> Color.Transparent
                     },
                     animationSpec = if (pillBgMs == 0) snap() else tween(pillBgMs),
                     label = "seg_pill_bg"
                 )
                 val textColor by animateColorAsState(
-                    targetValue = if (selected) {
-                        MaterialTheme.colorScheme.onPrimary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
+                    targetValue = when {
+                        selected && colors.isDark -> Color(0xFFEBF0F7)
+                        selected -> Color(0xFFF6F5F2)
+                        colors.isDark -> Color(0xFFAEC0D4)
+                        else -> Color(0xFF253447)
                     },
                     animationSpec = if (textFgMs == 0) snap() else tween(textFgMs),
                     label = "seg_pill_fg"
@@ -246,7 +248,7 @@ fun OneUiSegmentedTabs(
                     onClick = { onSelect(idx) },
                     shape = CircleShape,
                     color = pillBg,
-                    shadowElevation = if (selected && !colors.isDark) 2.dp else 0.dp,
+                    shadowElevation = if (selected && !colors.isDark) 1.dp else 0.dp,
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 42.dp)
@@ -304,10 +306,10 @@ fun OneUiFloatingNavBar(
     ) {
         Surface(
             shape = CircleShape,
-            color = colors.dockSurface,
-            tonalElevation = 4.dp,
-            border = if (colors.isDark) BorderStroke(0.8.dp, colors.dockBorder) else BorderStroke(0.6.dp, colors.dockBorder),
-            shadowElevation = if (colors.isDark) 8.dp else 12.dp,
+            color = if (colors.isDark) Color(0xFF161B23) else Color(0xFFFAF8F4),
+            tonalElevation = 3.dp,
+            border = if (colors.isDark) BorderStroke(1.dp, Color(0xFF2B3442)) else BorderStroke(1.dp, Color(0xFFCACCD4)),
+            shadowElevation = if (colors.isDark) 6.dp else 8.dp,
             modifier = Modifier
                 .fillMaxWidth()
                 .widthIn(max = 520.dp)
@@ -321,10 +323,10 @@ fun OneUiFloatingNavBar(
             ) {
                 tabs.forEach { tab ->
                     val pillColor by animateColorAsState(
-                        targetValue = if (tab.selected) {
-                            MaterialTheme.colorScheme.primaryContainer
-                        } else {
-                            Color.Transparent
+                        targetValue = when {
+                            tab.selected && colors.isDark -> Color(0xFF2B425B)
+                            tab.selected -> Color(0xFF253447)
+                            else -> Color.Transparent
                         },
                         animationSpec = when {
                             dockColorMs == 0 -> snap()
@@ -337,10 +339,11 @@ fun OneUiFloatingNavBar(
                         label = "dock_pill"
                     )
                     val contentColor by animateColorAsState(
-                        targetValue = if (tab.selected) {
-                            MaterialTheme.colorScheme.onPrimaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
+                        targetValue = when {
+                            tab.selected && colors.isDark -> Color(0xFFEBF0F7)
+                            tab.selected -> Color(0xFFF6F5F2)
+                            colors.isDark -> Color(0xFFAEBCCB)
+                            else -> Color(0xFF2E3F54)
                         },
                         animationSpec = if (dockColorMs == 0) snap() else tween(dockColorMs),
                         label = "dock_fg"
@@ -387,7 +390,7 @@ fun OneUiFloatingNavBar(
                                     fontSize = 11.sp,
                                     letterSpacing = 0.sp
                                 ),
-                                fontWeight = if (tab.selected) FontWeight.Bold else FontWeight.Medium,
+                                fontWeight = if (tab.selected) FontWeight.Bold else FontWeight.SemiBold,
                                 color = contentColor,
                                 textAlign = TextAlign.Center,
                                 maxLines = 1,
@@ -412,6 +415,7 @@ fun OneUiFloatingFab(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = LocalMengiColors.current
     val perf = LocalDevicePerformance.current
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
@@ -432,10 +436,11 @@ fun OneUiFloatingFab(
         onClick = onClick,
         interactionSource = interactionSource,
         shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.primaryContainer,
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-        tonalElevation = 6.dp,
-        shadowElevation = 6.dp,
+        color = if (colors.isDark) Color(0xFF2D445E) else Color(0xFF253447),
+        contentColor = if (colors.isDark) Color(0xFFEBF0F7) else Color(0xFFF6F5F2),
+        border = BorderStroke(1.dp, if (colors.isDark) Color(0xFF476688) else Color(0xFF394E68)),
+        tonalElevation = 4.dp,
+        shadowElevation = 4.dp,
         modifier = modifier
             .size(58.dp)
             .scale(scale)
@@ -455,10 +460,12 @@ fun SectionEyebrow(
     text: String,
     modifier: Modifier = Modifier
 ) {
+    val isDark = LocalMengiColors.current.isDark
     Surface(
         modifier = modifier,
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.primaryContainer
+        color = if (isDark) Color(0xFF1E2938) else Color(0xFFDFE5EE),
+        border = if (isDark) BorderStroke(0.8.dp, Color(0xFF354860)) else BorderStroke(0.8.dp, Color(0xFFB5C0D0))
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
@@ -469,12 +476,13 @@ fun SectionEyebrow(
                 modifier = Modifier
                     .size(6.dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary)
+                    .background(if (isDark) Color(0xFF84A7CC) else Color(0xFF253447))
             )
             Text(
                 text = text.uppercase(),
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onPrimaryContainer
+                fontWeight = FontWeight.Bold,
+                color = if (isDark) Color(0xFFDCE6F2) else Color(0xFF1D2938)
             )
         }
     }
@@ -495,6 +503,7 @@ fun StatusPill(
         Text(
             text = text,
             style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
             color = contentColor,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -523,21 +532,38 @@ fun PeriodSelectorRow(
         PeriodFilter.entries.forEach { period ->
             val isSelected = period == selected
             val bg by animateColorAsState(
-                targetValue = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerLow,
+                targetValue = when {
+                    isSelected && colors.isDark -> Color(0xFF2B425B)
+                    isSelected -> Color(0xFF253447)
+                    colors.isDark -> Color(0xFF171C24)
+                    else -> Color(0xFFFAF8F4)
+                },
                 animationSpec = tween(180),
                 label = "period_bg"
             )
             val fg by animateColorAsState(
-                targetValue = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                targetValue = when {
+                    isSelected && colors.isDark -> Color(0xFFEBF0F7)
+                    isSelected -> Color(0xFFF6F5F2)
+                    colors.isDark -> Color(0xFFB5C2D2)
+                    else -> Color(0xFF253447)
+                },
                 animationSpec = tween(180),
                 label = "period_fg"
             )
+            val chipBorder = when {
+                isSelected && colors.isDark -> BorderStroke(1.dp, Color(0xFF496A8C))
+                colors.isDark -> BorderStroke(1.dp, Color(0xFF293240))
+                isSelected -> BorderStroke(1.dp, Color(0xFF253447))
+                else -> BorderStroke(1.dp, Color(0xFFC2C4CC))
+            }
             Surface(
                 onClick = { onSelect(period) },
                 shape = CircleShape,
                 color = bg,
-                tonalElevation = if (isSelected) 2.dp else 0.dp,
-                shadowElevation = if (isSelected && !colors.isDark) 2.dp else 0.dp,
+                border = chipBorder,
+                tonalElevation = if (isSelected) 1.dp else 0.dp,
+                shadowElevation = 0.dp,
                 modifier = Modifier
                     .heightIn(min = 38.dp)
                     .testTag("period_chip_${period.key}")
@@ -549,7 +575,7 @@ fun PeriodSelectorRow(
                     Text(
                         text = if (language == AppLanguage.EN) period.labelEn else period.labelSw,
                         style = MaterialTheme.typography.labelMedium,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
                         color = fg,
                         maxLines = 1
                     )

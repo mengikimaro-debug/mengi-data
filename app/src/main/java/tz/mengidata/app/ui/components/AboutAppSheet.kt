@@ -196,7 +196,7 @@ fun AboutAppSheet(
             Surface(
                 shape = RoundedCornerShape(26.dp),
                 color = colors.heroStart,
-                border = BorderStroke(1.dp, Color(0xFF33453F)),
+                border = BorderStroke(1.dp, if (colors.isDark) Color(0xFF334254) else Color(0xFF3A4E66)),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Box(
@@ -218,8 +218,8 @@ fun AboutAppSheet(
                         ) {
                             Surface(
                                 shape = RoundedCornerShape(16.dp),
-                                color = Color(0xFF2B3C37),
-                                border = BorderStroke(1.dp, Color(0xFF425952)),
+                                color = if (colors.isDark) Color(0xFF141B24) else Color(0xFF1B2634),
+                                border = BorderStroke(1.dp, if (colors.isDark) Color(0xFF324357) else Color(0xFF384D66)),
                                 modifier = Modifier.size(52.dp)
                             ) {
                                 Image(
@@ -238,16 +238,17 @@ fun AboutAppSheet(
                                         text = "VaultLedger",
                                         style = MaterialTheme.typography.titleLarge,
                                         fontWeight = FontWeight.ExtraBold,
-                                        color = Color(0xFFEBE9E3)
+                                        color = if (colors.isDark) Color(0xFFECEFF4) else Color(0xFFF6F5F2)
                                     )
                                     Surface(
-                                        color = Color(0xFF334740),
+                                        color = if (colors.isDark) Color(0xFF2B3A4C) else Color(0xFFECEAE3),
                                         shape = CircleShape
                                     ) {
                                         Text(
                                             text = "v${BuildConfig.VERSION_NAME}",
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = colors.lime,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = if (colors.isDark) Color(0xFFE6ECF2) else Color(0xFF1F2B3A),
                                             modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp)
                                         )
                                     }
@@ -260,14 +261,15 @@ fun AboutAppSheet(
                                         "Complete Business & Personal Finance Management Suite"
                                     ),
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = Color(0xFFB8C4BF)
+                                    fontWeight = FontWeight.Medium,
+                                    color = if (colors.isDark) Color(0xFFB5C3D2) else Color(0xFFCFD9E6)
                                 )
                             }
                         }
 
                         Surface(
-                            color = Color(0xFF273631),
-                            border = BorderStroke(0.8.dp, Color(0xFF394D47)),
+                            color = if (colors.isDark) Color(0xFF141B24) else Color(0xFF1B2634),
+                            border = BorderStroke(1.dp, if (colors.isDark) Color(0xFF2B394A) else Color(0xFF354961)),
                             shape = RoundedCornerShape(16.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
@@ -279,7 +281,7 @@ fun AboutAppSheet(
                                 Icon(
                                     imageVector = Icons.Rounded.VerifiedUser,
                                     contentDescription = null,
-                                    tint = colors.lime,
+                                    tint = if (colors.isDark) Color(0xFF8AAEE0) else Color(0xFFECEAE3),
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Text(
@@ -289,7 +291,8 @@ fun AboutAppSheet(
                                         "Zero-Loss Accounting · 100% Offline · Adaptive Speed for Every Phone"
                                     ),
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = Color(0xFFEBE9E3)
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (colors.isDark) Color(0xFFECEFF4) else Color(0xFFF6F5F2)
                                 )
                             }
                         }
