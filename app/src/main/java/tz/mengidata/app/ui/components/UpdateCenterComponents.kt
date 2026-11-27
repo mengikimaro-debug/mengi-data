@@ -815,8 +815,8 @@ fun UpdateCenterCard(
                             Text(
                                 text = tr(
                                     language,
-                                    "• Orodha mpya ya Malipo Yanayosubiri yenye mtindo wa mazungumzo + dirisha dogo la maelezo (Pop View)\n• Chaguo la Sarafu za Kimataifa (TSh, $, €, £, د.إ, ¥) kwenye slide bar na ubadilishaji wa pesa moja kwa moja kwa viwango vya soko\n• Kurasa ya Kuhusu App (About App) yenye maelezo kamili na mawasiliano ya mwanzilishi\n• Mfumo thabiti wa 4× Turbo OTA na utendaji wa kasi zaidi bila kukwama",
-                                    "• New conversation-style Pending Payments list in Ledger with sleek compact detail Pop View\n• International currency selector (TSh, $, €, £, د.إ, ¥) in slide bar with live automatic market conversion\n• Added About App guide with complete workflow overview and founder contact\n• Reliable 4× Turbo OTA updates and smoother zero-jank performance"
+                                    "• Ulinzi mpya wa Kuondoa App kwa Alama ya Kidole (Android System Fingerprint + Device Admin)\n• Usaidizi kamili wa Android Enterprise Device Owner (MDM/Kiosk) wa kuzuia ku-uninstall kabisa + amri ya ADB\n• Orodha mpya ya Malipo Yanayosubiri yenye mtindo wa mazungumzo + dirisha dogo la maelezo (Pop View)\n• Chaguo la Sarafu za Kimataifa (TSh, $, €, £, د.إ, ¥) na ubadilishaji wa pesa moja kwa moja kwa viwango vya soko",
+                                    "• New Android System Fingerprint Uninstall Protection (BiometricPrompt + Device Admin guard)\n• Full Android Enterprise Device Owner (MDM/Kiosk) uninstall blocking with ready-to-copy ADB setup\n• Conversation-style Pending Payments list in Ledger with sleek compact detail Pop View\n• International currency selector (TSh, $, €, £, د.إ, ¥) with live automatic market conversion"
                                 ),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = VaultTextMuted,

@@ -2,6 +2,8 @@ package tz.mengidata.app.ui
 
 import android.Manifest
 import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -11,6 +13,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContract
 import androidx.activity.result.contract.ActivityResultContracts
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -114,6 +117,8 @@ import tz.mengidata.app.ui.screens.HubScreen
 import tz.mengidata.app.ui.screens.InvoicesScreen
 import tz.mengidata.app.ui.screens.SettingsScreen
 import tz.mengidata.app.ui.screens.TransactionsScreen
+import tz.mengidata.app.security.BiometricAvailability
+import tz.mengidata.app.security.UninstallProtectionManager
 import tz.mengidata.app.system.LocalDevicePerformance
 import tz.mengidata.app.ui.theme.LocalMengiColors
 import tz.mengidata.app.ui.theme.MengidataTheme
@@ -174,6 +179,201 @@ fun MengiApp(viewModel: MengiViewModel) {
         viewModel.refreshPhonePermissions()
         viewModel.refreshStorageStatus()
         viewModel.refreshSavedPublicPdfs()
+    }
+
+    val deviceAdminActivationLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { _ ->
+        viewModel.refreshUninstallProtectionStatus()
+        if (UninstallProtectionManager.isUninstallProtectionActive(context)) {
+            viewModel.emitSecurityNotice(
+                tr(
+                    language,
+                    "Ulinzi wa Alama ya Kidole umewashwa kwenye mfumo wa Android. App haiwezi ku-uninstalliwa bila Fingerprint.",
+                    "Android System Fingerprint uninstall lock is now active."
+                )
+            )
+        } else {
+            viewModel.emitSecurityNotice(
+                tr(
+                    language,
+                    "Ulinzi wa mfumo wa Android haukuwashwa. Thibitisha 'Activate' ili kuzuia kuondoa app.",
+                    "Android System guard was not activated. Tap Activate to block uninstallation."
+                )
+            )
+        }
+    }
+
+    val openEnrollFingerprintSettings: () -> Unit = {
+        val openedEnroll = runCatching {
+            context.startActivity(UninstallProtectionManager.buildEnrollFingerprintIntent())
+        }.isSuccess
+        if (!openedEnroll) {
+            runCatching {
+                context.startActivity(UninstallProtectionManager.buildSecuritySettingsFallbackIntent())
+            }
+        }
+    }
+
+    val handleToggleUninstallProtection: (Boolean) -> Unit = { enable ->
+        val biometricStatus = UninstallProtectionManager.getBiometricStatus(context)
+        if (enable) {
+            if (biometricStatus == BiometricAvailability.NONE_ENROLLED) {
+                viewModel.emitSecurityNotice(
+                    tr(
+                        language,
+                        "Sajili Alama ya Kidole kwanza kwenye mipangilio ya Android.",
+                        "Please enroll a Fingerprint in Android Settings first."
+                    )
+                )
+                openEnrollFingerprintSettings()
+            } else if (biometricStatus == BiometricAvailability.UNAVAILABLE) {
+                viewModel.emitSecurityNotice(
+                    tr(
+                        language,
+                        "Kifaa hiki hakina sensa ya Alama ya Kidole.",
+                        "Fingerprint sensor is not available on this device."
+                    )
+                )
+            } else {
+                UninstallProtectionManager.authenticateFingerprint(
+                    context = context,
+                    title = tr(language, "Washa Ulinzi wa Kuondoa App", "Enable Uninstall Protection"),
+                    subtitle = tr(language, "Thibitisha Alama ya Kidole (Android System)", "Verify Fingerprint (Android System)"),
+                    description = tr(
+                        language,
+                        "Weka kidole chako ili kuwasha ulinzi wa mfumo wa Android wa kuzuia kuondoa VaultLedger.",
+                        "Touch the fingerprint sensor to activate Android System uninstall blocking."
+                    ),
+                    cancelLabel = tr(language, "Ghairi", "Cancel"),
+                    allowCredentialFallbackIfNoBiometric = false,
+                    onSuccess = {
+                        if (UninstallProtectionManager.isDeviceOwner(context)) {
+                            viewModel.enableDeviceOwnerUninstallBlockAfterFingerprint()
+                        } else {
+                            runCatching {
+                                deviceAdminActivationLauncher.launch(
+                                    UninstallProtectionManager.buildActivateDeviceAdminIntent(context, language)
+                                )
+                            }.onFailure {
+                                viewModel.emitSecurityNotice(
+                                    tr(
+                                        language,
+                                        "Imeshindwa kufungua dirisha la ulinzi la Android.",
+                                        "Could not open Android Device Admin prompt."
+                                    )
+                                )
+                            }
+                        }
+                    },
+                    onFailure = { reason ->
+                        if (reason != "CANCELLED") {
+                            viewModel.emitSecurityNotice(
+                                tr(
+                                    language,
+                                    "Uthibitisho wa Alama ya Kidole umeshindikana.",
+                                    "Fingerprint verification failed."
+                                )
+                            )
+                        }
+                    }
+                )
+            }
+        } else {
+            // Strictly require Android System Fingerprint before disabling Device Admin / Device Owner uninstall lock
+            UninstallProtectionManager.authenticateFingerprint(
+                context = context,
+                title = tr(language, "Zima Ulinzi wa Kuondoa App", "Disable Uninstall Protection"),
+                subtitle = tr(language, "Alama ya Kidole inahitajika", "Fingerprint Required"),
+                description = tr(
+                    language,
+                    "Weka kidole chako ili kuruhusu app iweze kuondolewa (uninstall).",
+                    "Verify your Fingerprint to unlock app uninstallation."
+                ),
+                cancelLabel = tr(language, "Ghairi", "Cancel"),
+                allowCredentialFallbackIfNoBiometric = true,
+                onSuccess = {
+                    viewModel.deactivateUninstallProtectionAfterFingerprint(
+                        notifyUser = true,
+                        clearDeviceOwnerForUninstall = false
+                    )
+                },
+                onFailure = { reason ->
+                    if (reason != "CANCELLED") {
+                        viewModel.emitSecurityNotice(
+                            tr(
+                                language,
+                                "Alama ya kidole haikubaliwi — ulinzi wa kuondoa app bado upo wazi.",
+                                "Fingerprint not verified — uninstall protection remains active."
+                            )
+                        )
+                    }
+                }
+            )
+        }
+    }
+
+    val handleFingerprintGuidedUninstall: () -> Unit = {
+        val isActive = UninstallProtectionManager.isUninstallProtectionActive(context)
+        if (!isActive) {
+            runCatching { context.startActivity(viewModel.openUninstallOldApp()) }
+        } else {
+            UninstallProtectionManager.authenticateFingerprint(
+                context = context,
+                title = tr(language, "Ondoa VaultLedger (Uninstall)", "Uninstall VaultLedger"),
+                subtitle = tr(language, "Thibitisha Alama ya Kidole", "Fingerprint Verification Required"),
+                description = tr(
+                    language,
+                    "Weka kidole chako ili mfumo wa Android ukuruhusu kuondoa app hii.",
+                    "Scan your Fingerprint so Android System unlocks and allows uninstalling VaultLedger."
+                ),
+                cancelLabel = tr(language, "Ghairi", "Cancel"),
+                allowCredentialFallbackIfNoBiometric = true,
+                onSuccess = {
+                    viewModel.deactivateUninstallProtectionAfterFingerprint(
+                        notifyUser = false,
+                        clearDeviceOwnerForUninstall = true
+                    )
+                    scope.launch {
+                        repeat(10) {
+                            if (!UninstallProtectionManager.isUninstallProtectionActive(context)) return@repeat
+                            delay(150L)
+                        }
+                        viewModel.refreshUninstallProtectionStatus()
+                        runCatching {
+                            context.startActivity(UninstallProtectionManager.buildUninstallSelfIntent(context))
+                        }
+                    }
+                },
+                onFailure = { reason ->
+                    if (reason != "CANCELLED") {
+                        viewModel.emitSecurityNotice(
+                            tr(
+                                language,
+                                "Kuondoa app kumezuiwa — Alama ya Kidole haijathibitishwa.",
+                                "Uninstall blocked — Fingerprint was not verified."
+                            )
+                        )
+                    }
+                }
+            )
+        }
+    }
+
+    val adbDeviceOwnerCommand = remember(context) {
+        UninstallProtectionManager.buildAdbDeviceOwnerCommand(context)
+    }
+
+    val handleCopyDeviceOwnerCommand: () -> Unit = {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+        clipboard?.setPrimaryClip(ClipData.newPlainText("ADB Device Owner Command", adbDeviceOwnerCommand))
+        viewModel.emitSecurityNotice(
+            tr(
+                language,
+                "Amri ya ADB Device Owner imenakiliwa.",
+                "ADB Device Owner command copied to clipboard."
+            )
+        )
     }
 
     val requestManageStoragePermission: () -> Unit = {
@@ -813,6 +1013,7 @@ fun MengiApp(viewModel: MengiViewModel) {
                                     composable<SettingsRoute> {
                                         val autoUpdateEnabled by viewModel.autoUpdateEnabled.collectAsStateWithLifecycle()
                                         val autoPhoneBackupEnabled by viewModel.autoPhoneBackupEnabled.collectAsStateWithLifecycle()
+                                        val uninstallGuardStatus by viewModel.uninstallGuardStatus.collectAsStateWithLifecycle()
                                         val phonePermissions by viewModel.phonePermissions.collectAsStateWithLifecycle()
                                         val updateState by viewModel.updateState.collectAsStateWithLifecycle()
                                         val hasSafetySnapshot by viewModel.hasSafetySnapshot.collectAsStateWithLifecycle()
@@ -835,6 +1036,10 @@ fun MengiApp(viewModel: MengiViewModel) {
                                             autoPhoneBackupEnabled = autoPhoneBackupEnabled,
                                             privacyMaskEnabled = privacyMaskEnabled,
                                             pinLockEnabled = pinLockEnabled,
+                                            uninstallProtectionActive = uninstallGuardStatus.isProtected,
+                                            isDeviceOwner = uninstallGuardStatus.isDeviceOwner,
+                                            adbDeviceOwnerCommand = adbDeviceOwnerCommand,
+                                            biometricAvailability = uninstallGuardStatus.biometricAvailability,
                                             phonePermissions = phonePermissions,
                                             updateState = updateState,
                                             statsSummary = summary,
@@ -855,6 +1060,10 @@ fun MengiApp(viewModel: MengiViewModel) {
                                             onSavePin = { pin -> viewModel.setupAppPin(pin) },
                                             onDisablePin = viewModel::disableAppPin,
                                             onLockNow = viewModel::lockAppNow,
+                                            onToggleUninstallProtection = handleToggleUninstallProtection,
+                                            onRequestFingerprintUninstall = handleFingerprintGuidedUninstall,
+                                            onOpenEnrollFingerprint = openEnrollFingerprintSettings,
+                                            onCopyDeviceOwnerCommand = handleCopyDeviceOwnerCommand,
                                             onRequestManageStoragePermission = requestManageStoragePermission,
                                             onCheckUpdates = { viewModel.checkForUpdates(silentIfUpToDate = false) },
                                             onDownloadUpdate = viewModel::startUpdateDownloadAndInstall,
@@ -866,9 +1075,7 @@ fun MengiApp(viewModel: MengiViewModel) {
                                                 runCatching { context.startActivity(viewModel.openReleasesInBrowser()) }
                                             },
                                             onDirectInstallApk = viewModel::launchDirectApkInstall,
-                                            onUninstallOldApp = {
-                                                runCatching { context.startActivity(viewModel.openUninstallOldApp()) }
-                                            },
+                                            onUninstallOldApp = handleFingerprintGuidedUninstall,
                                             onSaveSettings = viewModel::saveBusinessSettings,
                                             onExportColorExcel = viewModel::exportColorExcelReport,
                                             onExportTransactionsCsv = viewModel::exportTransactionsCsv,

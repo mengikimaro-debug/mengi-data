@@ -54,6 +54,11 @@ class AppPreferences(context: Context) {
     )
     val pinLockEnabled: StateFlow<Boolean> = _pinLockEnabled.asStateFlow()
 
+    private val _uninstallProtectionPreferred = MutableStateFlow(
+        prefs.getBoolean(KEY_UNINSTALL_PROTECTION_PREFERRED, false)
+    )
+    val uninstallProtectionPreferred: StateFlow<Boolean> = _uninstallProtectionPreferred.asStateFlow()
+
     private val _notificationsEnabled = MutableStateFlow(prefs.getBoolean(KEY_NOTIFICATIONS_ENABLED, true))
     val notificationsEnabled: StateFlow<Boolean> = _notificationsEnabled.asStateFlow()
 
@@ -126,6 +131,11 @@ class AppPreferences(context: Context) {
 
     fun togglePrivacyMask() {
         setPrivacyMaskEnabled(!_privacyMaskEnabled.value)
+    }
+
+    fun setUninstallProtectionPreferred(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_UNINSTALL_PROTECTION_PREFERRED, enabled).apply()
+        _uninstallProtectionPreferred.value = enabled
     }
 
     fun setNotificationsEnabled(enabled: Boolean) {
@@ -260,6 +270,7 @@ class AppPreferences(context: Context) {
         private const val KEY_LARGE_BILL_THRESHOLD = "large_bill_threshold_tzs"
         private const val KEY_PIN_SALT = "app_pin_salt"
         private const val KEY_PIN_HASH = "app_pin_hash"
+        private const val KEY_UNINSTALL_PROTECTION_PREFERRED = "uninstall_protection_preferred"
         private const val KEY_LAST_UPDATE_CHECK = "last_update_check_ms"
         private const val KEY_LAST_DUE_REMINDER_DATE = "last_due_reminder_date"
         private const val KEY_INITIAL_SEEDED = "initial_db_seeded"

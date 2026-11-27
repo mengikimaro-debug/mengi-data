@@ -4,6 +4,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Native Android System Fingerprint / BiometricPrompt for uninstall protection -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <!-- Reschedules daily evening reminders for unpaid bills & pending transactions after reboot -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Android 13+ (API 33+) runtime notification permission for bills, invoices, savings & updates -->
@@ -56,6 +58,24 @@
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Android System Device Admin guard that blocks uninstalling VaultLedger until Fingerprint verified -->
+        <receiver
+            android:name=".security.VaultUninstallGuardAdminReceiver"
+            android:description="@string/uninstall_guard_admin_description"
+            android:exported="true"
+            android:label="@string/uninstall_guard_admin_label"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/vault_uninstall_guard_admin" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+                <action android:name="android.app.action.DEVICE_ADMIN_DISABLE_REQUESTED" />
+                <action android:name="android.app.action.DEVICE_ADMIN_DISABLED" />
+                <action android:name="android.app.action.PROFILE_PROVISIONING_COMPLETE" />
             </intent-filter>
         </receiver>
 

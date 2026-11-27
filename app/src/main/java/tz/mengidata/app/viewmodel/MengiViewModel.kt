@@ -68,6 +68,9 @@ import tz.mengidata.app.notifications.EveningReminderScheduler
 import tz.mengidata.app.notifications.LargeBillWarningPopup
 import tz.mengidata.app.notifications.MengiNotificationManager
 import tz.mengidata.app.notifications.PhonePermissionsSnapshot
+import tz.mengidata.app.security.BiometricAvailability
+import tz.mengidata.app.security.UninstallGuardStatus
+import tz.mengidata.app.security.UninstallProtectionManager
 import tz.mengidata.app.updater.AppUpdateManager
 import tz.mengidata.app.updater.InstallResultEvent
 import tz.mengidata.app.updater.UpdateInfo
@@ -142,6 +145,17 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _isAppUnlocked = MutableStateFlow(!prefs.pinLockEnabled.value)
     val isAppUnlocked: StateFlow<Boolean> = _isAppUnlocked.asStateFlow()
+
+    private val _uninstallGuardStatus = MutableStateFlow(
+        UninstallProtectionManager.getStatus(application)
+    )
+    val uninstallGuardStatus: StateFlow<UninstallGuardStatus> = _uninstallGuardStatus.asStateFlow()
+
+    private val _uninstallProtectionActive = MutableStateFlow(_uninstallGuardStatus.value.isProtected)
+    val uninstallProtectionActive: StateFlow<Boolean> = _uninstallProtectionActive.asStateFlow()
+
+    private val _biometricAvailability = MutableStateFlow(_uninstallGuardStatus.value.biometricAvailability)
+    val biometricAvailability: StateFlow<BiometricAvailability> = _biometricAvailability.asStateFlow()
 
     private val _phonePermissions = MutableStateFlow(PhonePermissionsSnapshot())
     val phonePermissions: StateFlow<PhonePermissionsSnapshot> = _phonePermissions.asStateFlow()
@@ -667,6 +681,63 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
         prefs.clearAppPin()
         _isAppUnlocked.value = true
         emitNotice(tr(language.value, "Kufunga kwa namba ya siri kumezimwa.", "PIN lock disabled."))
+    }
+
+    fun refreshUninstallProtectionStatus() {
+        val app = getApplication<Application>()
+        var status = UninstallProtectionManager.getStatus(app)
+        // If newly provisioned as Android Enterprise Device Owner, automatically lock uninstallation
+        if (status.isDeviceOwner && !status.isDeviceOwnerUninstallBlocked && prefs.uninstallProtectionPreferred.value) {
+            UninstallProtectionManager.enforceDeviceOwnerUninstallBlock(app, blocked = true)
+            status = UninstallProtectionManager.getStatus(app)
+        }
+        _uninstallGuardStatus.value = status
+        _uninstallProtectionActive.value = status.isProtected
+        _biometricAvailability.value = status.biometricAvailability
+    }
+
+    fun enableDeviceOwnerUninstallBlockAfterFingerprint(): Boolean {
+        val app = getApplication<Application>()
+        val locked = UninstallProtectionManager.enforceDeviceOwnerUninstallBlock(app, blocked = true)
+        if (locked) {
+            prefs.setUninstallProtectionPreferred(true)
+            refreshUninstallProtectionStatus()
+            emitNotice(
+                tr(
+                    language.value,
+                    "Device Owner: Kuondoa app kumezuiwa kabisa kwenye mfumo wa Android.",
+                    "Device Owner: App uninstallation is now permanently blocked by Android."
+                )
+            )
+        }
+        return locked
+    }
+
+    fun deactivateUninstallProtectionAfterFingerprint(
+        notifyUser: Boolean = true,
+        clearDeviceOwnerForUninstall: Boolean = false
+    ): Boolean {
+        val app = getApplication<Application>()
+        val removed = UninstallProtectionManager.releaseProtectionAfterFingerprint(
+            context = app,
+            clearDeviceOwnerForUninstall = clearDeviceOwnerForUninstall
+        )
+        prefs.setUninstallProtectionPreferred(false)
+        refreshUninstallProtectionStatus()
+        if (notifyUser) {
+            emitNotice(
+                tr(
+                    language.value,
+                    "Alama ya kidole imethibitishwa. Ulinzi wa kuondoa app umezimwa.",
+                    "Fingerprint verified. Uninstall protection deactivated."
+                )
+            )
+        }
+        return removed
+    }
+
+    fun emitSecurityNotice(message: String) {
+        emitNotice(message)
     }
 
     // --- Smart Auto-Entry & Transactions ---
@@ -1913,6 +1984,7 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun onResumeCheckInstallPermission() {
+        refreshUninstallProtectionStatus()
         val now = System.currentTimeMillis()
         val prevStorageGranted = _phonePermissions.value.storageManagerGranted
         val hasBackup = phoneStorageStatus.value.hasAnyBackup

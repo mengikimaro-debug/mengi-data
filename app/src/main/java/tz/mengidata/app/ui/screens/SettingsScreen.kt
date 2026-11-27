@@ -23,9 +23,11 @@ import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Business
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.DeleteForever
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.Fingerprint
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Palette
@@ -75,6 +77,7 @@ import tz.mengidata.app.i18n.AppLanguage
 import tz.mengidata.app.i18n.ThemeMode
 import tz.mengidata.app.i18n.tr
 import tz.mengidata.app.notifications.PhonePermissionsSnapshot
+import tz.mengidata.app.security.BiometricAvailability
 import tz.mengidata.app.system.DevicePerformanceProfile
 import tz.mengidata.app.system.PerformanceModePreference
 import tz.mengidata.app.ui.components.ConfirmActionDialog
@@ -108,6 +111,10 @@ fun SettingsScreen(
     autoPhoneBackupEnabled: Boolean = true,
     privacyMaskEnabled: Boolean,
     pinLockEnabled: Boolean,
+    uninstallProtectionActive: Boolean = false,
+    isDeviceOwner: Boolean = false,
+    adbDeviceOwnerCommand: String = "",
+    biometricAvailability: BiometricAvailability = BiometricAvailability.READY,
     phonePermissions: PhonePermissionsSnapshot,
     updateState: UpdateUiState,
     statsSummary: String,
@@ -126,6 +133,10 @@ fun SettingsScreen(
     onSavePin: (String) -> Unit,
     onDisablePin: () -> Unit,
     onLockNow: () -> Unit,
+    onToggleUninstallProtection: (Boolean) -> Unit = {},
+    onRequestFingerprintUninstall: () -> Unit = {},
+    onOpenEnrollFingerprint: () -> Unit = {},
+    onCopyDeviceOwnerCommand: () -> Unit = {},
     onRequestManageStoragePermission: () -> Unit = {},
     onCheckUpdates: () -> Unit,
     onDownloadUpdate: (UpdateInfo) -> Unit,
@@ -335,11 +346,18 @@ fun SettingsScreen(
                         title = tr(language, "Usalama na Faragha", "Security & Privacy"),
                         subtitle = tr(language, "Linda salio na funga programu kwa namba ya siri ya tarakimu 4.", "Hide balances in public and lock app with a 4-digit PIN."),
                         badge = {
+                            val isProtected = pinLockEnabled || uninstallProtectionActive || isDeviceOwner
+                            val badgeText = when {
+                                isDeviceOwner -> tr(language, "Device Owner", "Device Owner")
+                                pinLockEnabled && uninstallProtectionActive -> tr(language, "Ulinzi Kamili", "Full Guard")
+                                uninstallProtectionActive -> tr(language, "Alama ya Kidole", "Fingerprint Lock")
+                                pinLockEnabled -> tr(language, "PIN Imewashwa", "PIN Active")
+                                else -> tr(language, "Wazi", "Unlocked")
+                            }
                             StatusPill(
-                                text = if (pinLockEnabled) tr(language, "Imelindwa", "PIN Active")
-                                else tr(language, "Wazi", "Unlocked"),
-                                containerColor = if (pinLockEnabled) colors.incomeSoft else colors.subtleSurface,
-                                contentColor = if (pinLockEnabled) colors.income else MaterialTheme.colorScheme.onSurfaceVariant
+                                text = badgeText,
+                                containerColor = if (isProtected) colors.incomeSoft else colors.subtleSurface,
+                                contentColor = if (isProtected) colors.income else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     )
@@ -439,6 +457,245 @@ fun SettingsScreen(
                                     textAlign = TextAlign.Center,
                                     maxLines = 2
                                 )
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(14.dp))
+                    HorizontalDivider(color = colors.cardBorder)
+                    Spacer(Modifier.height(14.dp))
+
+                    // Android System Fingerprint Uninstall Protection
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            modifier = Modifier.weight(1f).padding(end = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Surface(
+                                shape = CircleShape,
+                                color = if (uninstallProtectionActive) colors.incomeSoft else colors.subtleSurface,
+                                modifier = Modifier.size(38.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Fingerprint,
+                                        contentDescription = tr(language, "Alama ya kidole", "Fingerprint"),
+                                        tint = if (uninstallProtectionActive) colors.income else MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Text(
+                                    text = tr(
+                                        language,
+                                        "Ulinzi wa Kuondoa App (Fingerprint)",
+                                        "Fingerprint Uninstall Protection"
+                                    ),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = when {
+                                        isDeviceOwner && uninstallProtectionActive -> tr(
+                                            language,
+                                            "Android Enterprise Device Owner: Kuondoa (uninstall) kumezuiwa kabisa katika mfumo mzima hadi uthibitishe Fingerprint.",
+                                            "Android Enterprise Device Owner: Uninstall is strictly blocked system-wide until Fingerprint verification."
+                                        )
+                                        uninstallProtectionActive -> tr(
+                                            language,
+                                            "Mfumo wa Android unazuia app ku-uninstalliwa bila uthibitisho wa Alama ya Kidole (Fingerprint).",
+                                            "Android System blocks uninstalling VaultLedger until your Fingerprint is verified."
+                                        )
+                                        biometricAvailability == BiometricAvailability.NONE_ENROLLED -> tr(
+                                            language,
+                                            "Sajili Alama ya Kidole kwenye mipangilio ya Android ili kuwasha ulinzi wa kuondoa app.",
+                                            "Enroll a Fingerprint in Android Settings first to enable uninstall protection."
+                                        )
+                                        biometricAvailability == BiometricAvailability.UNAVAILABLE -> tr(
+                                            language,
+                                            "Kifaa hiki hakina sensa ya Alama ya Kidole inayopatikana.",
+                                            "Fingerprint hardware is unavailable on this device."
+                                        )
+                                        else -> tr(
+                                            language,
+                                            "Huzuia mtu yeyote ku-uninstall app kupitia mfumo wa Android hadi athibitishe Alama ya Kidole.",
+                                            "Locks uninstallation at the Android System level until Fingerprint is verified."
+                                        )
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (uninstallProtectionActive) colors.income else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        Switch(
+                            checked = uninstallProtectionActive,
+                            onCheckedChange = onToggleUninstallProtection,
+                            modifier = Modifier.testTag("uninstall_protection_switch")
+                        )
+                    }
+
+                    if (uninstallProtectionActive) {
+                        Spacer(Modifier.height(12.dp))
+                        OutlinedButton(
+                            onClick = onRequestFingerprintUninstall,
+                            shape = CircleShape,
+                            border = BorderStroke(1.dp, colors.cardBorder),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .testTag("fingerprint_uninstall_app_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Fingerprint,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.size(8.dp))
+                            Text(
+                                text = tr(
+                                    language,
+                                    "Thibitisha Fingerprint & Ondoa App",
+                                    "Verify Fingerprint & Uninstall App"
+                                ),
+                                maxLines = 1
+                            )
+                        }
+                    } else if (biometricAvailability == BiometricAvailability.NONE_ENROLLED) {
+                        Spacer(Modifier.height(10.dp))
+                        FilledTonalButton(
+                            onClick = onOpenEnrollFingerprint,
+                            shape = CircleShape,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .testTag("enroll_fingerprint_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Fingerprint,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.size(8.dp))
+                            Text(
+                                text = tr(
+                                    language,
+                                    "Sajili Alama ya Kidole (Android)",
+                                    "Enroll Fingerprint in Android"
+                                ),
+                                maxLines = 1
+                            )
+                        }
+                    }
+
+                    // Android Enterprise Device Owner (MDM / Kiosk) status & ADB provisioning command
+                    Spacer(Modifier.height(12.dp))
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = colors.subtleSurface,
+                        border = BorderStroke(
+                            1.dp,
+                            if (isDeviceOwner) colors.income.copy(alpha = 0.45f) else colors.cardBorder
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.VerifiedUser,
+                                        contentDescription = null,
+                                        tint = if (isDeviceOwner) colors.income else MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = tr(
+                                            language,
+                                            "Android Enterprise (Device Owner)",
+                                            "Android Enterprise (Device Owner)"
+                                        ),
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                                StatusPill(
+                                    text = if (isDeviceOwner) {
+                                        tr(language, "IMEWASHWA", "ACTIVE")
+                                    } else {
+                                        tr(language, "MDM / ADB", "MDM / ADB")
+                                    },
+                                    containerColor = if (isDeviceOwner) colors.incomeSoft else MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    contentColor = if (isDeviceOwner) colors.income else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            if (isDeviceOwner) {
+                                Text(
+                                    text = tr(
+                                        language,
+                                        "Simu hii imesajiliwa kama Device Owner. Kuondoa programu kumezuiwa kabisa katika mfumo wa Android.",
+                                        "Provisioned as Device Owner. App uninstallation is strictly locked at the OS level."
+                                    ),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = colors.income
+                                )
+                            } else if (adbDeviceOwnerCommand.isNotBlank()) {
+                                Text(
+                                    text = tr(
+                                        language,
+                                        "Kwa ulinzi wa Kiosk/MDM usioondolewa kwa vyovyote, endesha amri hii kupitia ADB kwenye kifaa kisicho na akaunti:",
+                                        "For unremovable MDM/Kiosk protection, provision via ADB on a fresh device (no accounts added):"
+                                    ),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Surface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = MaterialTheme.colorScheme.surface,
+                                    border = BorderStroke(1.dp, colors.cardBorder),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        text = adbDeviceOwnerCommand,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.padding(10.dp)
+                                    )
+                                }
+                                OutlinedButton(
+                                    onClick = onCopyDeviceOwnerCommand,
+                                    shape = CircleShape,
+                                    border = BorderStroke(1.dp, colors.cardBorder),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(44.dp)
+                                        .testTag("copy_device_owner_cmd_btn")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.ContentCopy,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(Modifier.size(6.dp))
+                                    Text(
+                                        text = tr(language, "Nakili Amri ya ADB", "Copy ADB Command"),
+                                        maxLines = 1
+                                    )
+                                }
                             }
                         }
                     }
