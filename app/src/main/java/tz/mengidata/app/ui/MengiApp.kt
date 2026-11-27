@@ -748,10 +748,12 @@ fun MengiApp(viewModel: MengiViewModel) {
 
                                     composable<BillsRoute> {
                                         val bills by viewModel.bills.collectAsStateWithLifecycle()
+                                        val transactions by viewModel.transactions.collectAsStateWithLifecycle()
                                         val zeroLossLedger by viewModel.zeroLossLedger.collectAsStateWithLifecycle()
                                         val partyDirectory by viewModel.partyDirectory.collectAsStateWithLifecycle()
                                         BillsScreen(
                                             bills = bills,
+                                            transactions = transactions,
                                             zeroLossLedger = zeroLossLedger,
                                             knownParties = partyDirectory,
                                             currency = settings.currency.ifBlank { "TZS" },
