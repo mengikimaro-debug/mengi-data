@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,8 +25,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Notes
-import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.LocationOn
@@ -34,11 +35,12 @@ import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Phone
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -55,12 +57,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import tz.mengidata.app.data.accounting.PartySummary
 import tz.mengidata.app.data.db.PendingTransactionEntity
 import tz.mengidata.app.i18n.AppLanguage
@@ -208,447 +212,704 @@ fun PendingTransactionsSummaryCard(
     }
 }
 
+private fun pendingInitials(item: PendingTransactionEntity): String {
+    val source = item.party.trim().ifBlank { item.description.trim() }
+    if (source.isBlank()) return "ML"
+    val parts = source.split(Regex("\\s+")).filter { it.isNotBlank() }
+    return when {
+        parts.size >= 2 -> "${parts[0].first().uppercaseChar()}${parts[1].first().uppercaseChar()}"
+        parts.size == 1 && parts[0].length >= 2 -> parts[0].substring(0, 2).uppercase()
+        else -> parts[0].first().uppercaseChar().toString()
+    }
+}
+
 /**
- * Card for a single Pending Transaction inside the Ledger bar, showing:
- * - Name (Jina), Phone Number (Namba ya Simu with tap-to-dial), and Location (Eneo)
- * - Payment status (Hajalipa / Amelipa Nusu + Bado kiasi gani / Kalipa Kiasi Chote)
- * - Dedicated Details / Maelezo section
- * - Quick actions: Record Partial/Full Payment, Complete -> Ledger, Edit, Delete
+ * Conversation-style inbox list for Pending Payments inside the Ledger bar.
+ * Displays compact, scannable threads (initials avatar + status dot, name/title,
+ * 1-line details preview, date & amount). Tapping any row opens the compact popup view.
  */
 @Composable
-fun PendingTransactionRowCard(
-    item: PendingTransactionEntity,
+fun PendingConversationListCard(
+    items: List<PendingTransactionEntity>,
     currency: String,
     language: AppLanguage,
-    onRecordPayment: () -> Unit,
-    onCompleteToLedger: () -> Unit,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit,
+    onSelectItem: (PendingTransactionEntity) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
     val colors = LocalMengiColors.current
-    val accentBg = colors.expenseSoft
-    val accentFg = colors.expense
-
-    val paymentStatusLabel = when {
-        item.isFullyPaid -> tr(language, "Kalipa Kiasi Chote", "Paid in Full")
-        item.isPartiallyPaid -> tr(language, "Amelipa Nusu", "Paid Partial")
-        else -> tr(language, "Hajalipa Bado", "Unpaid")
-    }
-    val paymentStatusBg = when {
-        item.isFullyPaid -> colors.incomeSoft
-        item.isPartiallyPaid -> colors.warningSoft
-        else -> colors.expenseSoft
-    }
-    val paymentStatusFg = when {
-        item.isFullyPaid -> colors.income
-        item.isPartiallyPaid -> colors.warning
-        else -> colors.expense
-    }
-
-    val metaLine = buildList {
-        add(FormatUtils.localizedCategory(item.category, language))
-        add(FormatUtils.localizedMethod(item.method, language))
-    }.joinToString(" · ")
-
-    val hasContactInfo = item.party.isNotBlank() || item.phoneNumber.isNotBlank() || item.location.isNotBlank()
-
     MengiCard(
-        modifier = modifier.testTag("pending_txn_card_${item.id}"),
-        contentPadding = 14.dp
+        modifier = modifier.testTag("pending_conversation_list_card"),
+        contentPadding = 0.dp
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(accentBg),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.ArrowUpward,
-                    contentDescription = tr(language, "Malipo yanayosubiri", "Pending payment"),
-                    tint = accentFg,
-                    modifier = Modifier.size(20.dp)
+        Column(modifier = Modifier.fillMaxWidth()) {
+            items.forEachIndexed { index, item ->
+                PendingConversationListRow(
+                    item = item,
+                    currency = currency,
+                    language = language,
+                    onClick = { onSelectItem(item) }
                 )
-            }
-
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(3.dp)
-            ) {
-                Text(
-                    text = item.description,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = metaLine,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    StatusPill(
-                        text = paymentStatusLabel,
-                        containerColor = paymentStatusBg,
-                        contentColor = paymentStatusFg
-                    )
-                    StatusPill(
-                        text = FormatUtils.friendlyDateLabel(item.expectedDate, language),
-                        containerColor = if (item.isOverdue) colors.expenseSoft else MaterialTheme.colorScheme.surfaceContainerHigh,
-                        contentColor = if (item.isOverdue) colors.expense else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    text = FormatUtils.formatMoney(item.amount, currency),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = accentFg,
-                    maxLines = 1
-                )
-                if (item.isOverdue) {
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = tr(language, "Imechelewa", "Overdue"),
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = colors.expense
+                if (index < items.lastIndex) {
+                    HorizontalDivider(
+                        color = colors.cardBorder,
+                        thickness = 0.8.dp,
+                        modifier = Modifier.padding(start = 74.dp, end = 14.dp)
                     )
                 }
             }
         }
+    }
+}
 
-        // Dedicated Contact Info Section (Jina, Namba ya Simu, Eneo)
-        if (hasContactInfo) {
-            Spacer(Modifier.height(10.dp))
-            Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)),
+@Composable
+private fun PendingConversationListRow(
+    item: PendingTransactionEntity,
+    currency: String,
+    language: AppLanguage,
+    onClick: () -> Unit
+) {
+    val colors = LocalMengiColors.current
+    val initials = remember(item.party, item.description) { pendingInitials(item) }
+
+    val statusBg = when {
+        item.isFullyPaid -> colors.incomeSoft
+        item.isPartiallyPaid -> colors.warningSoft
+        else -> colors.expenseSoft
+    }
+    val statusFg = when {
+        item.isFullyPaid -> colors.income
+        item.isPartiallyPaid -> colors.warning
+        else -> colors.expense
+    }
+    val statusLabel = when {
+        item.isFullyPaid -> tr(language, "Kalipa Chote", "Paid Full")
+        item.isPartiallyPaid -> tr(language, "Amelipa Nusu", "Partial")
+        else -> tr(language, "Hajalipa", "Unpaid")
+    }
+
+    val primaryTitle = item.party.trim().ifBlank { item.description.trim() }
+    val previewLine = buildList {
+        if (item.party.isNotBlank() && item.description.isNotBlank()) {
+            add(item.description.trim())
+        }
+        if (item.details.isNotBlank()) {
+            add(item.details.trim())
+        }
+        if (item.location.isNotBlank()) {
+            add(item.location.trim())
+        }
+        if (isEmpty() && item.phoneNumber.isNotBlank()) {
+            add(item.phoneNumber.trim())
+        }
+        if (isEmpty()) {
+            add(FormatUtils.localizedCategory(item.category, language))
+        }
+    }.joinToString(" · ")
+
+    Surface(
+        onClick = onClick,
+        color = Color.Transparent,
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 76.dp)
+            .testTag("pending_txn_card_${item.id}")
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Conversation Avatar with live payment-status dot
+            Box(modifier = Modifier.size(48.dp)) {
+                Box(
+                    modifier = Modifier
+                        .size(46.dp)
+                        .clip(CircleShape)
+                        .background(statusBg)
+                        .align(Alignment.Center),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = initials,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = statusFg,
+                        maxLines = 1
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .size(13.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surface)
+                        .padding(2.dp)
+                        .clip(CircleShape)
+                        .background(statusFg)
+                        .align(Alignment.BottomEnd)
+                )
+            }
+
+            // Center: Name/Title, 1-line conversation preview, compact status line
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = primaryTitle,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f).padding(end = 8.dp)
+                    )
+                    Text(
+                        text = FormatUtils.friendlyDateLabel(item.expectedDate, language),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = if (item.isOverdue) FontWeight.Bold else FontWeight.Medium,
+                        color = if (item.isOverdue) colors.expense else MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = previewLine,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f).padding(end = 8.dp)
+                    )
+                    Text(
+                        text = FormatUtils.formatCompactMoney(item.amount, currency),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = statusFg,
+                        maxLines = 1
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = statusBg
+                        ) {
+                            Text(
+                                text = statusLabel,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = statusFg,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                maxLines = 1
+                            )
+                        }
+                        if (item.isPartiallyPaid) {
+                            Text(
+                                text = "${tr(language, "Bado", "Left")} ${FormatUtils.formatCompactMoney(item.remainingAmount, currency)}",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = colors.expense,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        } else if (item.isOverdue) {
+                            Text(
+                                text = tr(language, "Imechelewa", "Overdue"),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = colors.expense,
+                                maxLines = 1
+                            )
+                        }
+                    }
+
+                    if (item.isPartiallyPaid) {
+                        Box(
+                            modifier = Modifier
+                                .width(42.dp)
+                                .height(4.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(item.paymentProgressRatio)
+                                    .fillMaxHeight()
+                                    .clip(CircleShape)
+                                    .background(colors.warning)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Compact small-size Popup View showing complete details and quick actions when the user
+ * taps a pending payment from the conversation list.
+ */
+@Composable
+fun PendingTransactionDetailPopup(
+    item: PendingTransactionEntity,
+    currency: String,
+    language: AppLanguage,
+    onDismiss: () -> Unit,
+    onRecordPayment: () -> Unit,
+    onCompleteToLedger: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val context = LocalContext.current
+    val colors = LocalMengiColors.current
+    val initials = remember(item.party, item.description) { pendingInitials(item) }
+
+    val statusBg = when {
+        item.isFullyPaid -> colors.incomeSoft
+        item.isPartiallyPaid -> colors.warningSoft
+        else -> colors.expenseSoft
+    }
+    val statusFg = when {
+        item.isFullyPaid -> colors.income
+        item.isPartiallyPaid -> colors.warning
+        else -> colors.expense
+    }
+    val statusLabel = when {
+        item.isFullyPaid -> tr(language, "Kalipa Kiasi Chote", "Paid in Full")
+        item.isPartiallyPaid -> tr(language, "Amelipa Nusu", "Paid Partial")
+        else -> tr(language, "Hajalipa Bado", "Unpaid")
+    }
+    val hasContactInfo = item.party.isNotBlank() || item.phoneNumber.isNotBlank() || item.location.isNotBlank()
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, colors.cardBorder),
+            tonalElevation = 2.dp,
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = 348.dp)
+                .testTag("pending_detail_popup_${item.id}")
+        ) {
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .testTag("pending_txn_contact_${item.id}")
+                    .verticalScroll(rememberScrollState())
+                    .padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Column(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                // Header: Avatar + Name/Title + Close Button
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    if (item.party.isNotBlank()) {
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(CircleShape)
+                            .background(statusBg),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = initials,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = statusFg
+                        )
+                    }
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Text(
+                            text = item.party.ifBlank { item.description },
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (item.party.isNotBlank()) {
+                            Text(
+                                text = item.description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                    Surface(
+                        onClick = onDismiss,
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        modifier = Modifier
+                            .size(44.dp)
+                            .testTag("close_pending_popup_btn")
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Rounded.Close,
+                                contentDescription = tr(language, "Funga", "Close"),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
+
+                // Compact Status & Payment Breakdown Card
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    border = BorderStroke(1.dp, colors.cardBorder),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("pending_txn_payment_status_${item.id}")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         Row(
-                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            StatusPill(
+                                text = statusLabel,
+                                containerColor = statusBg,
+                                contentColor = statusFg
+                            )
+                            StatusPill(
+                                text = FormatUtils.friendlyDateLabel(item.expectedDate, language),
+                                containerColor = if (item.isOverdue) colors.expenseSoft else MaterialTheme.colorScheme.surfaceContainerHigh,
+                                contentColor = if (item.isOverdue) colors.expense else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = tr(language, "Jumla", "Total"),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = FormatUtils.formatCompactMoney(item.amount, currency),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1
+                                )
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = tr(language, "Amelipa", "Paid"),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = colors.income
+                                )
+                                Text(
+                                    text = FormatUtils.formatCompactMoney(item.effectivePaidAmount, currency),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = colors.income,
+                                    maxLines = 1
+                                )
+                            }
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                horizontalAlignment = Alignment.End
+                            ) {
+                                Text(
+                                    text = tr(language, "Bado", "Left"),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (item.isFullyPaid) colors.income else colors.expense
+                                )
+                                Text(
+                                    text = if (item.isFullyPaid) {
+                                        tr(language, "0 (Chote)", "0 (Full)")
+                                    } else {
+                                        FormatUtils.formatCompactMoney(item.remainingAmount, currency)
+                                    },
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = if (item.isFullyPaid) colors.income else colors.expense,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(5.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                        ) {
+                            if (item.paymentProgressRatio > 0.005f) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth(item.paymentProgressRatio)
+                                        .fillMaxHeight()
+                                        .clip(CircleShape)
+                                        .background(if (item.isFullyPaid) colors.income else colors.warning)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Contact & Details Card (Jina, Simu, Eneo, Maelezo)
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    border = BorderStroke(1.dp, colors.cardBorder),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("pending_txn_details_${item.id}")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (hasContactInfo) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (item.phoneNumber.isNotBlank()) {
+                                    Surface(
+                                        onClick = {
+                                            val dial = Intent(Intent.ACTION_DIAL, Uri.parse("tel:${item.phoneNumber.trim()}"))
+                                            runCatching { context.startActivity(dial) }
+                                        },
+                                        shape = CircleShape,
+                                        color = MaterialTheme.colorScheme.primaryContainer,
+                                        modifier = Modifier.heightIn(min = 34.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Phone,
+                                                contentDescription = tr(language, "Piga simu", "Call"),
+                                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                            Text(
+                                                text = item.phoneNumber,
+                                                style = MaterialTheme.typography.labelMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                maxLines = 1
+                                            )
+                                        }
+                                    }
+                                }
+
+                                if (item.location.isNotBlank()) {
+                                    Row(
+                                        modifier = Modifier.weight(1f),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.LocationOn,
+                                            contentDescription = tr(language, "Eneo", "Location"),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(15.dp)
+                                        )
+                                        Text(
+                                            text = item.location,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                            }
+                            if (item.phoneNumber.isNotBlank() || item.location.isNotBlank()) {
+                                HorizontalDivider(color = colors.cardBorder, thickness = 0.8.dp)
+                            }
+                        }
+
+                        Row(
+                            verticalAlignment = Alignment.Top,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Rounded.Person,
-                                contentDescription = tr(language, "Jina", "Name"),
+                                imageVector = Icons.AutoMirrored.Rounded.Notes,
+                                contentDescription = tr(language, "Maelezo", "Details"),
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(16.dp)
                             )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = tr(language, "Maelezo", "Details"),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(Modifier.height(2.dp))
+                                Text(
+                                    text = item.details.ifBlank {
+                                        tr(language, "Hakuna maelezo ya ziada.", "No extra details added.")
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (item.details.isBlank()) {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurface
+                                    }
+                                )
+                            }
+                        }
+
+                        Text(
+                            text = "${FormatUtils.localizedCategory(item.category, language)} · ${FormatUtils.localizedMethod(item.method, language)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                // Compact Action Row 1: Partial/Full Payment + Post to Ledger
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (!item.isFullyPaid) {
+                        OutlinedButton(
+                            onClick = onRecordPayment,
+                            shape = CircleShape,
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 48.dp)
+                                .testTag("record_payment_pending_${item.id}")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Payments,
+                                contentDescription = null,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
                             Text(
-                                text = "${tr(language, "Jina", "Name")}: ${item.party}",
-                                style = MaterialTheme.typography.bodySmall,
+                                text = tr(language, "Lipa Nusu", "Pay"),
                                 fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurface,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    Button(
+                        onClick = onCompleteToLedger,
+                        shape = CircleShape,
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp)
+                            .testTag("complete_pending_${item.id}")
                     ) {
-                        if (item.phoneNumber.isNotBlank()) {
-                            Surface(
-                                onClick = {
-                                    val dial = Intent(Intent.ACTION_DIAL, Uri.parse("tel:${item.phoneNumber.trim()}"))
-                                    runCatching { context.startActivity(dial) }
-                                },
-                                shape = CircleShape,
-                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f),
-                                modifier = Modifier.heightIn(min = 32.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Phone,
-                                        contentDescription = tr(language, "Piga simu", "Call phone number"),
-                                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Text(
-                                        text = item.phoneNumber,
-                                        style = MaterialTheme.typography.labelMedium,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                        maxLines = 1
-                                    )
-                                }
-                            }
-                        }
-
-                        if (item.location.isNotBlank()) {
-                            Row(
-                                modifier = Modifier.weight(1f),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(5.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.LocationOn,
-                                    contentDescription = tr(language, "Eneo", "Location"),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(15.dp)
-                                )
-                                Text(
-                                    text = item.location,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
+                        Icon(
+                            imageVector = Icons.Rounded.CheckCircle,
+                            contentDescription = null,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = if (item.isFullyPaid) {
+                                tr(language, "Hamishia Ledger", "Post to Ledger")
+                            } else {
+                                tr(language, "→ Ledger", "→ Ledger")
+                            },
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
                 }
-            }
-        }
 
-        // Dedicated Payment Breakdown Section (Amelipa Nusu / Bado Kiasi Gani / Kalipa Chote)
-        Spacer(Modifier.height(10.dp))
-        Surface(
-            shape = RoundedCornerShape(14.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("pending_txn_payment_status_${item.id}")
-        ) {
-            Column(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
+                // Compact Action Row 2: Edit + Delete
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = tr(language, "Jumla", "Total"),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = FormatUtils.formatCompactMoney(item.amount, currency),
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1
-                        )
-                    }
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = tr(language, "Amelipa", "Paid"),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = colors.income
-                        )
-                        Text(
-                            text = FormatUtils.formatCompactMoney(item.effectivePaidAmount, currency),
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = colors.income,
-                            maxLines = 1
-                        )
-                    }
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        horizontalAlignment = Alignment.End
+                    FilledTonalButton(
+                        onClick = onEdit,
+                        shape = CircleShape,
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp)
+                            .testTag("edit_pending_${item.id}")
                     ) {
-                        Text(
-                            text = tr(language, "Bado", "Remaining"),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (item.isFullyPaid) colors.income else colors.expense
+                        Icon(
+                            imageVector = Icons.Rounded.Edit,
+                            contentDescription = null,
+                            modifier = Modifier.size(15.dp)
                         )
+                        Spacer(Modifier.width(5.dp))
                         Text(
-                            text = if (item.isFullyPaid) {
-                                tr(language, "0 (Chote)", "0 (Full)")
-                            } else {
-                                FormatUtils.formatCompactMoney(item.remainingAmount, currency)
-                            },
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = if (item.isFullyPaid) colors.income else colors.expense,
+                            text = tr(language, "Hariri", "Edit"),
+                            maxLines = 1
+                        )
+                    }
+
+                    OutlinedButton(
+                        onClick = onDelete,
+                        shape = CircleShape,
+                        border = BorderStroke(1.dp, colors.expense.copy(alpha = 0.45f)),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.expense),
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp)
+                            .testTag("delete_pending_${item.id}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Delete,
+                            contentDescription = null,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Spacer(Modifier.width(5.dp))
+                        Text(
+                            text = tr(language, "Futa", "Delete"),
                             maxLines = 1
                         )
                     }
                 }
-
-                // Matte Progress Bar
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(6.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                ) {
-                    if (item.paymentProgressRatio > 0.005f) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth(item.paymentProgressRatio)
-                                .fillMaxHeight()
-                                .clip(CircleShape)
-                                .background(if (item.isFullyPaid) colors.income else colors.warning)
-                        )
-                    }
-                }
-            }
-        }
-
-        // Dedicated Transaction Details / Maelezo Section
-        Spacer(Modifier.height(10.dp))
-        Surface(
-            onClick = onEdit,
-            shape = RoundedCornerShape(14.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)),
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("pending_txn_details_${item.id}")
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
-                verticalAlignment = Alignment.Top,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Rounded.Notes,
-                    contentDescription = tr(language, "Maelezo ya muamala", "Transaction details"),
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(16.dp)
-                )
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = tr(language, "Maelezo ya Muamala", "Transaction Details"),
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = item.details.ifBlank {
-                            tr(language, "Gusa kuongeza maelezo ya muamala huu...", "Tap to add details for this pending transaction...")
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (item.details.isBlank()) {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        } else {
-                            MaterialTheme.colorScheme.onSurface
-                        }
-                    )
-                }
-            }
-        }
-
-        Spacer(Modifier.height(10.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            if (!item.isFullyPaid) {
-                OutlinedButton(
-                    onClick = onRecordPayment,
-                    shape = CircleShape,
-                    modifier = Modifier
-                        .weight(1f)
-                        .heightIn(min = 48.dp)
-                        .testTag("record_payment_pending_${item.id}")
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Payments,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(Modifier.width(5.dp))
-                    Text(
-                        text = tr(language, "Lipa Nusu / Chote", "Pay Partial / Full"),
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-
-            FilledTonalButton(
-                onClick = onCompleteToLedger,
-                shape = CircleShape,
-                modifier = Modifier
-                    .weight(1f)
-                    .heightIn(min = 48.dp)
-                    .testTag("complete_pending_${item.id}")
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.CheckCircle,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(Modifier.width(5.dp))
-                Text(
-                    text = if (item.isFullyPaid) {
-                        tr(language, "Hamishia Ledger", "Post to Ledger")
-                    } else {
-                        tr(language, "→ Ledger", "→ Ledger")
-                    },
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            IconButton(
-                onClick = onEdit,
-                modifier = Modifier
-                    .size(48.dp)
-                    .testTag("edit_pending_${item.id}")
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Edit,
-                    contentDescription = tr(language, "Hariri", "Edit"),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            IconButton(
-                onClick = onDelete,
-                modifier = Modifier
-                    .size(48.dp)
-                    .testTag("delete_pending_${item.id}")
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Delete,
-                    contentDescription = tr(language, "Futa", "Delete"),
-                    tint = colors.expense
-                )
             }
         }
     }

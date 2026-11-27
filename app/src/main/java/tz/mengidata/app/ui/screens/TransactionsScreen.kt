@@ -102,7 +102,8 @@ import tz.mengidata.app.ui.components.OneUiSegmentedTabs
 import tz.mengidata.app.ui.components.OneUiSheetShape
 import tz.mengidata.app.ui.components.PendingPaymentUpdateSheet
 import tz.mengidata.app.ui.components.PendingTransactionEditorSheet
-import tz.mengidata.app.ui.components.PendingTransactionRowCard
+import tz.mengidata.app.ui.components.PendingConversationListCard
+import tz.mengidata.app.ui.components.PendingTransactionDetailPopup
 import tz.mengidata.app.ui.components.PendingTransactionsSummaryCard
 import tz.mengidata.app.ui.components.PeriodSelectorRow
 import tz.mengidata.app.ui.components.RecognizedNameSuggestionsBar
@@ -149,6 +150,7 @@ fun TransactionsScreen(
     var showEditor by remember(openEditorTrigger) { mutableStateOf(openEditorTrigger > 0) }
     var editingPending by remember { mutableStateOf<PendingTransactionEntity?>(null) }
     var showPendingEditor by remember { mutableStateOf(false) }
+    var inspectingPendingId by remember { mutableStateOf<String?>(null) }
     var paymentUpdatingPending by remember { mutableStateOf<PendingTransactionEntity?>(null) }
     var showCategoryManager by remember { mutableStateOf(false) }
     var categoryManagerInitialType by remember { mutableStateOf("expense") }
@@ -436,22 +438,15 @@ fun TransactionsScreen(
                         )
                     }
                 } else {
-                    items(
-                        items = filteredPending,
-                        key = { "pending_${it.id}" },
-                        contentType = { "pending_txn_row" }
-                    ) { pendingItem ->
-                        PendingTransactionRowCard(
-                            item = pendingItem,
+                    item(
+                        key = "pending_conversation_list",
+                        contentType = "pending_conversation_list"
+                    ) {
+                        PendingConversationListCard(
+                            items = filteredPending,
                             currency = currency,
                             language = language,
-                            onRecordPayment = { paymentUpdatingPending = pendingItem },
-                            onCompleteToLedger = { onCompletePendingTransaction(pendingItem.id) },
-                            onEdit = {
-                                editingPending = pendingItem
-                                showPendingEditor = true
-                            },
-                            onDelete = { pendingDeleteWaitingId = pendingItem.id }
+                            onSelectItem = { selected -> inspectingPendingId = selected.id }
                         )
                     }
                 }
@@ -838,6 +833,35 @@ fun TransactionsScreen(
                 onSavePendingTransaction(item)
                 showPendingEditor = false
                 editingPending = null
+            }
+        )
+    }
+
+    val inspectingPending = remember(inspectingPendingId, pendingTransactions) {
+        inspectingPendingId?.let { id -> pendingTransactions.firstOrNull { it.id == id } }
+    }
+    inspectingPending?.let { item ->
+        PendingTransactionDetailPopup(
+            item = item,
+            currency = currency,
+            language = language,
+            onDismiss = { inspectingPendingId = null },
+            onRecordPayment = {
+                inspectingPendingId = null
+                paymentUpdatingPending = item
+            },
+            onCompleteToLedger = {
+                inspectingPendingId = null
+                onCompletePendingTransaction(item.id)
+            },
+            onEdit = {
+                inspectingPendingId = null
+                editingPending = item
+                showPendingEditor = true
+            },
+            onDelete = {
+                inspectingPendingId = null
+                pendingDeleteWaitingId = item.id
             }
         )
     }

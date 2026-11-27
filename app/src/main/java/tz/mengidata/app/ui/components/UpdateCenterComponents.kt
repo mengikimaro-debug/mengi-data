@@ -815,8 +815,8 @@ fun UpdateCenterCard(
                             Text(
                                 text = tr(
                                     language,
-                                    "• Uwezo kamili wa app kujisakinisha (4× Turbo + Self-Install bila kukwama)\n• Ankara ya PDF iliyoboreshwa (bila pesa juu + rangi ya background kwenye orodha ya bidhaa)\n• Ruhusa ya Storage Manager & Hifadhi ya PDF Zilizohifadhiwa (Documents/Mengidata/Ankara)\n• Kasi ya juu zaidi bila kukwama (background auto-backup & zero-jank scrolling)",
-                                    "• Seamless self-installing 4× Turbo OTA updater with direct APK fallback\n• Redesigned Executive Invoice PDF (clean header + tinted items list background)\n• Storage Manager (All Files Access) + Saved Invoice PDFs browser (Documents/Mengidata/Ankara)\n• Major speed & smoothness upgrade (background auto-backup & zero-jank UI)"
+                                    "• Orodha mpya ya Malipo Yanayosubiri yenye mtindo wa mazungumzo + dirisha dogo la maelezo (Pop View)\n• Chaguo la Sarafu za Kimataifa (TSh, $, €, £, د.إ, ¥) kwenye slide bar na ubadilishaji wa pesa moja kwa moja kwa viwango vya soko\n• Kurasa ya Kuhusu App (About App) yenye maelezo kamili na mawasiliano ya mwanzilishi\n• Mfumo thabiti wa 4× Turbo OTA na utendaji wa kasi zaidi bila kukwama",
+                                    "• New conversation-style Pending Payments list in Ledger with sleek compact detail Pop View\n• International currency selector (TSh, $, €, £, د.إ, ¥) in slide bar with live automatic market conversion\n• Added About App guide with complete workflow overview and founder contact\n• Reliable 4× Turbo OTA updates and smoother zero-jank performance"
                                 ),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = VaultTextMuted,
