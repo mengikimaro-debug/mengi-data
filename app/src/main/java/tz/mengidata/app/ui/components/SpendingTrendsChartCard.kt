@@ -3,6 +3,7 @@ package tz.mengidata.app.ui.components
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -64,6 +65,7 @@ import tz.mengidata.app.data.accounting.AutoBucket
 import tz.mengidata.app.i18n.AppLanguage
 import tz.mengidata.app.i18n.FormatUtils
 import tz.mengidata.app.i18n.tr
+import tz.mengidata.app.system.LocalDevicePerformance
 import tz.mengidata.app.ui.theme.LocalMengiColors
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -104,14 +106,23 @@ fun SpendingTrendsChartCard(
         mutableIntStateOf((points.size - 1).coerceAtLeast(0))
     }
 
-    var animateChart by remember(points, chartMode) { mutableStateOf(false) }
-    LaunchedEffect(points, chartMode) { animateChart = true }
+    val perf = LocalDevicePerformance.current
+    var animateChart by remember(points, chartMode, perf.enableChartAnimations) {
+        mutableStateOf(!perf.enableChartAnimations)
+    }
+    LaunchedEffect(points, chartMode, perf.enableChartAnimations) {
+        animateChart = true
+    }
     val growth by animateFloatAsState(
-        targetValue = if (animateChart) 1f else 0.08f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioLowBouncy,
-            stiffness = Spring.StiffnessLow
-        ),
+        targetValue = if (animateChart || !perf.enableChartAnimations) 1f else 0.08f,
+        animationSpec = when {
+            !perf.enableChartAnimations -> snap()
+            perf.enableSpringMotion -> spring(
+                dampingRatio = Spring.DampingRatioLowBouncy,
+                stiffness = Spring.StiffnessLow
+            )
+            else -> tween(perf.scaledDuration(260))
+        },
         label = "trends_chart_growth"
     )
 

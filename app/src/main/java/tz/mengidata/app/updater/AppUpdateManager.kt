@@ -245,6 +245,8 @@ class AppUpdateManager(private val context: Context) {
 
     suspend fun downloadAndVerifyApk(
         info: UpdateInfo,
+        maxParallelStreams: Int = TURBO_STREAMS,
+        ioBufferBytes: Int = STREAM_BUFFER_BYTES,
         onProgress: (DownloadProgress) -> Unit,
         onVerifying: () -> Unit
     ): Result<File> = withContext(Dispatchers.IO) {
@@ -266,8 +268,10 @@ class AppUpdateManager(private val context: Context) {
                 else -> info.expectedSizeBytes
             }
 
-            val useTurboParallel = resolved.supportsByteRanges && totalBytes >= MIN_PARALLEL_BYTES
-            val activeStreams = if (useTurboParallel) TURBO_STREAMS else 1
+            val safeStreams = maxParallelStreams.coerceIn(1, TURBO_STREAMS)
+            val safeBufferBytes = ioBufferBytes.coerceIn(32 * 1024, STREAM_BUFFER_BYTES)
+            val useTurboParallel = resolved.supportsByteRanges && totalBytes >= MIN_PARALLEL_BYTES && safeStreams > 1
+            val activeStreams = if (useTurboParallel) safeStreams else 1
 
             onProgress(
                 DownloadProgress(
@@ -285,7 +289,8 @@ class AppUpdateManager(private val context: Context) {
                     finalUrl = resolved.finalUrl,
                     apkFile = apkFile,
                     totalBytes = totalBytes,
-                    streamCount = TURBO_STREAMS,
+                    streamCount = safeStreams,
+                    bufferBytes = safeBufferBytes,
                     onProgress = onProgress
                 )
             } else {
@@ -293,6 +298,7 @@ class AppUpdateManager(private val context: Context) {
                     initialUrl = resolved.finalUrl,
                     apkFile = apkFile,
                     totalBytes = totalBytes,
+                    bufferBytes = safeBufferBytes,
                     onProgress = onProgress
                 )
             }
@@ -409,6 +415,7 @@ class AppUpdateManager(private val context: Context) {
         apkFile: File,
         totalBytes: Long,
         streamCount: Int,
+        bufferBytes: Int,
         onProgress: (DownloadProgress) -> Unit
     ): Long = coroutineScope {
         RandomAccessFile(apkFile, "rw").use { raf ->
@@ -462,6 +469,7 @@ class AppUpdateManager(private val context: Context) {
                         apkFile = apkFile,
                         rangeStart = rangeStart,
                         rangeEnd = rangeEnd,
+                        bufferBytes = bufferBytes,
                         totalDownloaded = totalDownloaded
                     )
                 }
@@ -491,6 +499,7 @@ class AppUpdateManager(private val context: Context) {
         apkFile: File,
         rangeStart: Long,
         rangeEnd: Long,
+        bufferBytes: Int,
         totalDownloaded: AtomicLong
     ) {
         var cursor = rangeStart
@@ -516,8 +525,8 @@ class AppUpdateManager(private val context: Context) {
 
                 RandomAccessFile(apkFile, "rw").use { raf ->
                     raf.seek(cursor)
-                    BufferedInputStream(conn.inputStream, STREAM_BUFFER_BYTES).use { input ->
-                        val buffer = ByteArray(STREAM_BUFFER_BYTES)
+                    BufferedInputStream(conn.inputStream, bufferBytes).use { input ->
+                        val buffer = ByteArray(bufferBytes)
                         while (cursor <= rangeEnd) {
                             coroutineContext.ensureActive()
                             val remainingInSegment = (rangeEnd - cursor + 1).toInt().coerceAtMost(buffer.size)
@@ -558,6 +567,7 @@ class AppUpdateManager(private val context: Context) {
         initialUrl: String,
         apkFile: File,
         totalBytes: Long,
+        bufferBytes: Int,
         onProgress: (DownloadProgress) -> Unit
     ): Long {
         val connection = openHttpsFollowingRedirects(
@@ -583,9 +593,9 @@ class AppUpdateManager(private val context: Context) {
             var prevBytes = 0L
             var emaSpeed = 0.0
 
-            BufferedInputStream(connection.inputStream, STREAM_BUFFER_BYTES).use { input ->
-                BufferedOutputStream(FileOutputStream(apkFile), STREAM_BUFFER_BYTES).use { output ->
-                    val buffer = ByteArray(STREAM_BUFFER_BYTES)
+            BufferedInputStream(connection.inputStream, bufferBytes).use { input ->
+                BufferedOutputStream(FileOutputStream(apkFile), bufferBytes).use { output ->
+                    val buffer = ByteArray(bufferBytes)
                     while (true) {
                         coroutineContext.ensureActive()
                         val read = input.read(buffer)

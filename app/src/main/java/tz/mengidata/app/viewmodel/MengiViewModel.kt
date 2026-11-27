@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
@@ -21,6 +22,9 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import tz.mengidata.app.system.DevicePerformanceEngine
+import tz.mengidata.app.system.DevicePerformanceProfile
+import tz.mengidata.app.system.PerformanceModePreference
 import tz.mengidata.app.data.accounting.AutoAccountingEngine
 import tz.mengidata.app.data.accounting.AutoBucket
 import tz.mengidata.app.data.accounting.BusinessHealthEngine
@@ -106,6 +110,7 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
     val themeMode: StateFlow<ThemeMode> = prefs.themeMode
     val dynamicColorEnabled: StateFlow<Boolean> = prefs.dynamicColorEnabled
     val highContrastEnabled: StateFlow<Boolean> = prefs.highContrastEnabled
+    val performanceMode: StateFlow<PerformanceModePreference> = prefs.performanceMode
     val language: StateFlow<AppLanguage> = prefs.language
     val autoUpdateEnabled: StateFlow<Boolean> = prefs.autoUpdateEnabled
     val autoPhoneBackupEnabled: StateFlow<Boolean> = prefs.autoPhoneBackupEnabled
@@ -117,6 +122,20 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
     val savingsAlertsEnabled: StateFlow<Boolean> = prefs.savingsAlertsEnabled
     val systemAlertsEnabled: StateFlow<Boolean> = prefs.systemAlertsEnabled
     val largeBillThreshold: StateFlow<Double> = prefs.largeBillThreshold
+
+    private val _deviceHardware = MutableStateFlow(
+        DevicePerformanceEngine.captureHardwareSnapshot(application)
+    )
+    val devicePerformance: StateFlow<DevicePerformanceProfile> = combine(
+        _deviceHardware,
+        performanceMode
+    ) { hw, mode ->
+        DevicePerformanceEngine.resolveProfile(hw, mode)
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.Eagerly,
+        DevicePerformanceEngine.resolveProfile(_deviceHardware.value, performanceMode.value)
+    )
 
     private val _isAppUnlocked = MutableStateFlow(!prefs.pinLockEnabled.value)
     val isAppUnlocked: StateFlow<Boolean> = _isAppUnlocked.asStateFlow()
@@ -189,6 +208,7 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
     ) { txns, cats, period ->
         CategoryAnalyticsEngine.analyze(txns, cats, period)
     }
+        .conflate()
         .flowOn(Dispatchers.Default)
         .distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CategoryAnalyticsReport())
@@ -332,9 +352,10 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
             totalSavingsTarget = totalSavingsTarget,
             chartPoints = chart,
             spendingTrendPoints = spendingTrends,
-            recentTransactions = txns.take(5)
+            recentTransactions = txns.take(devicePerformance.value.recentItemsLimit)
         )
     }
+        .conflate()
         .flowOn(Dispatchers.Default)
         .distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardMetrics())
@@ -367,6 +388,7 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
             currency = s.currency.ifBlank { "TZS" }
         )
     }
+        .conflate()
         .flowOn(Dispatchers.Default)
         .distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ZeroLossLedgerSummary())
@@ -398,6 +420,7 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
             currency = s.currency.ifBlank { "TZS" }
         )
     }
+        .conflate()
         .flowOn(Dispatchers.Default)
         .distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BusinessHealthReport())
@@ -411,6 +434,7 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
     ) { txns, invs, bls, goals, logs ->
         PartyDirectoryEngine.buildDirectory(txns, invs, bls, goals, logs)
     }
+        .conflate()
         .flowOn(Dispatchers.Default)
         .distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -1657,6 +1681,7 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
                 val verifiedApk: File = if (cachedApk != null) {
                     cachedApk
                 } else {
+                    val perf = devicePerformance.value
                     _updateState.value = UpdateUiState.Downloading(
                         info = info,
                         progressPercent = 0,
@@ -1664,10 +1689,12 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
                         totalBytes = info.expectedSizeBytes,
                         speedBytesPerSec = 0L,
                         etaSeconds = -1L,
-                        activeStreams = 4
+                        activeStreams = perf.downloadParallelStreams
                     )
                     val downloadResult = updateManager.downloadAndVerifyApk(
                         info = info,
+                        maxParallelStreams = perf.downloadParallelStreams,
+                        ioBufferBytes = perf.downloadBufferBytes,
                         onProgress = { progress ->
                             _updateState.value = UpdateUiState.Downloading(
                                 info = info,
@@ -1955,6 +1982,67 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
                 "No PDF viewer app found — you can share or print instead."
             )
         )
+    }
+
+    fun setPerformanceMode(mode: PerformanceModePreference) {
+        prefs.setPerformanceMode(mode)
+        refreshDevicePerformance()
+        val resolved = devicePerformance.value.resolvedTier.shortLabel(language.value)
+        emitNotice(
+            tr(
+                language.value,
+                "Hali ya utendaji imewekwa: ${mode.label(language.value)} ($resolved).",
+                "Performance mode set: ${mode.label(language.value)} ($resolved)."
+            )
+        )
+    }
+
+    fun refreshDevicePerformance() {
+        viewModelScope.launch(Dispatchers.Default) {
+            _deviceHardware.value = DevicePerformanceEngine.captureHardwareSnapshot(
+                context = getApplication(),
+                memoryPressureActive = false
+            )
+        }
+    }
+
+    fun onSystemMemoryPressure(level: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            DevicePerformanceEngine.clearSafeTempCaches(getApplication())
+            _deviceHardware.value = DevicePerformanceEngine.captureHardwareSnapshot(
+                context = getApplication(),
+                memoryPressureActive = level > 0
+            )
+        }
+    }
+
+    fun optimizeSystemNow() {
+        viewModelScope.launch {
+            val freedBytes = withContext(Dispatchers.IO) {
+                DevicePerformanceEngine.clearSafeTempCaches(getApplication())
+            }
+            val freshHw = withContext(Dispatchers.Default) {
+                DevicePerformanceEngine.captureHardwareSnapshot(
+                    context = getApplication(),
+                    memoryPressureActive = false
+                )
+            }
+            _deviceHardware.value = freshHw
+            val resolved = DevicePerformanceEngine.resolveProfile(freshHw, performanceMode.value)
+            val freedKb = (freedBytes / 1024L).coerceAtLeast(0L)
+            val freedLabel = if (freedKb >= 1024L) {
+                String.format(java.util.Locale.US, "%.1f MB", freedKb / 1024.0)
+            } else {
+                "$freedKb KB"
+            }
+            emitNotice(
+                tr(
+                    language.value,
+                    "Mfumo umeboreshwa kwa ${freshHw.deviceDisplayName} (${resolved.resolvedTier.shortLabel(language.value)}) · $freedLabel cache imesafishwa.",
+                    "System optimized for ${freshHw.deviceDisplayName} (${resolved.resolvedTier.shortLabel(language.value)}) · $freedLabel cache cleared."
+                )
+            )
+        }
     }
 
     fun notifyFileError() {

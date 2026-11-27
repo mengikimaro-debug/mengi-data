@@ -3,6 +3,7 @@ package tz.mengidata.app.ui.components
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -66,6 +67,7 @@ import androidx.compose.ui.unit.sp
 import tz.mengidata.app.i18n.AppLanguage
 import tz.mengidata.app.i18n.PeriodFilter
 import tz.mengidata.app.i18n.tr
+import tz.mengidata.app.system.LocalDevicePerformance
 import tz.mengidata.app.ui.theme.LocalMengiColors
 
 import tz.mengidata.app.ui.theme.LocalMengiThemeState
@@ -204,6 +206,9 @@ fun OneUiSegmentedTabs(
     testTags: List<String> = emptyList()
 ) {
     val colors = LocalMengiColors.current
+    val perf = LocalDevicePerformance.current
+    val pillBgMs = perf.scaledDuration(220)
+    val textFgMs = perf.scaledDuration(200)
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = CircleShape,
@@ -224,7 +229,7 @@ fun OneUiSegmentedTabs(
                     } else {
                         Color.Transparent
                     },
-                    animationSpec = tween(220),
+                    animationSpec = if (pillBgMs == 0) snap() else tween(pillBgMs),
                     label = "seg_pill_bg"
                 )
                 val textColor by animateColorAsState(
@@ -233,7 +238,7 @@ fun OneUiSegmentedTabs(
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },
-                    animationSpec = tween(200),
+                    animationSpec = if (textFgMs == 0) snap() else tween(textFgMs),
                     label = "seg_pill_fg"
                 )
                 val tag = testTags.getOrNull(idx)
@@ -287,11 +292,14 @@ fun OneUiFloatingNavBar(
     modifier: Modifier = Modifier
 ) {
     val colors = LocalMengiColors.current
+    val perf = LocalDevicePerformance.current
+    val dockHorizontalPad = if (perf.isCompactScreen) 8.dp else 16.dp
+    val dockColorMs = perf.scaledDuration(180)
     Box(
         modifier = modifier
             .fillMaxWidth()
             .navigationBarsPadding()
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(horizontal = dockHorizontalPad, vertical = 10.dp),
         contentAlignment = Alignment.Center
     ) {
         Surface(
@@ -307,8 +315,8 @@ fun OneUiFloatingNavBar(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 6.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    .padding(horizontal = if (perf.isCompactScreen) 4.dp else 6.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(if (perf.isCompactScreen) 2.dp else 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 tabs.forEach { tab ->
@@ -318,10 +326,14 @@ fun OneUiFloatingNavBar(
                         } else {
                             Color.Transparent
                         },
-                        animationSpec = spring(
-                            dampingRatio = 0.78f,
-                            stiffness = Spring.StiffnessMediumLow
-                        ),
+                        animationSpec = when {
+                            dockColorMs == 0 -> snap()
+                            perf.enableSpringMotion -> spring(
+                                dampingRatio = 0.78f,
+                                stiffness = Spring.StiffnessMediumLow
+                            )
+                            else -> tween(dockColorMs)
+                        },
                         label = "dock_pill"
                     )
                     val contentColor by animateColorAsState(
@@ -330,15 +342,19 @@ fun OneUiFloatingNavBar(
                         } else {
                             MaterialTheme.colorScheme.onSurfaceVariant
                         },
-                        animationSpec = tween(200),
+                        animationSpec = if (dockColorMs == 0) snap() else tween(dockColorMs),
                         label = "dock_fg"
                     )
                     val iconScale by animateFloatAsState(
                         targetValue = if (tab.selected) 1.12f else 1f,
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioMediumBouncy,
-                            stiffness = Spring.StiffnessMedium
-                        ),
+                        animationSpec = when {
+                            dockColorMs == 0 -> snap()
+                            perf.enableSpringMotion -> spring(
+                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                stiffness = Spring.StiffnessMedium
+                            )
+                            else -> tween(dockColorMs)
+                        },
                         label = "dock_icon_scale"
                     )
 

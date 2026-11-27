@@ -75,7 +75,10 @@ import tz.mengidata.app.i18n.AppLanguage
 import tz.mengidata.app.i18n.ThemeMode
 import tz.mengidata.app.i18n.tr
 import tz.mengidata.app.notifications.PhonePermissionsSnapshot
+import tz.mengidata.app.system.DevicePerformanceProfile
+import tz.mengidata.app.system.PerformanceModePreference
 import tz.mengidata.app.ui.components.ConfirmActionDialog
+import tz.mengidata.app.ui.components.DevicePerformanceSettingsCard
 import tz.mengidata.app.ui.components.MengiCard
 import tz.mengidata.app.ui.components.OneUiFieldShape
 import tz.mengidata.app.ui.components.OneUiScreenHeader
@@ -111,6 +114,9 @@ fun SettingsScreen(
     hasSafetySnapshot: Boolean,
     deletedRecords: List<DeletedRecordEntity>,
     phoneStorageStatus: PhoneStorageStatus,
+    devicePerformance: DevicePerformanceProfile = DevicePerformanceProfile.defaultBalanced(),
+    onSetPerformanceMode: (PerformanceModePreference) -> Unit = {},
+    onOptimizeSystemNow: () -> Unit = {},
     onSetThemeMode: (ThemeMode) -> Unit,
     onSetLanguage: (AppLanguage) -> Unit,
     onSetAutoUpdate: (Boolean) -> Unit,
@@ -307,6 +313,16 @@ fun SettingsScreen(
                         testTags = langs.map { "settings_lang_${it.code}" }
                     )
                 }
+            }
+
+            // 1A. Adaptive Device Performance Card (auto-tunes for any phone)
+            item(key = "device_performance_card") {
+                DevicePerformanceSettingsCard(
+                    profile = devicePerformance,
+                    language = language,
+                    onSelectMode = onSetPerformanceMode,
+                    onOptimizeNow = onOptimizeSystemNow
+                )
             }
 
             // 1B. Security & Privacy Card (PIN Lock + Balance Mask)

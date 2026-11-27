@@ -12,6 +12,8 @@ import androidx.activity.result.contract.ActivityResultContract
 import androidx.activity.result.contract.ActivityResultContracts
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -62,6 +64,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -110,6 +113,7 @@ import tz.mengidata.app.ui.screens.HubScreen
 import tz.mengidata.app.ui.screens.InvoicesScreen
 import tz.mengidata.app.ui.screens.SettingsScreen
 import tz.mengidata.app.ui.screens.TransactionsScreen
+import tz.mengidata.app.system.LocalDevicePerformance
 import tz.mengidata.app.ui.theme.LocalMengiColors
 import tz.mengidata.app.ui.theme.MengidataTheme
 import tz.mengidata.app.viewmodel.MengiViewModel
@@ -143,6 +147,7 @@ fun MengiApp(viewModel: MengiViewModel) {
     val pinLockEnabled by viewModel.pinLockEnabled.collectAsStateWithLifecycle()
     val isAppUnlocked by viewModel.isAppUnlocked.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val devicePerformance by viewModel.devicePerformance.collectAsStateWithLifecycle()
 
     val navController = rememberNavController()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
@@ -301,14 +306,15 @@ fun MengiApp(viewModel: MengiViewModel) {
         }
     }
 
-    MengidataTheme(
-        themeMode = themeMode,
-        dynamicColorEnabled = dynamicColorEnabled,
-        highContrastEnabled = highContrastEnabled,
-        onSetThemeMode = viewModel::setThemeMode,
-        onSetDynamicColor = viewModel::setDynamicColorEnabled,
-        onSetHighContrast = viewModel::setHighContrastEnabled
-    ) {
+    CompositionLocalProvider(LocalDevicePerformance provides devicePerformance) {
+        MengidataTheme(
+            themeMode = themeMode,
+            dynamicColorEnabled = dynamicColorEnabled,
+            highContrastEnabled = highContrastEnabled,
+            onSetThemeMode = viewModel::setThemeMode,
+            onSetDynamicColor = viewModel::setDynamicColorEnabled,
+            onSetHighContrast = viewModel::setHighContrastEnabled
+        ) {
         val colors = LocalMengiColors.current
         val navBackStackEntry by navController.currentBackStackEntryAsState()
         val currentDestination = navBackStackEntry?.destination
@@ -581,13 +587,15 @@ fun MengiApp(viewModel: MengiViewModel) {
                                     .weight(1f)
                                     .fillMaxHeight()
                             ) {
+                                val navMs = devicePerformance.navTransitionMs
+                                val navExitMs = (navMs * 0.75f).toInt()
                                 NavHost(
                                     navController = navController,
                                     startDestination = DashboardRoute,
-                                    enterTransition = { fadeIn(tween(100)) },
-                                    exitTransition = { fadeOut(tween(80)) },
-                                    popEnterTransition = { fadeIn(tween(100)) },
-                                    popExitTransition = { fadeOut(tween(80)) }
+                                    enterTransition = { if (navMs <= 0) EnterTransition.None else fadeIn(tween(navMs)) },
+                                    exitTransition = { if (navExitMs <= 0) ExitTransition.None else fadeOut(tween(navExitMs)) },
+                                    popEnterTransition = { if (navMs <= 0) EnterTransition.None else fadeIn(tween(navMs)) },
+                                    popExitTransition = { if (navExitMs <= 0) ExitTransition.None else fadeOut(tween(navExitMs)) }
                                 ) {
                                     composable<DashboardRoute> {
                                         val metrics by viewModel.dashboardMetrics.collectAsStateWithLifecycle()
@@ -816,6 +824,9 @@ fun MengiApp(viewModel: MengiViewModel) {
                                             hasSafetySnapshot = hasSafetySnapshot,
                                             deletedRecords = deletedRecords,
                                             phoneStorageStatus = phoneStorageStatus,
+                                            devicePerformance = devicePerformance,
+                                            onSetPerformanceMode = viewModel::setPerformanceMode,
+                                            onOptimizeSystemNow = viewModel::optimizeSystemNow,
                                             onSetThemeMode = viewModel::setThemeMode,
                                             onSetLanguage = viewModel::setLanguage,
                                             onSetAutoUpdate = viewModel::setAutoUpdateEnabled,
@@ -936,6 +947,7 @@ fun MengiApp(viewModel: MengiViewModel) {
                 onEmptyVault = viewModel::emptyTrash,
                 onDismiss = { showGlobalRecoveryVault = false }
             )
+        }
         }
     }
 }

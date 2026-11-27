@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import tz.mengidata.app.i18n.AppLanguage
 import tz.mengidata.app.i18n.ThemeMode
+import tz.mengidata.app.system.PerformanceModePreference
 
 class AppPreferences(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -18,6 +19,11 @@ class AppPreferences(context: Context) {
 
     private val _highContrastEnabled = MutableStateFlow(prefs.getBoolean(KEY_HIGH_CONTRAST, false))
     val highContrastEnabled: StateFlow<Boolean> = _highContrastEnabled.asStateFlow()
+
+    private val _performanceMode = MutableStateFlow(
+        PerformanceModePreference.fromKey(prefs.getString(KEY_PERFORMANCE_MODE, PerformanceModePreference.AUTO.key))
+    )
+    val performanceMode: StateFlow<PerformanceModePreference> = _performanceMode.asStateFlow()
 
     private val _language = MutableStateFlow(
         if (prefs.getString(KEY_LANGUAGE, AppLanguage.SW.code) == AppLanguage.EN.code) {
@@ -79,6 +85,11 @@ class AppPreferences(context: Context) {
     fun setHighContrastEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_HIGH_CONTRAST, enabled).apply()
         _highContrastEnabled.value = enabled
+    }
+
+    fun setPerformanceMode(mode: PerformanceModePreference) {
+        prefs.edit().putString(KEY_PERFORMANCE_MODE, mode.key).apply()
+        _performanceMode.value = mode
     }
 
     fun setLanguage(lang: AppLanguage) {
@@ -200,6 +211,7 @@ class AppPreferences(context: Context) {
         private const val KEY_THEME = "theme_mode"
         private const val KEY_DYNAMIC_COLOR = "dynamic_color_enabled"
         private const val KEY_HIGH_CONTRAST = "high_contrast_enabled"
+        private const val KEY_PERFORMANCE_MODE = "device_performance_mode"
         private const val KEY_LANGUAGE = "app_language"
         private const val KEY_AUTO_UPDATE = "auto_update_enabled"
         private const val KEY_AUTO_PHONE_BACKUP = "auto_phone_backup_enabled"
