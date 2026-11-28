@@ -25,6 +25,7 @@ import androidx.compose.material.icons.rounded.Business
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CloudDone
 import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Copyright
 import androidx.compose.material.icons.rounded.DeleteForever
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.ErrorOutline
@@ -78,7 +79,10 @@ import tz.mengidata.app.i18n.AppLanguage
 import tz.mengidata.app.i18n.ThemeMode
 import tz.mengidata.app.i18n.tr
 import tz.mengidata.app.notifications.PhonePermissionsSnapshot
+import tz.mengidata.app.security.AppBiometricStatus
 import tz.mengidata.app.security.BiometricAvailability
+import tz.mengidata.app.security.CopyrightIntegrityReport
+import tz.mengidata.app.security.CopyrightVault
 import tz.mengidata.app.security.UninstallGuardStatus
 import tz.mengidata.app.system.DevicePerformanceProfile
 import tz.mengidata.app.system.PerformanceModePreference
@@ -113,7 +117,11 @@ fun SettingsScreen(
     autoUpdateEnabled: Boolean,
     autoPhoneBackupEnabled: Boolean = true,
     privacyMaskEnabled: Boolean,
+    antiScreenCopyEnabled: Boolean = false,
     pinLockEnabled: Boolean,
+    biometricLockEnabled: Boolean = false,
+    appBiometricStatus: AppBiometricStatus = AppBiometricStatus.READY,
+    copyrightIntegrity: CopyrightIntegrityReport = CopyrightIntegrityReport(),
     uninstallGuardStatus: UninstallGuardStatus = UninstallGuardStatus(),
     adbDeviceOwnerCommand: String = "",
     phonePermissions: PhonePermissionsSnapshot,
@@ -135,8 +143,12 @@ fun SettingsScreen(
     onSetAutoPhoneBackup: (Boolean) -> Unit = {},
     onPickCustomBackupFolder: () -> Unit = {},
     onSetPrivacyMask: (Boolean) -> Unit,
+    onSetAntiScreenCopy: (Boolean) -> Unit = {},
+    onCopyCopyrightCertificate: () -> Unit = {},
     onSavePin: (String) -> Unit,
     onDisablePin: () -> Unit,
+    onToggleBiometricLock: (Boolean) -> Unit = {},
+    onOpenEnrollBiometric: () -> Unit = {},
     onLockNow: () -> Unit,
     onActivateDeviceAdmin: () -> Unit = {},
     onOpenAccessibilityGuard: () -> Unit = {},
@@ -337,24 +349,54 @@ fun SettingsScreen(
                 )
             }
 
-            // 1B. Security & Privacy Card (PIN Lock + Balance Mask)
+            // 1B. Security & Privacy Card (Biometric Lock + PIN Lock + Balance Mask)
             item(key = "security_privacy_card") {
+                val anyAppLockActive = pinLockEnabled || biometricLockEnabled
+                val lockStatusLabel = when {
+                    biometricLockEnabled && pinLockEnabled -> tr(language, "Biometric + PIN", "Biometric + PIN")
+                    biometricLockEnabled -> tr(language, "Biometric Imewashwa", "Biometric Active")
+                    pinLockEnabled -> tr(language, "PIN Imewashwa", "PIN Active")
+                    else -> tr(language, "Wazi", "Unlocked")
+                }
+                val biometricStatusHint = when (appBiometricStatus) {
+                    AppBiometricStatus.READY -> tr(
+                        language,
+                        "Tayari (Alama ya Kidole / Uso ipo). Huhakiki kabla ya kufungua data za fedha.",
+                        "Ready (Fingerprint / Face enrolled). Verifies before opening financial data."
+                    )
+                    AppBiometricStatus.CREDENTIAL_ONLY -> tr(
+                        language,
+                        "Kifuli cha kifaa (Device Lock) kipo tayari kutumika.",
+                        "Device screen lock credential ready for AndroidX Biometric."
+                    )
+                    AppBiometricStatus.NONE_ENROLLED -> tr(
+                        language,
+                        "Hakuna alama ya kidole iliyosajiliwa. Gusa 'Sajili' hapa chini kuongeza.",
+                        "No biometrics enrolled on this device yet. Enroll in Android Settings."
+                    )
+                    AppBiometricStatus.UNAVAILABLE -> tr(
+                        language,
+                        "Kifaa hiki hakina kihisi cha Biometric au kifuli kinachopatikana.",
+                        "Biometric hardware is unavailable on this device."
+                    )
+                }
+
                 MengiCard {
                     OneUiSettingsSectionHeader(
                         icon = Icons.Rounded.Lock,
                         iconBg = MaterialTheme.colorScheme.primaryContainer,
                         iconTint = MaterialTheme.colorScheme.primary,
                         title = tr(language, "Usalama na Faragha", "Security & Privacy"),
-                        subtitle = tr(language, "Linda salio na funga programu kwa namba ya siri ya tarakimu 4.", "Hide balances in public and lock app with a 4-digit PIN."),
+                        subtitle = tr(
+                            language,
+                            "Linda salio na funga programu kwa Biometric (AndroidX) au namba ya siri.",
+                            "Hide balances in public and secure access with AndroidX Biometrics or 4-digit PIN."
+                        ),
                         badge = {
                             StatusPill(
-                                text = if (pinLockEnabled) {
-                                    tr(language, "PIN Imewashwa", "PIN Active")
-                                } else {
-                                    tr(language, "Wazi", "Unlocked")
-                                },
-                                containerColor = if (pinLockEnabled) colors.incomeSoft else colors.subtleSurface,
-                                contentColor = if (pinLockEnabled) colors.income else MaterialTheme.colorScheme.onSurfaceVariant
+                                text = lockStatusLabel,
+                                containerColor = if (anyAppLockActive) colors.incomeSoft else colors.subtleSurface,
+                                contentColor = if (anyAppLockActive) colors.income else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     )
@@ -386,6 +428,71 @@ fun SettingsScreen(
                             onCheckedChange = onSetPrivacyMask,
                             modifier = Modifier.testTag("privacy_mask_switch")
                         )
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+                    HorizontalDivider(color = colors.cardBorder)
+                    Spacer(Modifier.height(12.dp))
+
+                    // AndroidX Biometric App Lock Row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            modifier = Modifier.weight(1f).padding(end = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Surface(
+                                shape = CircleShape,
+                                color = if (biometricLockEnabled) colors.incomeSoft else colors.subtleSurface,
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Fingerprint,
+                                        contentDescription = tr(language, "Ulinzi wa Biometric", "Biometric Lock"),
+                                        tint = if (biometricLockEnabled) colors.income else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                            Column {
+                                Text(
+                                    text = tr(language, "Kufunga App kwa Biometric (Alama ya Kidole / Uso)", "Biometric App Lock (Fingerprint / Face)"),
+                                    style = MaterialTheme.typography.titleSmall
+                                )
+                                Text(
+                                    text = biometricStatusHint,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        Switch(
+                            checked = biometricLockEnabled,
+                            onCheckedChange = onToggleBiometricLock,
+                            enabled = appBiometricStatus != AppBiometricStatus.UNAVAILABLE || biometricLockEnabled,
+                            modifier = Modifier.testTag("biometric_lock_switch")
+                        )
+                    }
+
+                    if (appBiometricStatus == AppBiometricStatus.NONE_ENROLLED) {
+                        Spacer(Modifier.height(10.dp))
+                        OutlinedButton(
+                            onClick = onOpenEnrollBiometric,
+                            shape = CircleShape,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .testTag("enroll_biometrics_btn")
+                        ) {
+                            Icon(Icons.Rounded.Fingerprint, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.size(8.dp))
+                            Text(tr(language, "Sajili Alama ya Kidole / Uso kwenye Simu", "Enroll Biometrics in Android Settings"))
+                        }
                     }
 
                     Spacer(Modifier.height(12.dp))
@@ -425,27 +532,29 @@ fun SettingsScreen(
                         )
                     }
 
-                    if (pinLockEnabled) {
+                    if (pinLockEnabled || biometricLockEnabled) {
                         Spacer(Modifier.height(12.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            OutlinedButton(
-                                onClick = { showPinSetupDialog = true },
-                                shape = CircleShape,
-                                modifier = Modifier.weight(1f).testTag("change_pin_btn")
-                            ) {
-                                Text(
-                                    text = tr(language, "Badili Namba ya Siri", "Change PIN"),
-                                    textAlign = TextAlign.Center,
-                                    maxLines = 2
-                                )
+                            if (pinLockEnabled) {
+                                OutlinedButton(
+                                    onClick = { showPinSetupDialog = true },
+                                    shape = CircleShape,
+                                    modifier = Modifier.weight(1f).height(48.dp).testTag("change_pin_btn")
+                                ) {
+                                    Text(
+                                        text = tr(language, "Badili Namba ya Siri", "Change PIN"),
+                                        textAlign = TextAlign.Center,
+                                        maxLines = 2
+                                    )
+                                }
                             }
                             FilledTonalButton(
                                 onClick = onLockNow,
                                 shape = CircleShape,
-                                modifier = Modifier.weight(1f).testTag("lock_app_now_btn")
+                                modifier = Modifier.weight(1f).height(48.dp).testTag("lock_app_now_btn")
                             ) {
                                 Icon(Icons.Rounded.Lock, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.size(6.dp))
@@ -456,6 +565,127 @@ fun SettingsScreen(
                                 )
                             }
                         }
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+                    HorizontalDivider(color = colors.cardBorder)
+                    Spacer(Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                            Text(
+                                text = tr(language, "Zuia Kunakili Skrini (Anti-Screenshot)", "Block Screenshots & Screen Recording"),
+                                style = MaterialTheme.typography.titleSmall
+                            )
+                            Text(
+                                text = tr(
+                                    language,
+                                    "Huzuia picha za skrini (screenshots) na kurekodi video ya mfumo wako.",
+                                    "Prevents unauthorized screenshots and screen recording via Android FLAG_SECURE."
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = antiScreenCopyEnabled,
+                            onCheckedChange = onSetAntiScreenCopy,
+                            modifier = Modifier.testTag("anti_screen_copy_switch")
+                        )
+                    }
+                }
+            }
+
+            // 1C. Official Copyright & Anti-Clone Protection Card
+            item(key = "copyright_ip_card") {
+                MengiCard(modifier = Modifier.testTag("settings_copyright_card")) {
+                    OneUiSettingsSectionHeader(
+                        icon = Icons.Rounded.Copyright,
+                        iconBg = colors.incomeSoft,
+                        iconTint = colors.income,
+                        title = tr(language, "Hatimiliki & Haki Miliki", "Copyright & Anti-Clone Guard"),
+                        subtitle = tr(
+                            language,
+                            "© ${CopyrightVault.COPYRIGHT_YEARS} ${CopyrightVault.COPYRIGHT_HOLDER} · Ulinzi wa mfumo dhidi ya wizi na unakili.",
+                            "© ${CopyrightVault.COPYRIGHT_YEARS} ${CopyrightVault.COPYRIGHT_HOLDER} · System protection against copying and cloning."
+                        ),
+                        badge = {
+                            StatusPill(
+                                text = if (copyrightIntegrity.isAuthentic) {
+                                    tr(language, "Halisi", "Authentic")
+                                } else {
+                                    tr(language, "Onyo", "Alert")
+                                },
+                                containerColor = if (copyrightIntegrity.isAuthentic) colors.incomeSoft else colors.expenseSoft,
+                                contentColor = if (copyrightIntegrity.isAuthentic) colors.income else colors.expense
+                            )
+                        }
+                    )
+
+                    Spacer(Modifier.height(12.dp))
+
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = colors.subtleSurface,
+                        border = BorderStroke(1.dp, colors.cardBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = "• ${tr(language, "Mmiliki", "Owner")}: ${CopyrightVault.COPYRIGHT_HOLDER} (${CopyrightVault.REGISTRATION_CODE})",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "• ${tr(language, "Package ID Halisi", "Package ID")}: ${copyrightIntegrity.installedPackageId}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "• ${tr(language, "Muhuri wa Umiliki", "Ownership Seal")}: ${copyrightIntegrity.ownershipSeal}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "• ${tr(language, "Cheti cha Saini", "Cert SHA-256")}: ${copyrightIntegrity.signingCertShort}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+
+                    Text(
+                        text = CopyrightVault.prohibitionStatement(language),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(Modifier.height(12.dp))
+
+                    OutlinedButton(
+                        onClick = onCopyCopyrightCertificate,
+                        shape = CircleShape,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("settings_copy_copyright_btn")
+                    ) {
+                        Icon(Icons.Rounded.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.size(8.dp))
+                        Text(
+                            text = tr(language, "Nakili Hati ya Hatimiliki", "Copy Copyright Certificate"),
+                            maxLines = 1
+                        )
                     }
                 }
             }

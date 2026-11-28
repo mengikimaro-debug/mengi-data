@@ -71,7 +71,11 @@ import tz.mengidata.app.notifications.EveningReminderScheduler
 import tz.mengidata.app.notifications.LargeBillWarningPopup
 import tz.mengidata.app.notifications.MengiNotificationManager
 import tz.mengidata.app.notifications.PhonePermissionsSnapshot
+import tz.mengidata.app.security.AppBiometricAuthenticator
+import tz.mengidata.app.security.AppBiometricStatus
 import tz.mengidata.app.security.BiometricAvailability
+import tz.mengidata.app.security.CopyrightIntegrityReport
+import tz.mengidata.app.security.CopyrightVault
 import tz.mengidata.app.security.UninstallGuardSession
 import tz.mengidata.app.security.UninstallGuardStatus
 import tz.mengidata.app.security.UninstallProtectionManager
@@ -128,7 +132,9 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
     val pendingReinstallRestore: StateFlow<Boolean> = prefs.pendingReinstallRestore
     val restorePromptDismissed: StateFlow<Boolean> = prefs.restorePromptDismissed
     val privacyMaskEnabled: StateFlow<Boolean> = prefs.privacyMaskEnabled
+    val antiScreenCopyEnabled: StateFlow<Boolean> = prefs.antiScreenCopyEnabled
     val pinLockEnabled: StateFlow<Boolean> = prefs.pinLockEnabled
+    val biometricLockEnabled: StateFlow<Boolean> = prefs.biometricLockEnabled
     val notificationsEnabled: StateFlow<Boolean> = prefs.notificationsEnabled
     val billAlertsEnabled: StateFlow<Boolean> = prefs.billAlertsEnabled
     val transactionAlertsEnabled: StateFlow<Boolean> = prefs.transactionAlertsEnabled
@@ -172,8 +178,21 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
             DevicePerformanceEngine.resolveProfile(_deviceTelemetry.value, performanceMode.value)
         )
 
-    private val _isAppUnlocked = MutableStateFlow(!prefs.pinLockEnabled.value)
+    private val _isAppUnlocked = MutableStateFlow(
+        !(prefs.pinLockEnabled.value || prefs.biometricLockEnabled.value)
+    )
     val isAppUnlocked: StateFlow<Boolean> = _isAppUnlocked.asStateFlow()
+
+    @Volatile
+    private var backgroundedAtMillis: Long = 0L
+
+    @Volatile
+    private var autoLockSuppressedUntilMillis: Long = 0L
+
+    private val _appBiometricStatus = MutableStateFlow(
+        AppBiometricAuthenticator.getStatus(application)
+    )
+    val appBiometricStatus: StateFlow<AppBiometricStatus> = _appBiometricStatus.asStateFlow()
 
     private val _uninstallGuardStatus = MutableStateFlow(
         UninstallProtectionManager.getStatus(application)
@@ -185,6 +204,9 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _biometricAvailability = MutableStateFlow(_uninstallGuardStatus.value.biometricAvailability)
     val biometricAvailability: StateFlow<BiometricAvailability> = _biometricAvailability.asStateFlow()
+
+    private val _copyrightIntegrity = MutableStateFlow(CopyrightIntegrityReport())
+    val copyrightIntegrity: StateFlow<CopyrightIntegrityReport> = _copyrightIntegrity.asStateFlow()
 
     private val _phonePermissions = MutableStateFlow(
         notificationManager.getPermissionsSnapshot(storageVaultReady = false)
@@ -565,6 +587,9 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
+                    _copyrightIntegrity.value = runCatching {
+                        CopyrightVault.verifyIntegrity(getApplication())
+                    }.getOrDefault(CopyrightIntegrityReport())
                     runCatching { notificationManager.ensureNotificationChannels() }
                     runCatching { EveningReminderScheduler.scheduleDailyEveningReminder(getApplication()) }
                 }
@@ -711,9 +736,66 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
         return ok
     }
 
-    fun lockAppNow() {
-        if (prefs.pinLockEnabled.value) {
+    fun unlockWithBiometricSuccess() {
+        _isAppUnlocked.value = true
+    }
+
+    fun suppressAutoLockTemporarily(durationMs: Long = 20_000L) {
+        autoLockSuppressedUntilMillis = System.currentTimeMillis() + durationMs
+    }
+
+    fun onAppBackgrounded(isChangingConfigurations: Boolean) {
+        if (isChangingConfigurations) return
+        if (prefs.pinLockEnabled.value || prefs.biometricLockEnabled.value) {
+            backgroundedAtMillis = System.currentTimeMillis()
+        } else {
+            backgroundedAtMillis = 0L
+        }
+    }
+
+    fun onAppForegrounded() {
+        val bgAt = backgroundedAtMillis
+        backgroundedAtMillis = 0L
+        if (bgAt <= 0L) return
+        val now = System.currentTimeMillis()
+        if (now < autoLockSuppressedUntilMillis) return
+        if ((prefs.pinLockEnabled.value || prefs.biometricLockEnabled.value) && now - bgAt >= 2_000L) {
             _isAppUnlocked.value = false
+        }
+    }
+
+    fun lockAppNow() {
+        if (prefs.pinLockEnabled.value || prefs.biometricLockEnabled.value) {
+            _isAppUnlocked.value = false
+        }
+    }
+
+    fun refreshAppBiometricStatus() {
+        _appBiometricStatus.value = AppBiometricAuthenticator.getStatus(getApplication())
+    }
+
+    fun setBiometricLockEnabled(enabled: Boolean) {
+        prefs.setBiometricLockEnabled(enabled)
+        if (enabled) {
+            _isAppUnlocked.value = true
+            emitNotice(
+                tr(
+                    language.value,
+                    "Ulinzi wa Biometric (Alama ya Kidole / Uso) umewashwa kulinda data za fedha.",
+                    "Biometric App Lock enabled to secure your financial data."
+                )
+            )
+        } else {
+            if (!prefs.pinLockEnabled.value) {
+                _isAppUnlocked.value = true
+            }
+            emitNotice(
+                tr(
+                    language.value,
+                    "Ulinzi wa Biometric wa kufungua programu umezimwa.",
+                    "Biometric App Lock disabled."
+                )
+            )
         }
     }
 
@@ -728,7 +810,9 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
 
     fun disableAppPin() {
         prefs.clearAppPin()
-        _isAppUnlocked.value = true
+        if (!prefs.biometricLockEnabled.value) {
+            _isAppUnlocked.value = true
+        }
         emitNotice(tr(language.value, "Kufunga kwa namba ya siri kumezimwa.", "PIN lock disabled."))
     }
 
@@ -2571,6 +2655,33 @@ class MengiViewModel(application: Application) : AndroidViewModel(application) {
             } finally {
                 _isOptimizingPerformance.value = false
             }
+        }
+    }
+
+    fun setAntiScreenCopyEnabled(enabled: Boolean) {
+        prefs.setAntiScreenCopyEnabled(enabled)
+        emitNotice(
+            if (enabled) {
+                tr(
+                    language.value,
+                    "Ulinzi wa kunakili skrini (Anti-Screenshot) umewashwa.",
+                    "Anti-Screenshot & Screen Recording guard enabled."
+                )
+            } else {
+                tr(
+                    language.value,
+                    "Ulinzi wa kunakili skrini umezimwa.",
+                    "Anti-Screenshot guard disabled."
+                )
+            }
+        )
+    }
+
+    fun refreshCopyrightIntegrity() {
+        viewModelScope.launch(Dispatchers.IO) {
+            _copyrightIntegrity.value = runCatching {
+                CopyrightVault.verifyIntegrity(getApplication())
+            }.getOrDefault(CopyrightIntegrityReport())
         }
     }
 

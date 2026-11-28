@@ -14,6 +14,7 @@ import tz.mengidata.app.i18n.AppLanguage
 import tz.mengidata.app.i18n.FormatUtils
 import tz.mengidata.app.i18n.PeriodFilter
 import tz.mengidata.app.i18n.tr
+import tz.mengidata.app.security.CopyrightVault
 import java.util.Locale
 
 /**
@@ -196,6 +197,11 @@ object ColorReportExporter {
             XmlCell(tr(language, "BLUU YA FJORD", "FJORD BLUE"), "HouseholdTeal"),
             XmlCell(tr(language, "Bili ya Nyumbani (Imekatwa na kuhifadhiwa kwenye mfumo)", "Household Bill (Deducted & saved in system)"), "HouseholdTeal"),
             XmlCell("#DDE5EF / #3A526E", "HouseholdTeal")
+        ))
+        xmlRow(sb, listOf(
+            XmlCell(tr(language, "HATIMILIKI", "COPYRIGHT"), "TotalRow"),
+            XmlCell(CopyrightVault.shortNotice(language), "TotalRow"),
+            XmlCell(CopyrightVault.REGISTRATION_CODE, "TotalRow")
         ))
         xmlRow(sb, emptyList())
 
@@ -611,6 +617,7 @@ object ColorReportExporter {
         sb.append(csv(tr(language, "Bili ya Nyumbani", "Household Bill"))).append(',').append(num(summary.totalHouseholdBills)).append(',').append(csv(AutoBucket.HOUSEHOLD_BILL.colorHex)).append(',').append(csv(AutoBucket.HOUSEHOLD_BILL.colorMeaning(language))).append('\n')
         sb.append(csv(tr(language, "Akiba Iliyopo", "Savings Balance"))).append(',').append(num(summary.netSavingsBalance)).append(',').append(csv(AutoBucket.SAVINGS.colorHex)).append(',').append(csv(AutoBucket.SAVINGS.colorMeaning(language))).append('\n')
         sb.append(csv(tr(language, "SALIO HALISI", "VERIFIED CASH BALANCE"))).append(',').append(num(summary.verifiedCashBalance)).append(',').append(csv("#253447")).append(',').append(csv(tr(language, "0% UPOTEVU", "0% LOSS VERIFIED"))).append('\n')
+        sb.append(csv(tr(language, "HATIMILIKI", "COPYRIGHT"))).append(',').append(csv(CopyrightVault.shortNotice(language))).append(',').append(csv(CopyrightVault.AUTHORIZED_PACKAGE_ID)).append(',').append(csv(CopyrightVault.REGISTRATION_CODE)).append('\n')
         sb.append('\n')
 
         sb.append(

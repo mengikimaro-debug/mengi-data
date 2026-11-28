@@ -23,16 +23,21 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -40,6 +45,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.AccountBalanceWallet
+import androidx.compose.material.icons.rounded.Copyright
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Menu
@@ -81,12 +87,15 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -124,7 +133,12 @@ import tz.mengidata.app.ui.screens.HubScreen
 import tz.mengidata.app.ui.screens.InvoicesScreen
 import tz.mengidata.app.ui.screens.SettingsScreen
 import tz.mengidata.app.ui.screens.TransactionsScreen
+import tz.mengidata.app.security.AppBiometricAuthenticator
+import tz.mengidata.app.security.AppBiometricStatus
+import tz.mengidata.app.security.BiometricAuthOutcome
 import tz.mengidata.app.security.BiometricAvailability
+import tz.mengidata.app.security.CopyrightIntegrityReport
+import tz.mengidata.app.security.CopyrightVault
 import tz.mengidata.app.security.UninstallGuardSession
 import tz.mengidata.app.security.UninstallProtectionManager
 import tz.mengidata.app.system.LocalDevicePerformance
@@ -159,8 +173,13 @@ fun MengiApp(viewModel: MengiViewModel) {
     val highContrastEnabled by viewModel.highContrastEnabled.collectAsStateWithLifecycle()
     val language by viewModel.language.collectAsStateWithLifecycle()
     val privacyMaskEnabled by viewModel.privacyMaskEnabled.collectAsStateWithLifecycle()
+    val antiScreenCopyEnabled by viewModel.antiScreenCopyEnabled.collectAsStateWithLifecycle()
     val pinLockEnabled by viewModel.pinLockEnabled.collectAsStateWithLifecycle()
+    val biometricLockEnabled by viewModel.biometricLockEnabled.collectAsStateWithLifecycle()
+    val appBiometricStatus by viewModel.appBiometricStatus.collectAsStateWithLifecycle()
+    val copyrightIntegrity by viewModel.copyrightIntegrity.collectAsStateWithLifecycle()
     val isAppUnlocked by viewModel.isAppUnlocked.collectAsStateWithLifecycle()
+    var biometricLockError by remember(isAppUnlocked, biometricLockEnabled) { mutableStateOf<String?>(null) }
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val devicePerformance by viewModel.devicePerformance.collectAsStateWithLifecycle()
 
@@ -226,6 +245,7 @@ fun MengiApp(viewModel: MengiViewModel) {
     }
 
     val openEnrollFingerprintSettings: () -> Unit = {
+        viewModel.suppressAutoLockTemporarily(45_000L)
         UninstallGuardSession.grantTemporaryUnlock(30_000L)
         val openedEnroll = runCatching {
             context.startActivity(UninstallProtectionManager.buildEnrollFingerprintIntent())
@@ -233,6 +253,138 @@ fun MengiApp(viewModel: MengiViewModel) {
         if (!openedEnroll) {
             runCatching {
                 context.startActivity(UninstallProtectionManager.buildSecuritySettingsFallbackIntent())
+            }
+        }
+    }
+
+    val openBiometricEnrollSettings: () -> Unit = {
+        viewModel.suppressAutoLockTemporarily(45_000L)
+        UninstallGuardSession.grantTemporaryUnlock(30_000L)
+        val openedEnroll = runCatching {
+            context.startActivity(AppBiometricAuthenticator.buildEnrollBiometricIntent())
+        }.isSuccess
+        if (!openedEnroll) {
+            runCatching {
+                context.startActivity(AppBiometricAuthenticator.buildSecuritySettingsFallbackIntent())
+            }
+        }
+    }
+
+    val requestUnlockWithBiometrics: () -> Unit = {
+        viewModel.suppressAutoLockTemporarily(15_000L)
+        biometricLockError = null
+        AppBiometricAuthenticator.authenticateAppAccess(
+            context = context,
+            language = language,
+            title = settings.businessName.ifBlank { "VaultLedger" },
+            subtitle = tr(language, "Fungua Kufuri ya Faragha ya Fedha", "Unlock Financial Privacy Vault"),
+            description = tr(
+                language,
+                "Thibitisha utambulisho wako kwa Biometric ili kufikia taarifa za biashara na salio.",
+                "Verify your biometrics to access your private business ledger and balances."
+            ),
+            hasAppPinFallback = pinLockEnabled,
+            allowDeviceCredentialFallback = true,
+            confirmationRequired = false
+        ) { outcome ->
+            when (outcome) {
+                is BiometricAuthOutcome.Success -> {
+                    biometricLockError = null
+                    viewModel.unlockWithBiometricSuccess()
+                }
+                is BiometricAuthOutcome.UseAppPinFallback -> {
+                    biometricLockError = tr(language, "Ingiza namba yako ya siri (PIN).", "Enter your 4-digit PIN.")
+                }
+                is BiometricAuthOutcome.Cancelled -> {
+                    biometricLockError = tr(
+                        language,
+                        "Uthibitisho umeghairiwa. Gusa tena kufungua.",
+                        "Authentication cancelled. Tap below to try again."
+                    )
+                }
+                is BiometricAuthOutcome.Unavailable -> {
+                    biometricLockError = tr(
+                        language,
+                        "Hakuna alama ya kidole au kifuli kilichosajiliwa kwenye kifaa.",
+                        "No device biometrics or screen lock enrolled."
+                    )
+                }
+                is BiometricAuthOutcome.Error -> {
+                    biometricLockError = outcome.message
+                }
+            }
+        }
+    }
+
+    val handleToggleBiometricLock: (Boolean) -> Unit = { enable ->
+        val status = AppBiometricAuthenticator.getStatus(context)
+        viewModel.refreshAppBiometricStatus()
+        if (enable && (status == AppBiometricStatus.NONE_ENROLLED || status == AppBiometricStatus.UNAVAILABLE)) {
+            viewModel.emitSecurityNotice(
+                if (status == AppBiometricStatus.NONE_ENROLLED) {
+                    tr(
+                        language,
+                        "Sajili alama ya kidole au kifuli cha simu kwanza kwenye mipangilio ya Android.",
+                        "Please enroll fingerprint, face, or screen lock in Android Settings first."
+                    )
+                } else {
+                    tr(
+                        language,
+                        "Kifaa hiki hakina kihisi cha Biometric au kifuli kinachopatikana.",
+                        "No biometric sensor or credential lock is available on this device."
+                    )
+                }
+            )
+            if (status == AppBiometricStatus.NONE_ENROLLED) {
+                openBiometricEnrollSettings()
+            }
+        } else {
+            viewModel.suppressAutoLockTemporarily(15_000L)
+            AppBiometricAuthenticator.authenticateAppAccess(
+                context = context,
+                language = language,
+                title = if (enable) {
+                    tr(language, "Washa Ulinzi wa Biometric", "Enable Biometric App Lock")
+                } else {
+                    tr(language, "Zima Ulinzi wa Biometric", "Disable Biometric App Lock")
+                },
+                subtitle = tr(language, "Thibitisha Utambulisho Wako", "Verify Your Identity"),
+                description = if (enable) {
+                    tr(
+                        language,
+                        "Thibitisha kwa alama ya kidole, uso, au kifuli ili kufunga ufikiaji wa programu.",
+                        "Authenticate with biometrics or device lock to protect app access."
+                    )
+                } else {
+                    tr(
+                        language,
+                        "Thibitisha utambulisho wako ili kuzima ulinzi wa Biometric.",
+                        "Authenticate to turn off Biometric App Lock."
+                    )
+                },
+                hasAppPinFallback = false,
+                allowDeviceCredentialFallback = true,
+                confirmationRequired = true
+            ) { outcome ->
+                when (outcome) {
+                    is BiometricAuthOutcome.Success -> {
+                        viewModel.setBiometricLockEnabled(enable)
+                    }
+                    is BiometricAuthOutcome.Unavailable -> {
+                        viewModel.emitSecurityNotice(
+                            tr(
+                                language,
+                                "Uthibitisho wa Biometric haupatikani kwenye kifaa hiki.",
+                                "Biometric authentication is unavailable on this device."
+                            )
+                        )
+                    }
+                    is BiometricAuthOutcome.Error -> {
+                        viewModel.emitSecurityNotice(outcome.message)
+                    }
+                    BiometricAuthOutcome.Cancelled,
+                    BiometricAuthOutcome.UseAppPinFallback -> Unit
+                }
             }
         }
     }
@@ -437,6 +589,19 @@ fun MengiApp(viewModel: MengiViewModel) {
         )
     }
 
+    val handleCopyCopyrightCertificate: () -> Unit = {
+        val certText = CopyrightVault.buildCertificateText(copyrightIntegrity, language)
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+        clipboard?.setPrimaryClip(ClipData.newPlainText("VaultLedger Copyright Certificate", certText))
+        viewModel.emitSecurityNotice(
+            tr(
+                language,
+                "Hati ya Hatimiliki imenakiliwa kwenye ubao wa kunakili.",
+                "Copyright certificate copied to clipboard."
+            )
+        )
+    }
+
     val requestManageStoragePermission: () -> Unit = {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val openedPerApp = runCatching {
@@ -566,6 +731,7 @@ fun MengiApp(viewModel: MengiViewModel) {
 
     LaunchedEffect(Unit) {
         viewModel.exportRequests.collect { export ->
+            viewModel.suppressAutoLockTemporarily(45_000L)
             pendingExport = export
             createDocumentLauncher.launch(export)
         }
@@ -617,10 +783,24 @@ fun MengiApp(viewModel: MengiViewModel) {
             scope.launch { drawerState.close() }
         }
 
-        if (pinLockEnabled && !isAppUnlocked) {
+        if (!copyrightIntegrity.isAuthentic) {
+            UnauthorizedCloneLockScreen(
+                report = copyrightIntegrity,
+                language = language
+            )
+            return@MengidataTheme
+        }
+
+        if (AppBiometricAuthenticator.isLockScreenRequired(biometricLockEnabled, pinLockEnabled, isAppUnlocked)) {
             PinLockScreen(
                 businessName = settings.businessName,
                 language = language,
+                pinLockEnabled = pinLockEnabled,
+                biometricLockEnabled = biometricLockEnabled,
+                biometricStatus = appBiometricStatus,
+                biometricErrorMessage = biometricLockError,
+                onRequestBiometricUnlock = requestUnlockWithBiometrics,
+                onOpenBiometricSettings = openBiometricEnrollSettings,
                 onVerifyPin = viewModel::unlockWithPin
             )
             return@MengidataTheme
@@ -1164,7 +1344,11 @@ fun MengiApp(viewModel: MengiViewModel) {
                                             autoUpdateEnabled = autoUpdateEnabled,
                                             autoPhoneBackupEnabled = autoPhoneBackupEnabled,
                                             privacyMaskEnabled = privacyMaskEnabled,
+                                            antiScreenCopyEnabled = antiScreenCopyEnabled,
                                             pinLockEnabled = pinLockEnabled,
+                                            biometricLockEnabled = biometricLockEnabled,
+                                            appBiometricStatus = appBiometricStatus,
+                                            copyrightIntegrity = copyrightIntegrity,
                                             uninstallGuardStatus = uninstallGuardStatus,
                                             adbDeviceOwnerCommand = adbDeviceOwnerCommand,
                                             phonePermissions = phonePermissions,
@@ -1185,11 +1369,16 @@ fun MengiApp(viewModel: MengiViewModel) {
                                             onSetAutoUpdate = viewModel::setAutoUpdateEnabled,
                                             onSetAutoPhoneBackup = viewModel::setAutoPhoneBackupEnabled,
                                             onPickCustomBackupFolder = {
+                                                viewModel.suppressAutoLockTemporarily(45_000L)
                                                 runCatching { openBackupFolderLauncher.launch(null) }
                                             },
                                             onSetPrivacyMask = viewModel::setPrivacyMaskEnabled,
+                                            onSetAntiScreenCopy = viewModel::setAntiScreenCopyEnabled,
+                                            onCopyCopyrightCertificate = handleCopyCopyrightCertificate,
                                             onSavePin = { pin -> viewModel.setupAppPin(pin) },
                                             onDisablePin = viewModel::disableAppPin,
+                                            onToggleBiometricLock = handleToggleBiometricLock,
+                                            onOpenEnrollBiometric = openBiometricEnrollSettings,
                                             onLockNow = viewModel::lockAppNow,
                                             onActivateDeviceAdmin = handleActivateDeviceAdmin,
                                             onOpenAccessibilityGuard = handleOpenAccessibilityGuard,
@@ -1200,15 +1389,18 @@ fun MengiApp(viewModel: MengiViewModel) {
                                             onCopyDeviceOwnerCommand = handleCopyDeviceOwnerCommand,
                                             onRequestManageStoragePermission = requestManageStoragePermission,
                                             onOpenAndroidSystemBackupSettings = {
+                                                viewModel.suppressAutoLockTemporarily(45_000L)
                                                 AndroidSystemBackupScheduler.openAndroidSystemBackupSettings(context)
                                             },
                                             onCheckUpdates = { viewModel.checkForUpdates(silentIfUpToDate = false) },
                                             onDownloadUpdate = viewModel::startUpdateDownloadAndInstall,
                                             onCancelDownloadUpdate = viewModel::cancelUpdateDownload,
                                             onOpenInstallPermissionSettings = {
+                                                viewModel.suppressAutoLockTemporarily(45_000L)
                                                 runCatching { context.startActivity(viewModel.openInstallPermissionSettings()) }
                                             },
                                             onOpenReleasesBrowser = {
+                                                viewModel.suppressAutoLockTemporarily(45_000L)
                                                 runCatching { context.startActivity(viewModel.openReleasesInBrowser()) }
                                             },
                                             onDirectInstallApk = viewModel::launchDirectApkInstall,
@@ -1221,6 +1413,7 @@ fun MengiApp(viewModel: MengiViewModel) {
                                             onExportMasterCsv = viewModel::exportMasterSeparatedCsv,
                                             onExportJson = viewModel::exportBackupJson,
                                             onImportJsonRequest = {
+                                                viewModel.suppressAutoLockTemporarily(45_000L)
                                                 openBackupLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
                                             },
                                             onReconcileLedger = viewModel::reconcileLedgerNow,
@@ -1313,6 +1506,8 @@ fun MengiApp(viewModel: MengiViewModel) {
         if (showAboutApp) {
             AboutAppSheet(
                 language = language,
+                copyrightIntegrity = copyrightIntegrity,
+                onCopyCopyrightCertificate = handleCopyCopyrightCertificate,
                 onDismiss = { showAboutApp = false }
             )
         }
@@ -1389,4 +1584,71 @@ private fun readTextFromUri(context: Context, uri: Uri): String? {
     return runCatching {
         context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
     }.getOrNull()
+}
+
+@Composable
+private fun UnauthorizedCloneLockScreen(
+    report: CopyrightIntegrityReport,
+    language: AppLanguage
+) {
+    val colors = LocalMengiColors.current
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(colors.heroStart, colors.heroMid, colors.heroEnd)
+                )
+            )
+            .safeDrawingPadding()
+            .padding(24.dp)
+            .testTag("unauthorized_clone_lock_screen"),
+        contentAlignment = Alignment.Center
+    ) {
+        Surface(
+            shape = RoundedCornerShape(28.dp),
+            color = Color(0xFF171C24),
+            border = BorderStroke(1.dp, Color(0xFF334254)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Copyright,
+                    contentDescription = null,
+                    tint = Color(0xFFD6A46E),
+                    modifier = Modifier.size(44.dp)
+                )
+                Text(
+                    text = tr(
+                        language,
+                        "Ulinzi wa Hatimiliki (Nakala Isiyo Halali)",
+                        "Copyright Protection Alert"
+                    ),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFFECEFF4),
+                    textAlign = TextAlign.Center
+                )
+                Text(
+                    text = report.tamperReason(language)
+                        ?: CopyrightVault.prohibitionStatement(language),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color(0xFFBAC6D4),
+                    textAlign = TextAlign.Center
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = CopyrightVault.shortNotice(language),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF82AEE0),
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+    }
 }

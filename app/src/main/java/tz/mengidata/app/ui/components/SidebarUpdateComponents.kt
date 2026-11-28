@@ -731,59 +731,69 @@ fun UpdateScreen(
                 }
             }
 
-            // 2. What's New / Release Notes Card (Only shown when release notes exist)
-            if (activeInfo != null && activeInfo.releaseNotes.isNotBlank()) {
-                item {
-                    MengiCard(contentPadding = 20.dp) {
+            // 2. What's New / Release Notes Card (Pending update notes or current installed version notes)
+            val displayNotesVersion = activeInfo?.takeIf { it.releaseNotes.isNotBlank() }?.version ?: BuildConfig.VERSION_NAME
+            val displayNotesBody = activeInfo?.releaseNotes?.trim()?.takeIf { it.isNotBlank() } ?: tr(
+                language,
+                "• Ulinzi wa Biometric (AndroidX Biometric): Thibitisha kwa Alama ya Kidole au Uso kulinda data za fedha.\n• Staili Mpya ya Statements za Fedha (Editorial Dossier PDF) zenye mtiririko wa fedha na muhtasari wa salio.\n• Hatimiliki & Ulinzi wa Nakala (Anti-Clone), Anti-Screenshot (FLAG_SECURE) na muonekano tulivu wa Zero-Green Matte.",
+                "• AndroidX Biometric Authentication: Protect financial access with Fingerprint, Face, or Device Lock.\n• Redesigned Financial Statements (Editorial Dossier PDF) with cashflow breakdown & clean typography.\n• Copyright & Anti-Clone Guard, FLAG_SECURE screen privacy & Zero-Green Matte Light/Dark palette."
+            )
+            item {
+                MengiCard(contentPadding = 20.dp) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.AutoAwesome,
-                                    contentDescription = null,
-                                    tint = colors.income,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Text(
-                                    text = tr(
-                                        language,
-                                        "Maboresho Katika Toleo v${activeInfo.version}",
-                                        "What's New in v${activeInfo.version}"
-                                    ),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                            if (activeInfo.expectedSizeBytes > 0L) {
-                                StatusPill(
-                                    text = formatCompactSize(activeInfo.expectedSizeBytes),
-                                    containerColor = colors.incomeSoft,
-                                    contentColor = colors.income
-                                )
-                            }
-                        }
-
-                        Spacer(Modifier.height(12.dp))
-
-                        Surface(
-                            shape = RoundedCornerShape(18.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainerLow,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.AutoAwesome,
+                                contentDescription = null,
+                                tint = colors.income,
+                                modifier = Modifier.size(20.dp)
+                            )
                             Text(
-                                text = activeInfo.releaseNotes.trim(),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.padding(16.dp)
+                                text = tr(
+                                    language,
+                                    "Maboresho Katika Toleo v$displayNotesVersion",
+                                    "What's New in v$displayNotesVersion"
+                                ),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                         }
+                        if (activeInfo != null && activeInfo.expectedSizeBytes > 0L) {
+                            StatusPill(
+                                text = formatCompactSize(activeInfo.expectedSizeBytes),
+                                containerColor = colors.incomeSoft,
+                                contentColor = colors.income
+                            )
+                        } else {
+                            StatusPill(
+                                text = "Build ${BuildConfig.VERSION_CODE}",
+                                containerColor = colors.incomeSoft,
+                                contentColor = colors.income
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+
+                    Surface(
+                        shape = RoundedCornerShape(18.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = displayNotesBody,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(16.dp)
+                        )
                     }
                 }
             }

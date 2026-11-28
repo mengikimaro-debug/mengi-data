@@ -26,23 +26,28 @@ import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.Fingerprint
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Savings
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -73,6 +78,7 @@ import tz.mengidata.app.data.prefs.PinSecurityHelper
 import tz.mengidata.app.i18n.AppLanguage
 import tz.mengidata.app.i18n.FormatUtils
 import tz.mengidata.app.i18n.tr
+import tz.mengidata.app.security.AppBiometricStatus
 import tz.mengidata.app.ui.navigation.BillsRoute
 import tz.mengidata.app.ui.navigation.HubRoute
 import tz.mengidata.app.ui.navigation.InvoicesRoute
@@ -322,11 +328,23 @@ fun GlobalSearchSheet(
 fun PinLockScreen(
     businessName: String,
     language: AppLanguage,
+    pinLockEnabled: Boolean = true,
+    biometricLockEnabled: Boolean = false,
+    biometricStatus: AppBiometricStatus = AppBiometricStatus.READY,
+    biometricErrorMessage: String? = null,
+    onRequestBiometricUnlock: () -> Unit = {},
+    onOpenBiometricSettings: () -> Unit = {},
     onVerifyPin: (String) -> Boolean
 ) {
     val colors = LocalMengiColors.current
     var entered by remember { mutableStateOf("") }
     var isError by remember { mutableStateOf(false) }
+
+    LaunchedEffect(biometricLockEnabled) {
+        if (biometricLockEnabled) {
+            onRequestBiometricUnlock()
+        }
+    }
 
     fun appendDigit(d: String) {
         if (entered.length >= 4) return
@@ -358,7 +376,7 @@ fun PinLockScreen(
         Column(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(22.dp)
+            verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
             Surface(
                 shape = RoundedCornerShape(24.dp),
@@ -375,100 +393,218 @@ fun PinLockScreen(
                 )
             }
 
-            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
                     text = businessName.ifBlank { "VaultLedger" },
                     style = MaterialTheme.typography.headlineMedium,
                     color = Color(0xFFE6EAF0)
                 )
                 Text(
-                    text = if (isError) {
-                        tr(language, "Namba ya siri si sahihi. Jaribu tena.", "Incorrect PIN. Try again.")
-                    } else {
-                        tr(language, "Ingiza namba ya siri ya tarakimu 4 kufungua", "Enter 4-digit PIN to unlock")
+                    text = when {
+                        isError -> tr(language, "Namba ya siri si sahihi. Jaribu tena.", "Incorrect PIN. Try again.")
+                        !biometricErrorMessage.isNullOrBlank() -> biometricErrorMessage
+                        biometricLockEnabled && !pinLockEnabled -> tr(
+                            language,
+                            "Taarifa za fedha zimefungwa. Thibitisha kwa Biometric kufungua.",
+                            "Financial data is locked. Verify Biometrics to continue."
+                        )
+                        biometricLockEnabled && pinLockEnabled -> tr(
+                            language,
+                            "Fungua kwa Alama ya Kidole / Uso au ingiza PIN ya tarakimu 4",
+                            "Unlock with Biometrics or enter your 4-digit PIN"
+                        )
+                        else -> tr(language, "Ingiza namba ya siri ya tarakimu 4 kufungua", "Enter 4-digit PIN to unlock")
                     },
                     style = MaterialTheme.typography.bodyMedium,
-                    color = if (isError) Color(0xFFD6C2A5) else Color(0xFFBDC7D4),
+                    color = if (isError || !biometricErrorMessage.isNullOrBlank()) Color(0xFFD6C2A5) else Color(0xFFBDC7D4),
                     textAlign = TextAlign.Center
                 )
             }
 
-            // 4 Security Code Dots (Calm Matte Solid)
-            Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-                repeat(4) { idx ->
-                    val filled = idx < entered.length
-                    Box(
-                        modifier = Modifier
-                            .size(16.dp)
-                            .clip(CircleShape)
-                            .background(
-                                when {
-                                    isError -> Color(0xFFC2A684)
-                                    filled -> colors.lime
-                                    else -> Color(0xFF394654)
-                                }
-                            )
-                    )
+            if (pinLockEnabled) {
+                // 4 Security Code Dots (Calm Matte Solid)
+                Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                    repeat(4) { idx ->
+                        val filled = idx < entered.length
+                        Box(
+                            modifier = Modifier
+                                .size(16.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    when {
+                                        isError -> Color(0xFFC2A684)
+                                        filled -> colors.lime
+                                        else -> Color(0xFF394654)
+                                    }
+                                )
+                        )
+                    }
                 }
-            }
 
-            Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(4.dp))
 
-            // Calm Matte Solid Numeric Keypad
-            val rows = listOf(
-                listOf("1", "2", "3"),
-                listOf("4", "5", "6"),
-                listOf("7", "8", "9"),
-                listOf("", "0", "DEL")
-            )
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                rows.forEach { row ->
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(22.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                // Calm Matte Solid Numeric Keypad
+                val rows = listOf(
+                    listOf("1", "2", "3"),
+                    listOf("4", "5", "6"),
+                    listOf("7", "8", "9"),
+                    listOf(if (biometricLockEnabled) "BIO" else "", "0", "DEL")
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    rows.forEach { row ->
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(22.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            row.forEach { key ->
+                                when (key) {
+                                    "" -> Spacer(Modifier.size(68.dp))
+                                    "BIO" -> {
+                                        Surface(
+                                            onClick = onRequestBiometricUnlock,
+                                            shape = CircleShape,
+                                            color = Color(0xFF24476E),
+                                            border = BorderStroke(1.2.dp, Color(0xFF5D84B0)),
+                                            modifier = Modifier
+                                                .size(68.dp)
+                                                .testTag("biometric_unlock_icon_btn")
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.Fingerprint,
+                                                    contentDescription = tr(language, "Fungua kwa Biometric", "Unlock with Biometrics"),
+                                                    tint = Color(0xFFE6EAF0),
+                                                    modifier = Modifier.size(28.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                    "DEL" -> {
+                                        Surface(
+                                            onClick = { if (entered.isNotEmpty()) entered = entered.dropLast(1) },
+                                            shape = CircleShape,
+                                            color = Color(0xFF232C36),
+                                            border = BorderStroke(1.dp, Color(0xFF394654)),
+                                            modifier = Modifier
+                                                .size(68.dp)
+                                                .testTag("pin_key_del")
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Icon(
+                                                    Icons.AutoMirrored.Rounded.Backspace,
+                                                    contentDescription = tr(language, "Futa", "Delete"),
+                                                    tint = Color(0xFFE6EAF0),
+                                                    modifier = Modifier.size(24.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                    else -> {
+                                        Surface(
+                                            onClick = { appendDigit(key) },
+                                            shape = CircleShape,
+                                            color = Color(0xFF2B3642),
+                                            border = BorderStroke(1.dp, Color(0xFF425163)),
+                                            modifier = Modifier
+                                                .size(68.dp)
+                                                .testTag("pin_key_$key")
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Text(
+                                                    text = key,
+                                                    style = MaterialTheme.typography.headlineMedium,
+                                                    color = Color(0xFFE6EAF0)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Dedicated Biometric Vault Gate when Biometric Lock is active without a 4-digit PIN
+                Surface(
+                    shape = RoundedCornerShape(28.dp),
+                    color = Color(0xFF1A2431),
+                    border = BorderStroke(1.dp, Color(0xFF384B61)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
-                        row.forEach { key ->
-                            when (key) {
-                                "" -> Spacer(Modifier.size(68.dp))
-                                "DEL" -> {
-                                    Surface(
-                                        onClick = { if (entered.isNotEmpty()) entered = entered.dropLast(1) },
-                                        shape = CircleShape,
-                                        color = Color(0xFF232C36),
-                                        border = BorderStroke(1.dp, Color(0xFF394654)),
-                                        modifier = Modifier
-                                            .size(68.dp)
-                                            .testTag("pin_key_del")
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            Icon(
-                                                Icons.AutoMirrored.Rounded.Backspace,
-                                                contentDescription = tr(language, "Futa", "Delete"),
-                                                tint = Color(0xFFE6EAF0),
-                                                modifier = Modifier.size(24.dp)
-                                            )
-                                        }
-                                    }
-                                }
-                                else -> {
-                                    Surface(
-                                        onClick = { appendDigit(key) },
-                                        shape = CircleShape,
-                                        color = Color(0xFF2B3642),
-                                        border = BorderStroke(1.dp, Color(0xFF425163)),
-                                        modifier = Modifier
-                                            .size(68.dp)
-                                            .testTag("pin_key_$key")
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            Text(
-                                                text = key,
-                                                style = MaterialTheme.typography.headlineMedium,
-                                                color = Color(0xFFE6EAF0)
-                                            )
-                                        }
-                                    }
-                                }
+                        Surface(
+                            shape = CircleShape,
+                            color = Color(0xFF243A54),
+                            border = BorderStroke(1.5.dp, Color(0xFF6A94C2)),
+                            modifier = Modifier.size(72.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Fingerprint,
+                                    contentDescription = tr(language, "Ulinzi wa Biometric", "Biometric Security"),
+                                    tint = Color(0xFFE4EEF8),
+                                    modifier = Modifier.size(38.dp)
+                                )
+                            }
+                        }
+
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.VerifiedUser,
+                                contentDescription = null,
+                                tint = Color(0xFFB68E5D),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = tr(language, "Ulinzi wa Faragha ya Fedha", "Financial Privacy Shield"),
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFFDFC7A2)
+                            )
+                        }
+
+                        Button(
+                            onClick = onRequestBiometricUnlock,
+                            shape = CircleShape,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF2C5482),
+                                contentColor = Color(0xFFFFFFFF)
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(52.dp)
+                                .testTag("biometric_unlock_button")
+                        ) {
+                            Icon(Icons.Rounded.Fingerprint, contentDescription = null, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.size(8.dp))
+                            Text(
+                                text = tr(language, "Fungua kwa Biometric", "Unlock with Biometrics"),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        if (biometricStatus == AppBiometricStatus.NONE_ENROLLED) {
+                            OutlinedButton(
+                                onClick = onOpenBiometricSettings,
+                                shape = CircleShape,
+                                border = BorderStroke(1.dp, Color(0xFF566B82)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp)
+                                    .testTag("biometric_enroll_fallback_btn")
+                            ) {
+                                Text(
+                                    text = tr(language, "Sajili Alama ya Kidole / Kifuli", "Enroll Biometrics in Settings"),
+                                    color = Color(0xFFD5DFEA)
+                                )
                             }
                         }
                     }

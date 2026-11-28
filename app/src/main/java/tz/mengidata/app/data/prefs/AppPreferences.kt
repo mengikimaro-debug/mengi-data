@@ -48,11 +48,17 @@ class AppPreferences(context: Context) {
     private val _privacyMaskEnabled = MutableStateFlow(prefs.getBoolean(KEY_PRIVACY_MASK, false))
     val privacyMaskEnabled: StateFlow<Boolean> = _privacyMaskEnabled.asStateFlow()
 
+    private val _antiScreenCopyEnabled = MutableStateFlow(prefs.getBoolean(KEY_ANTI_SCREEN_COPY, false))
+    val antiScreenCopyEnabled: StateFlow<Boolean> = _antiScreenCopyEnabled.asStateFlow()
+
     private val _pinLockEnabled = MutableStateFlow(
         !prefs.getString(KEY_PIN_HASH, null).isNullOrBlank() &&
             !prefs.getString(KEY_PIN_SALT, null).isNullOrBlank()
     )
     val pinLockEnabled: StateFlow<Boolean> = _pinLockEnabled.asStateFlow()
+
+    private val _biometricLockEnabled = MutableStateFlow(prefs.getBoolean(KEY_BIOMETRIC_LOCK, false))
+    val biometricLockEnabled: StateFlow<Boolean> = _biometricLockEnabled.asStateFlow()
 
     private val _uninstallProtectionPreferred = MutableStateFlow(
         prefs.getBoolean(KEY_UNINSTALL_PROTECTION_PREFERRED, false)
@@ -141,6 +147,16 @@ class AppPreferences(context: Context) {
 
     fun togglePrivacyMask() {
         setPrivacyMaskEnabled(!_privacyMaskEnabled.value)
+    }
+
+    fun setAntiScreenCopyEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_ANTI_SCREEN_COPY, enabled).apply()
+        _antiScreenCopyEnabled.value = enabled
+    }
+
+    fun setBiometricLockEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_BIOMETRIC_LOCK, enabled).apply()
+        _biometricLockEnabled.value = enabled
     }
 
     fun setUninstallProtectionPreferred(enabled: Boolean) {
@@ -282,6 +298,7 @@ class AppPreferences(context: Context) {
         private const val KEY_AUTO_PHONE_BACKUP = "auto_phone_backup_enabled"
         private const val KEY_CUSTOM_BACKUP_FOLDER_URI = "custom_backup_folder_uri"
         private const val KEY_PRIVACY_MASK = "privacy_mask_enabled"
+        private const val KEY_ANTI_SCREEN_COPY = "anti_screen_copy_enabled"
         private const val KEY_NOTIFICATIONS_ENABLED = "notifications_enabled"
         private const val KEY_BILL_ALERTS_ENABLED = "bill_alerts_enabled"
         private const val KEY_TXN_ALERTS_ENABLED = "txn_alerts_enabled"
@@ -290,6 +307,7 @@ class AppPreferences(context: Context) {
         private const val KEY_LARGE_BILL_THRESHOLD = "large_bill_threshold_tzs"
         private const val KEY_PIN_SALT = "app_pin_salt"
         private const val KEY_PIN_HASH = "app_pin_hash"
+        private const val KEY_BIOMETRIC_LOCK = "biometric_lock_enabled"
         private const val KEY_UNINSTALL_PROTECTION_PREFERRED = "uninstall_protection_preferred"
         private const val KEY_PENDING_REINSTALL_RESTORE = "pending_reinstall_restore"
         private const val KEY_RESTORE_PROMPT_DISMISSED = "restore_prompt_dismissed"

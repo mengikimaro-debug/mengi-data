@@ -83,6 +83,7 @@ import tz.mengidata.app.i18n.AppLanguage
 import tz.mengidata.app.i18n.FormatUtils
 import tz.mengidata.app.i18n.ThemeMode
 import tz.mengidata.app.i18n.tr
+import tz.mengidata.app.security.CopyrightVault
 import tz.mengidata.app.ui.navigation.BillsRoute
 import tz.mengidata.app.ui.navigation.DashboardRoute
 import tz.mengidata.app.ui.navigation.HubRoute
@@ -733,6 +734,17 @@ fun MengiSidebarSheet(
                     )
                 }
             }
+
+            Text(
+                text = CopyrightVault.shortNotice(language),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .padding(horizontal = 6.dp)
+                    .testTag("sidebar_copyright_notice")
+            )
         }
     }
 }

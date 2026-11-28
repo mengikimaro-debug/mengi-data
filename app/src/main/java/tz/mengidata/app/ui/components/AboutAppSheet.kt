@@ -26,6 +26,8 @@ import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Copyright
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.NotificationsActive
@@ -37,10 +39,12 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -62,6 +66,8 @@ import tz.mengidata.app.BuildConfig
 import tz.mengidata.app.R
 import tz.mengidata.app.i18n.AppLanguage
 import tz.mengidata.app.i18n.tr
+import tz.mengidata.app.security.CopyrightIntegrityReport
+import tz.mengidata.app.security.CopyrightVault
 import tz.mengidata.app.ui.theme.LocalMengiColors
 
 private data class AboutWorkflowStep(
@@ -130,10 +136,10 @@ private val AboutWorkflowSteps = listOf(
     AboutWorkflowStep(
         stepNumber = 7,
         icon = Icons.Rounded.Security,
-        titleSw = "100% Offline, Usalama wa Data & Ufanisi",
-        titleEn = "100% Offline, Data Safety & Device Performance",
-        bodySw = "Taarifa zako zote zinahifadhiwa salama kwenye simu yako bila kuhitaji intaneti, zikiwa na PIN Lock, Privacy Mask ya kuficha salio, Recovery Vault ya kurejesha rekodi zilizofutwa, nakala ya hifadhi (Phone Backup), na injini ya ufanisi (Device-Adaptive Performance) inayorekebisha kasi ya app kulingana na uwezo wa simu yoyote.",
-        bodyEn = "All records stay private and 100% offline on your device with optional PIN Lock, Privacy Mask, Recovery Vault for deleted records, automatic phone storage backups, and a Device-Adaptive Performance Engine tuned for smooth speed on any phone."
+        titleSw = "100% Offline, Biometric, Hatimiliki & Ufanisi",
+        titleEn = "100% Offline, Biometrics, Copyright & Speed",
+        bodySw = "Taarifa zako zote zinahifadhiwa salama kwenye simu yako bila kuhitaji intaneti, zikiwa na ulinzi wa Biometric (Alama ya Kidole / Uso), PIN Lock, Privacy Mask, Anti-Screenshot (FLAG_SECURE), Hatimiliki & Ulinzi wa Nakala, Recovery Vault, nakala ya hifadhi ya simu, na injini ya ufanisi inayorekebisha kasi kulingana na simu yoyote.",
+        bodyEn = "All records stay private and 100% offline on your device with AndroidX Biometric App Lock (Fingerprint / Face), 4-Digit PIN Lock, Privacy Mask, FLAG_SECURE anti-screenshot guard, Copyright & Anti-Clone verification, Recovery Vault, phone storage backups, and a Device-Adaptive Performance Engine."
     )
 )
 
@@ -146,6 +152,8 @@ private val AboutWorkflowSteps = listOf(
 @Composable
 fun AboutAppSheet(
     language: AppLanguage,
+    copyrightIntegrity: CopyrightIntegrityReport = CopyrightIntegrityReport(),
+    onCopyCopyrightCertificate: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -404,6 +412,129 @@ fun AboutAppSheet(
                             overflow = TextOverflow.Ellipsis
                         )
                     }
+                }
+            }
+
+            // Official Copyright & Anti-Cloning Intellectual Property Card
+            MengiCard(
+                modifier = Modifier.testTag("about_copyright_card"),
+                contentPadding = 16.dp
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(colors.incomeSoft),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Copyright,
+                            contentDescription = null,
+                            tint = colors.income,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = tr(language, "HATIMILIKI & HAKI MILIKI", "COPYRIGHT & INTELLECTUAL PROPERTY"),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = colors.income
+                        )
+                        Text(
+                            text = "© ${CopyrightVault.COPYRIGHT_YEARS} ${CopyrightVault.APP_BRAND}",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "${tr(language, "Mmiliki", "Owner")}: ${CopyrightVault.COPYRIGHT_HOLDER}",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    StatusPill(
+                        text = if (copyrightIntegrity.isAuthentic) {
+                            tr(language, "Halisi", "Authentic")
+                        } else {
+                            tr(language, "Onyo", "Alert")
+                        },
+                        containerColor = if (copyrightIntegrity.isAuthentic) colors.incomeSoft else colors.expenseSoft,
+                        contentColor = if (copyrightIntegrity.isAuthentic) colors.income else colors.expense
+                    )
+                }
+
+                Spacer(Modifier.height(10.dp))
+
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = colors.subtleSurface,
+                    border = BorderStroke(1.dp, colors.cardBorder),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = "${tr(language, "Kitambulisho Halisi", "Package ID")}: ${copyrightIntegrity.installedPackageId}",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        if (copyrightIntegrity.ownershipSeal.isNotBlank()) {
+                            Text(
+                                text = "${tr(language, "Muhuri wa Umiliki", "Ownership Seal")}: ${copyrightIntegrity.ownershipSeal}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Text(
+                            text = "${tr(language, "Cheti cha Saini", "Cert SHA-256")}: ${copyrightIntegrity.signingCertShort}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(10.dp))
+                HorizontalDivider(color = colors.cardBorder)
+                Spacer(Modifier.height(10.dp))
+
+                Text(
+                    text = CopyrightVault.prohibitionStatement(language),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                OutlinedButton(
+                    onClick = onCopyCopyrightCertificate,
+                    shape = CircleShape,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .testTag("about_copy_copyright_btn")
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.ContentCopy,
+                        contentDescription = null,
+                        modifier = Modifier.size(17.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = tr(language, "Nakili Hati ya Hatimiliki", "Copy Copyright Certificate"),
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
 

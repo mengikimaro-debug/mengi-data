@@ -24,6 +24,7 @@ import tz.mengidata.app.data.db.InvoiceWithItems
 import tz.mengidata.app.i18n.AppLanguage
 import tz.mengidata.app.i18n.FormatUtils
 import tz.mengidata.app.i18n.tr
+import tz.mengidata.app.security.CopyrightVault
 import java.io.ByteArrayOutputStream
 import java.io.FileOutputStream
 import java.util.Locale
@@ -245,7 +246,8 @@ object InvoicePdfGenerator {
                 businessName,
                 settings.phone,
                 settings.email,
-                settings.website
+                settings.website,
+                CopyrightVault.pdfFooterBrand(language)
             ).filter { it.isNotBlank() }.joinToString("  •  ")
 
             val thankPaint = Paint(inkBold).apply {
